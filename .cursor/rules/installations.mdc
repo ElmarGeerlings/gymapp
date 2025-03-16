@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+When installing something, try to install the version that is in C:\gymapp\requirements copy.txt

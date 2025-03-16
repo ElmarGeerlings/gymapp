@@ -1,0 +1,198 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container">
+    <div class="workout-header">
+        <h1>{{ workout.name }}</h1>
+        <p class="workout-date">{{ workout.date|date:"F j, Y" }}</p>
+        {% if workout.notes %}
+            <div class="workout-notes">
+                <h3>Notes:</h3>
+                <p>{{ workout.notes }}</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Primary Exercises -->
+    {% if primary_exercises %}
+    <div class="exercise-section">
+        <h2>Primary Exercises</h2>
+        {% for workout_exercise in primary_exercises %}
+            <div class="exercise-card" data-exercise-id="{{ workout_exercise.id }}">
+                <h3>{{ workout_exercise.exercise.name }}</h3>
+                {% if workout_exercise.notes %}
+                    <p class="exercise-notes">{{ workout_exercise.notes }}</p>
+                {% endif %}
+                
+                <table class="sets-table">
+                    <thead>
+                        <tr>
+                            <th>Set</th>
+                            <th>Weight</th>
+                            <th>Reps</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sets-{{ workout_exercise.id }}">
+                        {% for set in workout_exercise.sets.all %}
+                            <tr>
+                                <td>{{ set.set_number }}</td>
+                                <td>{{ set.weight }} kg</td>
+                                <td>{{ set.reps }}</td>
+                                <td>{% if set.is_warmup %}Warmup{% else %}Working{% endif %}</td>
+                                <td>
+                                    <button class="edit-set-btn" data-set-id="{{ set.id }}">Edit</button>
+                                    <button class="delete-set-btn" data-set-id="{{ set.id }}">Delete</button>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <div class="add-set-form">
+                    <h4>Add Set</h4>
+                    <div class="form-row">
+                        <input type="number" id="weight-{{ workout_exercise.id }}" placeholder="Weight (kg)" min="0" step="0.5">
+                        <input type="number" id="reps-{{ workout_exercise.id }}" placeholder="Reps" min="1">
+                        <label>
+                            <input type="checkbox" id="warmup-{{ workout_exercise.id }}"> Warmup
+                        </label>
+                        <button onclick="addSet({{ workout_exercise.id }})">Add Set</button>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Secondary Exercises -->
+    {% if secondary_exercises %}
+    <div class="exercise-section">
+        <h2>Secondary Exercises</h2>
+        {% for workout_exercise in secondary_exercises %}
+            <div class="exercise-card" data-exercise-id="{{ workout_exercise.id }}">
+                <h3>{{ workout_exercise.exercise.name }}</h3>
+                {% if workout_exercise.notes %}
+                    <p class="exercise-notes">{{ workout_exercise.notes }}</p>
+                {% endif %}
+                
+                <table class="sets-table">
+                    <thead>
+                        <tr>
+                            <th>Set</th>
+                            <th>Weight</th>
+                            <th>Reps</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sets-{{ workout_exercise.id }}">
+                        {% for set in workout_exercise.sets.all %}
+                            <tr>
+                                <td>{{ set.set_number }}</td>
+                                <td>{{ set.weight }} kg</td>
+                                <td>{{ set.reps }}</td>
+                                <td>{% if set.is_warmup %}Warmup{% else %}Working{% endif %}</td>
+                                <td>
+                                    <button class="edit-set-btn" data-set-id="{{ set.id }}">Edit</button>
+                                    <button class="delete-set-btn" data-set-id="{{ set.id }}">Delete</button>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <div class="add-set-form">
+                    <h4>Add Set</h4>
+                    <div class="form-row">
+                        <input type="number" id="weight-{{ workout_exercise.id }}" placeholder="Weight (kg)" min="0" step="0.5">
+                        <input type="number" id="reps-{{ workout_exercise.id }}" placeholder="Reps" min="1">
+                        <label>
+                            <input type="checkbox" id="warmup-{{ workout_exercise.id }}"> Warmup
+                        </label>
+                        <button onclick="addSet({{ workout_exercise.id }})">Add Set</button>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Accessory Exercises -->
+    {% if accessory_exercises %}
+    <div class="exercise-section">
+        <h2>Accessory Exercises</h2>
+        {% for workout_exercise in accessory_exercises %}
+            <div class="exercise-card" data-exercise-id="{{ workout_exercise.id }}">
+                <h3>{{ workout_exercise.exercise.name }}</h3>
+                {% if workout_exercise.notes %}
+                    <p class="exercise-notes">{{ workout_exercise.notes }}</p>
+                {% endif %}
+                
+                <table class="sets-table">
+                    <thead>
+                        <tr>
+                            <th>Set</th>
+                            <th>Weight</th>
+                            <th>Reps</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sets-{{ workout_exercise.id }}">
+                        {% for set in workout_exercise.sets.all %}
+                            <tr>
+                                <td>{{ set.set_number }}</td>
+                                <td>{{ set.weight }} kg</td>
+                                <td>{{ set.reps }}</td>
+                                <td>{% if set.is_warmup %}Warmup{% else %}Working{% endif %}</td>
+                                <td>
+                                    <button class="edit-set-btn" data-set-id="{{ set.id }}">Edit</button>
+                                    <button class="delete-set-btn" data-set-id="{{ set.id }}">Delete</button>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <div class="add-set-form">
+                    <h4>Add Set</h4>
+                    <div class="form-row">
+                        <input type="number" id="weight-{{ workout_exercise.id }}" placeholder="Weight (kg)" min="0" step="0.5">
+                        <input type="number" id="reps-{{ workout_exercise.id }}" placeholder="Reps" min="1">
+                        <label>
+                            <input type="checkbox" id="warmup-{{ workout_exercise.id }}"> Warmup
+                        </label>
+                        <button onclick="addSet({{ workout_exercise.id }})">Add Set</button>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Add Exercise Form -->
+    <div class="add-exercise-section">
+        <h2>Add Exercise</h2>
+        <div class="form-row">
+            <select id="exercise-select">
+                <option value="">Select Exercise</option>
+                {% for exercise in available_exercises %}
+                    <option value="{{ exercise.id }}">{{ exercise.name }}</option>
+                {% endfor %}
+            </select>
+            <select id="exercise-type">
+                <option value="primary">Primary</option>
+                <option value="secondary">Secondary</option>
+                <option value="accessory" selected>Accessory</option>
+            </select>
+            <button onclick="addExercise({{ workout.id }})">Add Exercise</button>
+        </div>
+    </div>
+</div>
+
+{% csrf_token %}
+<script src="{% static 'gainz.js' %}"></script>
+{% endblock %}

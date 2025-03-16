@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gainz - Workout Tracker</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'styles.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <h1>Gainz</h1>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/workouts">Workouts</a></li>
+                <li><a href="/exercises">Exercises</a></li>
+            </ul>
+        </div>
+    </nav>
+    
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 Gainz Workout Tracker</p>
+        </div>
+    </footer>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html> 
