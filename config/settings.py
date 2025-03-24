@@ -28,11 +28,8 @@ INSTALLED_APPS = [
     'debug_toolbar',
     
     # Local apps
-    'apps.users',
-    'apps.workouts',
-    'apps.exercises',
-    'apps.progress',
-    'apps.plans',
+    'gainz.exercises',
+    'gainz.workouts',
 ]
 
 MIDDLEWARE = [

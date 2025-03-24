@@ -1,15 +1,18 @@
-from django.contrib import admin
+from django.urls import reverse_lazy
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import (
+from gainz.views import (
     home,  # your homepage view
     WorkoutViewSet, 
     WorkoutExerciseViewSet, 
     ExerciseSetViewSet,
     ExerciseCategoryViewSet, 
     ExerciseViewSet, 
-    workout_detail
+    workout_detail,
+    workout_list,
+    exercise_list
 )
+from django.contrib import admin
 
 # API router setup
 router = DefaultRouter()
@@ -37,4 +40,10 @@ urlpatterns = [
     
     # Template views
     path('workouts/<int:workout_id>/', workout_detail, name='workout-detail'),
+    
+    # Workout list
+    path('workouts/', workout_list, name='workout-list'),
+    
+    # Exercise list
+    path('exercises/', exercise_list, name='exercise-list'),
 ]

@@ -132,3 +132,32 @@ def home(request):
         return render(request, 'home.html', {
             'title': 'Welcome to Gainz'
         })
+
+@login_required
+def workout_list(request):
+    """Display a list of the user's workouts"""
+    workouts = Workout.objects.filter(user=request.user).order_by('-date')
+    
+    context = {
+        'workouts': workouts,
+        'title': 'My Workouts'
+    }
+    
+    return render(request, 'workout_list.html', context)
+
+@login_required
+def exercise_list(request):
+    """Display a list of exercises organized by category"""
+    # Get all categories with their exercises
+    categories = ExerciseCategory.objects.prefetch_related('exercises').all()
+    
+    # Get uncategorized exercises
+    uncategorized = Exercise.objects.filter(category__isnull=True)
+    
+    context = {
+        'categories': categories,
+        'uncategorized': uncategorized,
+        'title': 'Exercise Library'
+    }
+    
+    return render(request, 'exercise_list.html', context)

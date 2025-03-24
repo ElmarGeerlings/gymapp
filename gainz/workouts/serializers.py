@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ...workouts.models import Workout, WorkoutExercise, ExerciseSet
+from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet
 
 class ExerciseSetSerializer(serializers.ModelSerializer):
     class Meta:

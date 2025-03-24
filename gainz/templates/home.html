@@ -26,7 +26,7 @@
 
     <div class="cta-section">
         {% if user.is_authenticated %}
-            <a href="{% url 'workout-detail' 1 %}" class="cta-button">View Sample Workout</a>
+            <a href="{% url 'workout-list' %}" class="cta-button">View My Workouts</a>
         {% else %}
             <a href="{% url 'admin:index' %}" class="cta-button">Login</a>
         {% endif %}

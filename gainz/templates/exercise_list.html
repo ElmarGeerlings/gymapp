@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Exercise Library</h1>
+        <div class="actions">
+            <a href="#" class="btn btn-primary">Add New Exercise</a>
+            <a href="#" class="btn btn-secondary">Manage Categories</a>
+        </div>
+    </div>
+
+    <div class="search-box">
+        <input type="text" id="exercise-search" placeholder="Search exercises...">
+    </div>
+
+    {% if categories %}
+        <div class="exercise-categories">
+            {% for category in categories %}
+                <div class="category-section">
+                    <h2>{{ category.name }}</h2>
+                    
+                    {% if category.exercises.all %}
+                        <div class="exercise-grid">
+                            {% for exercise in category.exercises.all %}
+                                <div class="exercise-card">
+                                    <h3>{{ exercise.name }}</h3>
+                                    <div class="exercise-meta">
+                                        <span class="exercise-type">{{ exercise.get_exercise_type_display }}</span>
+                                    </div>
+                                    {% if exercise.description %}
+                                        <p>{{ exercise.description|truncatewords:15 }}</p>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="empty-category">No exercises in this category yet.</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {% if uncategorized %}
+        <div class="category-section">
+            <h2>Uncategorized</h2>
+            <div class="exercise-grid">
+                {% for exercise in uncategorized %}
+                    <div class="exercise-card">
+                        <h3>{{ exercise.name }}</h3>
+                        <div class="exercise-meta">
+                            <span class="exercise-type">{{ exercise.get_exercise_type_display }}</span>
+                        </div>
+                        {% if exercise.description %}
+                            <p>{{ exercise.description|truncatewords:15 }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+    
+    {% if not categories and not uncategorized %}
+        <div class="empty-state">
+            <p>No exercises have been added yet.</p>
+            <a href="#" class="btn btn-primary">Add Your First Exercise</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %} 

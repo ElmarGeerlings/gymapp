@@ -45,30 +45,3 @@ class ExerciseSet(models.Model):
     reps = models.IntegerField()
     weight = models.DecimalField(max_digits=6, decimal_places=2)
     is_warmup = models.BooleanField(default=False)
-
-@login_required
-def workout_detail(request, workout_id):
-    workout = get_object_or_404(Workout, id=workout_id, user=request.user)
-    
-    # Group exercises by type
-    primary_exercises = []
-    secondary_exercises = []
-    accessory_exercises = []
-    
-    for workout_exercise in workout.exercises.all():
-        exercise_type = workout_exercise.get_exercise_type()
-        if exercise_type == 'primary':
-            primary_exercises.append(workout_exercise)
-        elif exercise_type == 'secondary':
-            secondary_exercises.append(workout_exercise)
-        else:
-            accessory_exercises.append(workout_exercise)
-    
-    context = {
-        'workout': workout,
-        'primary_exercises': primary_exercises,
-        'secondary_exercises': secondary_exercises,
-        'accessory_exercises': accessory_exercises,
-    }
-    
-    return render(request, 'workouts/workout_detail.html', context) 

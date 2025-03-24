@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>My Workouts</h1>
+        <a href="#" class="btn btn-primary">Create New Workout</a>
+    </div>
+
+    <div class="workouts-list">
+        {% if workouts %}
+            {% for workout in workouts %}
+                <div class="workout-card">
+                    <h2><a href="{% url 'workout-detail' workout.id %}">{{ workout.name }}</a></h2>
+                    <div class="workout-meta">
+                        <span class="workout-date">{{ workout.date|date:"F j, Y" }}</span>
+                        {% if workout.duration %}
+                            <span class="workout-duration">{{ workout.duration }}</span>
+                        {% endif %}
+                    </div>
+                    {% if workout.notes %}
+                        <p class="workout-notes">{{ workout.notes|truncatewords:15 }}</p>
+                    {% endif %}
+                    
+                    <div class="workout-stats">
+                        <span>{{ workout.exercises.count }} exercises</span>
+                        <span>{{ workout.exercises.all|length }} total sets</span>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <p>You haven't created any workouts yet.</p>
+                <a href="#" class="btn btn-primary">Create Your First Workout</a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %} 
