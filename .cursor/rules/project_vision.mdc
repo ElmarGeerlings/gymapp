@@ -1,0 +1,39 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+ # Gainz Project Vision & Goals
+
+This document outlines the high-level vision for the Gainz workout tracking application, based on initial brainstorming notes. The goal is to create more than just a tracker, but a social platform for lifters focused on community, accurate information, and comprehensive tracking.
+
+## Core Sections & Features Envisioned:
+
+### Platform Goals:
+- A social platform focused on lifting.
+- Combat misinformation in the fitness space.
+- Function like an expanded forum.
+
+### Section for Workouts:
+- Log sets/reps for exercises (using sheets/templates).
+- Include a rest timer feature.
+- Allow users to film and share sets (for critique, advice, or fun/bragging).
+- Automatically suggest/update appropriate workout plans.
+- Allow users to customize their own workouts.
+- Provide workout templates.
+- Allow users to browse and use workouts shared by others.
+
+### Section for Nutrition:
+- Log food intake and plan diets.
+- Provide diet recommendations based on user tastes, needs, and goals.
+- Allow users to comment on and adopt diets shared by others.
+- Provide reliable information sources for learning about nutrition.
+
+### Section for Injuries:
+- Offer basic information and guidance on common lifting injuries.
+- Potentially integrate access to hired professionals (physios, coaches).
+- Use AI to match user queries/complaints to similar cases or relevant information.
+
+### Community/Engagement:
+- Include a "For Fun" section for general discussion.
+- Reward contributing users (e.g., icons, achievements, ad removal, free sponsored products).

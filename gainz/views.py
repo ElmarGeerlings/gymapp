@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
-from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet
+from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
 
 # Exercise ViewSets
@@ -88,35 +88,32 @@ class ExerciseSetViewSet(viewsets.ModelViewSet):
 @login_required
 def workout_detail(request, workout_id):
     workout = get_object_or_404(Workout, id=workout_id, user=request.user)
-    
-    # Group exercises by type
+
+    # Fetch WorkoutExercises related to this workout, prefetching related Exercise and Sets
+    workout_exercises = workout.exercises.prefetch_related('exercise', 'sets').all()
+
+    # Group exercises by type using the get_exercise_type method
     primary_exercises = []
     secondary_exercises = []
     accessory_exercises = []
-    
-    for workout_exercise in workout.exercises.all():
+
+    for workout_exercise in workout_exercises:
         exercise_type = workout_exercise.get_exercise_type()
         if exercise_type == 'primary':
             primary_exercises.append(workout_exercise)
         elif exercise_type == 'secondary':
             secondary_exercises.append(workout_exercise)
-        else:
+        else: # Default or accessory
             accessory_exercises.append(workout_exercise)
-    
-    # Get available exercises for the add exercise form
-    available_exercises = Exercise.objects.filter(
-        models.Q(is_custom=False) | 
-        models.Q(is_custom=True, user=request.user)
-    )
-    
+
     context = {
         'workout': workout,
         'primary_exercises': primary_exercises,
         'secondary_exercises': secondary_exercises,
         'accessory_exercises': accessory_exercises,
-        'available_exercises': available_exercises,
+        'title': f"Workout: {workout.name}" # Added a title for the page
     }
-    
+
     return render(request, 'workout_detail.html', context)
 
 def home(request):
@@ -149,15 +146,35 @@ def workout_list(request):
 def exercise_list(request):
     """Display a list of exercises organized by category"""
     # Get all categories with their exercises
-    categories = ExerciseCategory.objects.prefetch_related('exercises').all()
+    # The related_name 'exercises' on the ManyToManyField still makes this work
+    categories_with_exercises = ExerciseCategory.objects.prefetch_related('exercises').all()
     
-    # Get uncategorized exercises
-    uncategorized = Exercise.objects.filter(category__isnull=True)
+    # Get exercises that have no category assigned
+    uncategorized_exercises = Exercise.objects.filter(categories__isnull=True)
     
+    # Filter out empty categories if needed (optional)
+    # categories_with_exercises = [cat for cat in categories_with_exercises if cat.exercises.exists()]
+
     context = {
-        'categories': categories,
-        'uncategorized': uncategorized,
+        'categories': categories_with_exercises, # Renamed for clarity
+        'uncategorized': uncategorized_exercises, # Renamed for clarity
         'title': 'Exercise Library'
     }
     
     return render(request, 'exercise_list.html', context)
+
+@login_required
+def routine_list(request):
+    """Display a list of the user's programs and routines."""
+    # Fetch programs with their routines prefetched
+    programs = Program.objects.filter(user=request.user).prefetch_related('routines').order_by('name')
+    
+    # Fetch standalone routines (those not assigned to any program)
+    standalone_routines = Routine.objects.filter(user=request.user, program__isnull=True).order_by('name')
+    
+    context = {
+        'programs': programs,
+        'standalone_routines': standalone_routines,
+        'title': 'My Routines & Programs'
+    }
+    return render(request, 'routine_list.html', context)

@@ -19,7 +19,11 @@ class Exercise(models.Model):
     
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    category = models.ForeignKey(ExerciseCategory, on_delete=models.CASCADE)
+    categories = models.ManyToManyField(
+        ExerciseCategory,
+        related_name='exercises', 
+        blank=True # Allows exercises to have no category
+    )
     is_custom = models.BooleanField(default=False)  # For user-created exercises
     exercise_type = models.CharField(
         max_length=20, 

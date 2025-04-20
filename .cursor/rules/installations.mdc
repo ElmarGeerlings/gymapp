@@ -4,6 +4,24 @@ globs:
 alwaysApply: true
 ---
 
-# Your rule content
+# Cursor Rules for Gainz Project
 
-When installing something, try to install the version that is in C:\gymapp\requirements copy.txt
+## Python Version Compatibility
+Rule Name: python_compatibility.mdc
+Description: This project needs to be compatible with Python 3.10 (for work environment) even though development might happen on Python 3.12. Avoid suggesting or using language features introduced after Python 3.10 (e.g., features from 3.11, 3.12) unless specifically discussed and approved.
+
+## Project Structure and Imports
+Rule Name: project_structure.mdc
+Description: The main Django project is named `gainz`, and apps like `exercises` and `workouts` reside *inside* the `gainz` directory (e.g., `gainz/exercises/`, `gainz/workouts/`). Always use absolute imports relative to the project root, like `from gainz.exercises.models import Exercise` or `from gainz.views import home`, instead of relative imports like `from .models import ...` or `from ..views import ...` where possible, especially in files like `urls.py`. Ensure `INSTALLED_APPS` uses the full dotted path (e.g., `'gainz.exercises.apps.ExercisesConfig'`).
+
+## Synchronous Code Preference
+Rule Name: sync_preference.mdc
+Description: Default to using standard synchronous Django views (`def view_name(...)`) and ORM calls (`Model.objects.filter(...)`). Only suggest or implement asynchronous views (`async def view_name(...)`) or async ORM calls (`Model.objects.afilter(...)`) if explicitly requested for specific features (like WebSockets) or after identifying a clear performance bottleneck related to I/O waiting that cannot be solved by database optimization or caching.
+
+## Database Choice
+Rule Name: database_choice.mdc
+Description: The project uses PostgreSQL as its database. Keep this in mind when suggesting database-related configurations, optimizations, or troubleshooting steps.
+
+## Virtual Environments
+Rule Name: venv_awareness.mdc
+Description: The user uses virtual environments (`venv`) to manage dependencies for different projects. Assume standard virtual environment practices are followed.

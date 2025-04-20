@@ -7,8 +7,22 @@ class ExerciseCategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'description']
 
 class ExerciseSerializer(serializers.ModelSerializer):
-    category_name = serializers.CharField(source='category.name', read_only=True)
+    # Provide a read-only list of category names
+    category_names = serializers.StringRelatedField(many=True, source='categories', read_only=True)
+    # 'categories' field below will handle write operations (expects list of IDs)
 
     class Meta:
         model = Exercise
-        fields = ['id', 'name', 'description', 'category', 'category_name', 'is_custom'] 
+        fields = [
+            'id', 
+            'name', 
+            'description', 
+            'categories', # Expects list of category IDs on write
+            'category_names', # Read-only list of names
+            'is_custom',
+            'exercise_type' # Added missing exercise_type field
+        ]
+        # Optionally, make 'categories' write-only if you only want names on read
+        # extra_kwargs = {
+        #     'categories': {'write_only': True}
+        # } 

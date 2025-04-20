@@ -1,0 +1,39 @@
+{# Template: gainz/templates/partials/workout_exercise_detail.html #}
+{# Context: Expects a `workout_exercise` object #}
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5>{{ workout_exercise.exercise.name }}</h5>
+    </div>
+    <div class="card-body">
+        {% if workout_exercise.notes %}
+            <p class="card-text text-muted"><em>{{ workout_exercise.notes|linebreaksbr }}</em></p>
+        {% endif %}
+
+        {% if workout_exercise.sets.all %}
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th>Set</th>
+                        <th>Reps</th>
+                        <th>Weight</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for set in workout_exercise.sets.all %}
+                        <tr>
+                            <td>{{ set.set_number }}</td>
+                            <td>{{ set.reps }}</td>
+                            <td>{{ set.weight }} kg</td> {# Assuming kg, adjust unit if needed #}
+                            <td>{% if set.is_warmup %}Warmup{% else %}Working{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="text-muted">No sets recorded for this exercise.</p>
+        {% endif %}
+        {# Add buttons/forms for adding/editing sets here later if desired #}
+    </div>
+</div> 

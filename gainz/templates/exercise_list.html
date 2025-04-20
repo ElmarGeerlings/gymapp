@@ -14,9 +14,9 @@
         <input type="text" id="exercise-search" placeholder="Search exercises...">
     </div>
 
-    {% if categories %}
+    {% if categories_with_exercises %}
         <div class="exercise-categories">
-            {% for category in categories %}
+            {% for category in categories_with_exercises %}
                 <div class="category-section">
                     <h2>{{ category.name }}</h2>
                     
@@ -42,11 +42,11 @@
         </div>
     {% endif %}
 
-    {% if uncategorized %}
+    {% if uncategorized_exercises %}
         <div class="category-section">
             <h2>Uncategorized</h2>
             <div class="exercise-grid">
-                {% for exercise in uncategorized %}
+                {% for exercise in uncategorized_exercises %}
                     <div class="exercise-card">
                         <h3>{{ exercise.name }}</h3>
                         <div class="exercise-meta">
@@ -61,7 +61,7 @@
         </div>
     {% endif %}
     
-    {% if not categories and not uncategorized %}
+    {% if not categories_with_exercises and not uncategorized_exercises %}
         <div class="empty-state">
             <p>No exercises have been added yet.</p>
             <a href="#" class="btn btn-primary">Add Your First Exercise</a>

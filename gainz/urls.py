@@ -10,7 +10,8 @@ from gainz.views import (
     ExerciseViewSet, 
     workout_detail,
     workout_list,
-    exercise_list
+    exercise_list,
+    routine_list
 )
 from django.contrib import admin
 
@@ -46,4 +47,7 @@ urlpatterns = [
     
     # Exercise list
     path('exercises/', exercise_list, name='exercise-list'),
+    
+    # Routine list
+    path('routines/', routine_list, name='routine-list'),
 ]
