@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>{{ title }}</h2>
+
+    <form method="post" action="{% url 'exercise-add' %}">
+        {% csrf_token %}
+
+        <div class="form-group">
+            <label for="id_name">Exercise Name:</label>
+            <input type="text" name="name" id="id_name" value="{{ form_data.name|default:'' }}" required class="form-control {% if errors.name %}is-invalid{% endif %}">
+            {% if errors.name %}
+                <div class="invalid-feedback">{{ errors.name }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            <label for="id_description">Description:</label>
+            <textarea name="description" id="id_description" rows="3" class="form-control">{{ form_data.description|default:'' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="id_categories">Categories:</label>
+            <select name="categories" id="id_categories" multiple class="form-control">
+                {% for category in categories %}
+                    <option value="{{ category.id }}" {% if category.id|stringformat:"s" in form_data.categories %}selected{% endif %}>{{ category.name }}</option>
+                {% endfor %}
+            </select>
+            <small class="form-text text-muted">Hold Ctrl or Cmd to select multiple categories.</small>
+        </div>
+
+        <div class="form-group">
+            <label for="id_exercise_type">Exercise Type:</label>
+            <select name="exercise_type" id="id_exercise_type" class="form-control {% if errors.exercise_type %}is-invalid{% endif %}">
+                {% for code, name in exercise_types %}
+                    <option value="{{ code }}" {% if code == form_data.exercise_type|default:'accessory' %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+             {% if errors.exercise_type %}
+                <div class="invalid-feedback">{{ errors.exercise_type }}</div>
+            {% endif %}
+        </div>
+
+        <button type="submit" class="btn btn-primary">Add Exercise</button>
+        <a href="{% url 'exercise-list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+
+</div>
+{% endblock %}

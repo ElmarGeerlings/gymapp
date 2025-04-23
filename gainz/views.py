@@ -22,7 +22,7 @@ class ExerciseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Exercise.objects.filter(
-            models.Q(is_custom=False) | 
+            models.Q(is_custom=False) |
             models.Q(is_custom=True, user=self.request.user)
         )
 
@@ -44,7 +44,7 @@ class WorkoutViewSet(viewsets.ModelViewSet):
     def add_exercise(self, request, pk=None):
         workout = self.get_object()
         serializer = WorkoutExerciseSerializer(data=request.data)
-        
+
         if serializer.is_valid():
             serializer.save(workout=workout)
             return Response(serializer.data)
@@ -53,30 +53,30 @@ class WorkoutViewSet(viewsets.ModelViewSet):
 class WorkoutExerciseViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutExerciseSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
         return WorkoutExercise.objects.filter(workout__user=self.request.user)
 
 class ExerciseSetViewSet(viewsets.ModelViewSet):
     serializer_class = ExerciseSetSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
         return ExerciseSet.objects.filter(workout_exercise__workout__user=self.request.user)
-    
+
     def perform_create(self, serializer):
         workout_exercise_id = self.kwargs.get('workout_exercise_id')
         if workout_exercise_id:
             workout_exercise = get_object_or_404(
-                WorkoutExercise, 
+                WorkoutExercise,
                 id=workout_exercise_id,
                 workout__user=self.request.user
             )
-            
+
             # Get the next set number
             last_set = ExerciseSet.objects.filter(workout_exercise=workout_exercise).order_by('-set_number').first()
             next_set_number = 1 if not last_set else last_set.set_number + 1
-            
+
             serializer.save(
                 workout_exercise=workout_exercise,
                 set_number=next_set_number
@@ -134,33 +134,47 @@ def home(request):
 def workout_list(request):
     """Display a list of the user's workouts"""
     workouts = Workout.objects.filter(user=request.user).order_by('-date')
-    
+
     context = {
         'workouts': workouts,
         'title': 'My Workouts'
     }
-    
+
     return render(request, 'workout_list.html', context)
 
 @login_required
 def exercise_list(request):
-    """Display a list of exercises organized by category"""
-    # Get all categories with their exercises
-    # The related_name 'exercises' on the ManyToManyField still makes this work
-    categories_with_exercises = ExerciseCategory.objects.prefetch_related('exercises').all()
-    
-    # Get exercises that have no category assigned
-    uncategorized_exercises = Exercise.objects.filter(categories__isnull=True)
-    
-    # Filter out empty categories if needed (optional)
-    # categories_with_exercises = [cat for cat in categories_with_exercises if cat.exercises.exists()]
+    """Display a list of exercises organized by category and provide data for the add modal."""
+    # Fetch all exercises for the list display
+    all_exercises = Exercise.objects.prefetch_related('categories').order_by('name')
+
+    # Group exercises by category for display
+    exercises_by_category = {}
+    uncategorized_exercises = []
+    for exercise in all_exercises:
+        if exercise.categories.exists():
+            for category in exercise.categories.all():
+                if category.name not in exercises_by_category:
+                    exercises_by_category[category.name] = []
+                if exercise not in exercises_by_category[category.name]:
+                   exercises_by_category[category.name].append(exercise)
+        else:
+            uncategorized_exercises.append(exercise)
+
+    sorted_categories_list = sorted(exercises_by_category.items())
+
+    # Fetch data needed for the 'Add Exercise' modal form
+    all_categories_for_form = ExerciseCategory.objects.all()
+    exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
 
     context = {
-        'categories': categories_with_exercises, # Renamed for clarity
-        'uncategorized': uncategorized_exercises, # Renamed for clarity
+        'grouped_exercises': sorted_categories_list,
+        'uncategorized': uncategorized_exercises,
+        'categories_for_form': all_categories_for_form, # For modal dropdown
+        'exercise_types_for_form': exercise_type_choices, # For modal dropdown
         'title': 'Exercise Library'
     }
-    
+
     return render(request, 'exercise_list.html', context)
 
 @login_required
@@ -168,10 +182,10 @@ def routine_list(request):
     """Display a list of the user's programs and routines."""
     # Fetch programs with their routines prefetched
     programs = Program.objects.filter(user=request.user).prefetch_related('routines').order_by('name')
-    
+
     # Fetch standalone routines (those not assigned to any program)
     standalone_routines = Routine.objects.filter(user=request.user, program__isnull=True).order_by('name')
-    
+
     context = {
         'programs': programs,
         'standalone_routines': standalone_routines,

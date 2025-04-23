@@ -37,12 +37,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Third-party apps
     'rest_framework',
     'corsheaders',
     'debug_toolbar',
-    
+
     # Local apps
     'gainz.exercises',  # Full path to the app
     'gainz.workouts',   # Full path to the app
@@ -82,14 +82,25 @@ WSGI_APPLICATION = 'gainz.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'gainz_db',  # This will be our database name
+#         'USER': 'postgres',  # Default PostgreSQL user
+#         'PASSWORD': 'elmar',  # The password you're setting during installation
+#         'HOST': '127.0.0.1',  # localhost
+#         'PORT': '5432',      # Default PostgreSQL port
+#     }
+# }
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'gainz_db',  # This will be our database name
-        'USER': 'postgres',  # Default PostgreSQL user
-        'PASSWORD': 'elmar',  # The password you're setting during installation
-        'HOST': '127.0.0.1',  # localhost
-        'PORT': '5432',      # Default PostgreSQL port
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "gainz_db",
+        "USER": "gainz",
+        "PASSWORD": "elmar",
+        "HOST": "127.0.0.1",
+        "PORT": "5432",
     }
 }
 
@@ -134,3 +145,7 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Authentication Settings
+LOGIN_REDIRECT_URL = '/'  # Redirect to homepage after login
+LOGIN_URL = 'login'       # URL name of the login view

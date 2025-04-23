@@ -3,17 +3,18 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from gainz.views import (
     home,  # your homepage view
-    WorkoutViewSet, 
-    WorkoutExerciseViewSet, 
+    WorkoutViewSet,
+    WorkoutExerciseViewSet,
     ExerciseSetViewSet,
-    ExerciseCategoryViewSet, 
-    ExerciseViewSet, 
+    ExerciseCategoryViewSet,
+    ExerciseViewSet,
     workout_detail,
     workout_list,
     exercise_list,
     routine_list
 )
 from django.contrib import admin
+from django.contrib.auth import views as auth_views  # Import auth views
 
 # API router setup
 router = DefaultRouter()
@@ -27,27 +28,31 @@ router.register(r'workouts/sets', ExerciseSetViewSet, basename='exercise-set')
 urlpatterns = [
     # Homepage
     path('', home, name='home'),
-    
+
     # Admin site
     path('admin/', admin.site.urls),
-    
+
+    # Authentication views
+    path('accounts/login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),  # Added login view
+    path('accounts/logout/', auth_views.LogoutView.as_view(next_page='home'), name='logout'), # Added logout view
+
     # API endpoints
     path('api/', include(router.urls)),
-    
+
     # Nested API endpoints
-    path('api/workouts/exercises/<int:workout_exercise_id>/sets/', 
-         ExerciseSetViewSet.as_view({'post': 'create'}), 
+    path('api/workouts/exercises/<int:workout_exercise_id>/sets/',
+         ExerciseSetViewSet.as_view({'post': 'create'}),
          name='exercise-set-create'),
-    
+
     # Template views
     path('workouts/<int:workout_id>/', workout_detail, name='workout-detail'),
-    
+
     # Workout list
     path('workouts/', workout_list, name='workout-list'),
-    
+
     # Exercise list
     path('exercises/', exercise_list, name='exercise-list'),
-    
+
     # Routine list
     path('routines/', routine_list, name='routine-list'),
 ]

@@ -5,7 +5,9 @@
     <div class="page-header">
         <h1>Exercise Library</h1>
         <div class="actions">
-            <a href="#" class="btn btn-primary">Add New Exercise</a>
+            <button type="button" class="btn btn-primary" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
+                Add New Exercise
+            </button>
             <a href="#" class="btn btn-secondary">Manage Categories</a>
         </div>
     </div>
@@ -14,17 +16,17 @@
         <input type="text" id="exercise-search" placeholder="Search exercises...">
     </div>
 
-    {% if categories_with_exercises %}
+    {% if grouped_exercises %}
         <div class="exercise-categories">
-            {% for category in categories_with_exercises %}
+            {% for category_name, exercises_in_category in grouped_exercises %}
                 <div class="category-section">
-                    <h2>{{ category.name }}</h2>
-                    
-                    {% if category.exercises.all %}
+                    <h2>{{ category_name }}</h2>
+
+                    {% if exercises_in_category %}
                         <div class="exercise-grid">
-                            {% for exercise in category.exercises.all %}
+                            {% for exercise in exercises_in_category %}
                                 <div class="exercise-card">
-                                    <h3>{{ exercise.name }}</h3>
+                                    <h3>{{ exercise.name }} {% if exercise.is_custom %}(Custom){% endif %}</h3>
                                     <div class="exercise-meta">
                                         <span class="exercise-type">{{ exercise.get_exercise_type_display }}</span>
                                     </div>
@@ -35,6 +37,7 @@
                             {% endfor %}
                         </div>
                     {% else %}
+                        {# This case might not happen with the new view logic, but keep for safety #}
                         <p class="empty-category">No exercises in this category yet.</p>
                     {% endif %}
                 </div>
@@ -42,13 +45,13 @@
         </div>
     {% endif %}
 
-    {% if uncategorized_exercises %}
+    {% if uncategorized %}
         <div class="category-section">
             <h2>Uncategorized</h2>
             <div class="exercise-grid">
-                {% for exercise in uncategorized_exercises %}
+                {% for exercise in uncategorized %}
                     <div class="exercise-card">
-                        <h3>{{ exercise.name }}</h3>
+                        <h3>{{ exercise.name }} {% if exercise.is_custom %}(Custom){% endif %}</h3>
                         <div class="exercise-meta">
                             <span class="exercise-type">{{ exercise.get_exercise_type_display }}</span>
                         </div>
@@ -60,12 +63,70 @@
             </div>
         </div>
     {% endif %}
-    
-    {% if not categories_with_exercises and not uncategorized_exercises %}
+
+    {% if not grouped_exercises and not uncategorized %}
         <div class="empty-state">
             <p>No exercises have been added yet.</p>
-            <a href="#" class="btn btn-primary">Add Your First Exercise</a>
+            <button type="button" class="btn btn-primary" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
+                Add Your First Exercise
+            </button>
         </div>
     {% endif %}
 </div>
-{% endblock %} 
+
+<div id="add-exercise-modal" class="siu-modal" style="display: none;">
+    <div class="siu-modal-content">
+        <span class="siu-modal-close">&times;</span>
+        <h2>Add New Exercise</h2>
+        <form id="add-exercise-form" method="post" action="{% url 'api:exercise-list' %}">
+            {% csrf_token %}
+            <div id="form-errors" class="alert alert-danger" style="display: none;"></div>
+
+            <div class="form-group">
+                <label for="id_name_modal">Exercise Name:</label>
+                <input type="text" name="name" id="id_name_modal" required class="form-control">
+                <div id="error-name" class="invalid-feedback" style="display: none;"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="id_description_modal">Description:</label>
+                <textarea name="description" id="id_description_modal" rows="3" class="form-control"></textarea>
+                <div id="error-description" class="invalid-feedback" style="display: none;"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="id_categories_modal">Categories:</label>
+                <select name="categories" id="id_categories_modal" multiple class="form-control">
+                    {% for category in categories_for_form %}
+                        <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% empty %}
+                        <option value="" disabled>No categories available</option>
+                    {% endfor %}
+                </select>
+                <small class="form-text text-muted">Hold Ctrl or Cmd to select multiple.</small>
+                <div id="error-categories" class="invalid-feedback" style="display: none;"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="id_exercise_type_modal">Exercise Type:</label>
+                <select name="exercise_type" id="id_exercise_type_modal" class="form-control">
+                    {% for code, name in exercise_types_for_form %}
+                        <option value="{{ code }}" {% if code == 'accessory' %}selected{% endif %}>{{ name }}</option>
+                    {% empty %}
+                        <option value="" disabled>No types available</option>
+                    {% endfor %}
+                </select>
+                <div id="error-exercise_type" class="invalid-feedback" style="display: none;"></div>
+            </div>
+
+            <button type="button"
+                    class="btn btn-primary"
+                    data-function="click->saveExercise"
+                    >
+                Save Exercise
+            </button>
+            <button type="button" class="btn btn-secondary siu-modal-close">Cancel</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
