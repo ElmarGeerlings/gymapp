@@ -11,7 +11,8 @@ from gainz.views import (
     workout_detail,
     workout_list,
     exercise_list,
-    routine_list
+    routine_list,
+    simple_api_test # Add our new view here
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -38,6 +39,9 @@ urlpatterns = [
 
     # API endpoints
     path('api/', include(router.urls)),
+
+    # Simple API test endpoint
+    path('api/simple-test/', simple_api_test, name='simple-api-test'),
 
     # Nested API endpoints
     path('api/workouts/exercises/<int:workout_exercise_id>/sets/',

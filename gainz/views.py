@@ -9,6 +9,7 @@ from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
 from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
+from django.http import JsonResponse
 
 # Exercise ViewSets
 class ExerciseCategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -192,3 +193,16 @@ def routine_list(request):
         'title': 'My Routines & Programs'
     }
     return render(request, 'routine_list.html', context)
+
+def simple_api_test(request):
+    """
+    A simple API test view that returns a JSON response with an HTML snippet.
+    """
+    if request.method == 'GET':
+        html_content = "<p style='color: green; border: 1px solid green; padding: 5px;'>This HTML came from Python!</p>"
+        return JsonResponse({
+            'message': 'Hello from Python! API test successful.',
+            'status': 'ok',
+            'html_snippet': html_content
+        })
+    return JsonResponse({'error': 'Only GET requests are allowed'}, status=405)

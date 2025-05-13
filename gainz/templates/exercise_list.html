@@ -5,9 +5,13 @@
     <div class="page-header">
         <h1>Exercise Library</h1>
         <div class="actions">
-            <button type="button" class="btn btn-primary" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
+            <button type="button" class="btn btn-primary" data-function="click->show_modal" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
                 Add New Exercise
             </button>
+            <button type="button" class="btn btn-info ms-2" data-function="click->testDataFunction">
+                Test data-function
+            </button>
+            <div id="python-html-container" class="ms-2"></div>
             <a href="#" class="btn btn-secondary">Manage Categories</a>
         </div>
     </div>
@@ -67,18 +71,18 @@
     {% if not grouped_exercises and not uncategorized %}
         <div class="empty-state">
             <p>No exercises have been added yet.</p>
-            <button type="button" class="btn btn-primary" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
+            <button type="button" class="btn btn-primary" data-function="click->show_modal" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
                 Add Your First Exercise
             </button>
         </div>
     {% endif %}
 </div>
 
-<div id="add-exercise-modal" class="siu-modal" style="display: none;">
+<div id="add-exercise-modal" class="siu-modal" style="display: none;" data-function="click->close_modal">
     <div class="siu-modal-content">
-        <span class="siu-modal-close">&times;</span>
+        <span class="siu-modal-close" data-function="click->close_modal">&times;</span>
         <h2>Add New Exercise</h2>
-        <form id="add-exercise-form" method="post" action="{% url 'api:exercise-list' %}">
+        <form id="add-exercise-form" method="post" action="/api/exercises/">
             {% csrf_token %}
             <div id="form-errors" class="alert alert-danger" style="display: none;"></div>
 
@@ -125,7 +129,7 @@
                     >
                 Save Exercise
             </button>
-            <button type="button" class="btn btn-secondary siu-modal-close">Cancel</button>
+            <button type="button" class="btn btn-secondary siu-modal-close" data-function="click->close_modal">Cancel</button>
         </form>
     </div>
 </div>

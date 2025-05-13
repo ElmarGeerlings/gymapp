@@ -326,6 +326,67 @@ async function saveExercise(event) {
     }
 }
 
+// --- Save Workout Modal Submission ---
+// This function will be triggered by data-function="click->saveWorkout"
+async function saveWorkout(event) {
+    const form = event.target.closest('form');
+    if (!form) return;
+    const formId = form.id;
+    clearFormErrors(formId);
+
+    const formData = new FormData(form);
+    const data = {};
+    formData.forEach((value, key) => {
+        data[key] = value;
+    });
+
+    // Handle duration: API expects HH:MM:SS or null
+    // Basic parsing for "Xh Ym Zs" or HH:MM:SS - can be improved
+    if (data.duration) {
+        let durationStr = data.duration;
+        let hours = 0, minutes = 0, seconds = 0;
+        const timeParts = durationStr.match(/(\d+)\s*h|(\d+)\s*m|(\d+)\s*s|(\d{1,2}:\d{2}(:\d{2})?)/gi);
+
+        if (timeParts) {
+            if (durationStr.includes(':')) { // HH:MM:SS format
+                const parts = durationStr.split(':');
+                hours = parseInt(parts[0]) || 0;
+                minutes = parseInt(parts[1]) || 0;
+                seconds = parts[2] ? parseInt(parts[2]) : 0;
+            } else { // Xh Ym Zs format
+                timeParts.forEach(part => {
+                    if (part.toLowerCase().includes('h')) hours = parseInt(part) || 0;
+                    else if (part.toLowerCase().includes('m')) minutes = parseInt(part) || 0;
+                    else if (part.toLowerCase().includes('s')) seconds = parseInt(part) || 0;
+                });
+            }
+            data.duration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        } else if (durationStr.trim() === '') {
+            data.duration = null; // Send null if empty string
+        } else {
+            // If parsing fails and it's not empty, keep original for server-side validation to catch
+            // Or display a client-side error immediately
+            displayFormErrors(formId, { duration: ['Invalid duration format. Use HH:MM:SS or like 1h 30m.'] });
+            send_toast('Invalid duration format.', 'warning');
+            return;
+        }
+    } else {
+        data.duration = null; // Send null if field is not present or empty
+    }
+
+    const response = await httpRequestHelper(form.action, 'POST', data);
+
+    if (response.ok) {
+        send_toast('Workout added successfully!', 'success');
+        const modal = form.closest('.siu-modal');
+        if (modal) modal.style.display = 'none';
+        form.reset();
+        window.location.reload(); // Reload to see the new workout in the list
+    } else {
+        displayFormErrors(formId, response.data || { detail: response.statusText });
+        send_toast(response.data?.detail || 'Error saving workout.', 'danger');
+    }
+}
 
 // --- Add Set to Workout Exercise ---
 // Triggered by data-function="click->addSet"
@@ -449,13 +510,40 @@ async function addExerciseToWorkout(event) {
     }
 }
 
+// --- Test Function for data-function ---
+async function testDataFunction(event) {
+    console.log("Test button clicked, preparing to call API...");
+    console.log("Button clicked:", event.target);
+
+    const response = await httpRequestHelper('/api/simple-test/', 'GET');
+    const pythonHtmlContainer = document.getElementById('python-html-container');
+
+    if (response.ok && response.data && response.data.html_snippet) {
+        console.log('API Response Data:', response.data);
+        if (pythonHtmlContainer) {
+            pythonHtmlContainer.innerHTML = response.data.html_snippet;
+        } else {
+            console.warn('Placeholder div #python-html-container not found.');
+        }
+    } else {
+        console.error('API Error or missing html_snippet:', response.data);
+        alert(`Error from API: ${response.data?.error || response.statusText}`);
+        if (pythonHtmlContainer) {
+            pythonHtmlContainer.innerHTML = "<p style='color: red;'>Failed to load HTML from Python.</p>";
+        }
+    }
+}
+
 // ======================================
 //          INITIALIZATION
 // ======================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOMContentLoaded event fired');
+
     // Initial scan for elements present on page load
     document.querySelectorAll('[data-function]').forEach(element => {
+         console.log('Initial scan found element with data-function:', element);
          handle_attribute(element, element.getAttributeNode('data-function'));
     });
 
@@ -465,18 +553,5 @@ document.addEventListener('DOMContentLoaded', () => {
         subtree: true,
         attributes: true,
         attributeFilter: ['data-function'] // Only observe data-function
-    });
-
-    // Attach general listeners (like modal open/close)
-    document.body.addEventListener('click', (event) => {
-        if (event.target.matches('[data-modal-name]')) {
-            show_modal(event);
-        }
-        // Close modal listener (remains the same)
-        if (event.target.matches('.siu-modal') || event.target.closest('.siu-modal-close')) {
-             if (!event.target.closest('.siu-modal-content') || event.target.closest('.siu-modal-close')) {
-                 close_modal(event);
-             }
-        }
     });
 });
