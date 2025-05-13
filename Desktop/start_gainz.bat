@@ -2,10 +2,9 @@
 echo Starting Gainz Workout Tracker...
 
 :: Navigate to project directory
-cd C:\gymapp
+cd C:\Users\Elmar\buffdaddy\gymapp
 
-:: Activate virtual environment
-call venv\Scripts\activate
+py -3.12 -m venv venv_new
 
 :: Add PostgreSQL to PATH (temporary fix until reboot makes it permanent)
 set PATH=%PATH%;C:\Program Files\PostgreSQL\17\bin
@@ -14,4 +13,4 @@ set PATH=%PATH%;C:\Program Files\PostgreSQL\17\bin
 python manage.py runserver
 
 :: Keep window open if there's an error
-pause 
+pause
