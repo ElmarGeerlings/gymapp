@@ -264,18 +264,24 @@ function displayFormErrors(formId, errors) {
 function clearFormErrors(formId) {
     const form = document.getElementById(formId);
     if (!form) return;
+
+    // Clear general errors
     const generalErrorDiv = form.querySelector('#form-errors');
     if (generalErrorDiv) {
         generalErrorDiv.innerHTML = '';
         generalErrorDiv.style.display = 'none';
     }
-    form.querySelectorAll('.invalid-feedback').forEach(div => {
-        div.textContent = '';
-        div.style.display = 'none';
+
+    // Clear field-specific errors and remove invalid classes
+    const errorMessages = form.querySelectorAll('.invalid-feedback');
+    errorMessages.forEach(errorDiv => {
+        errorDiv.textContent = '';
+        errorDiv.style.display = 'none';
     });
-    form.querySelectorAll('.is-invalid').forEach(field => {
-        field.classList.remove('is-invalid');
-         field.removeAttribute('aria-describedby');
+
+    const invalidInputs = form.querySelectorAll('.is-invalid');
+    invalidInputs.forEach(input => {
+        input.classList.remove('is-invalid');
     });
 }
 
@@ -510,29 +516,68 @@ async function addExerciseToWorkout(event) {
     }
 }
 
-// --- Test Function for data-function ---
-async function testDataFunction(event) {
-    console.log("Test button clicked, preparing to call API...");
-    console.log("Button clicked:", event.target);
+// ======================================
+// EXERCISE LIST FILTERING & SEARCH
+// ======================================
 
-    const response = await httpRequestHelper('/api/simple-test/', 'GET');
-    const pythonHtmlContainer = document.getElementById('python-html-container');
+function debounce(func, delay) {
+    let timeoutId;
+    return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
 
-    if (response.ok && response.data && response.data.html_snippet) {
-        console.log('API Response Data:', response.data);
-        if (pythonHtmlContainer) {
-            pythonHtmlContainer.innerHTML = response.data.html_snippet;
-        } else {
-            console.warn('Placeholder div #python-html-container not found.');
+// Make this function global for data-function
+window.fetchAndUpdateExerciseList = async function() {
+    const form = document.getElementById('exercise-filter-form');
+    if (!form) return;
+
+    const searchInput = document.getElementById('exercise-search');
+    const typeFilter = document.getElementById('exercise-type-filter');
+    const categoryFilter = document.getElementById('category-filter');
+    const listContainer = document.getElementById('exercise-list-container');
+
+    if (!listContainer) return;
+
+    const params = new URLSearchParams();
+    if (searchInput && searchInput.value) { // Added null check for searchInput
+        params.append('search_query', searchInput.value);
+    }
+    if (typeFilter && typeFilter.value) { // Added null check for typeFilter
+        params.append('exercise_type', typeFilter.value);
+    }
+    if (categoryFilter && categoryFilter.value) { // Added null check for categoryFilter
+        params.append('category', categoryFilter.value);
+    }
+
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({ path: newUrl }, '', newUrl);
+
+    try {
+        const response = await fetch(`${form.action}?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        if (!response.ok) {
+            console.error('Error fetching exercise list:', response.statusText);
+            listContainer.innerHTML = '<p class="text-danger">Error loading exercises. Please try again.</p>';
+            return;
         }
-    } else {
-        console.error('API Error or missing html_snippet:', response.data);
-        alert(`Error from API: ${response.data?.error || response.statusText}`);
-        if (pythonHtmlContainer) {
-            pythonHtmlContainer.innerHTML = "<p style='color: red;'>Failed to load HTML from Python.</p>";
-        }
+        const html = await response.text();
+        listContainer.innerHTML = html;
+    } catch (error) {
+        console.error('Fetch error:', error);
+        listContainer.innerHTML = '<p class="text-danger">Error loading exercises. Please try again.</p>';
     }
 }
+
+// Make this debounced function global for data-function
+window.debouncedFetchExercises = debounce(window.fetchAndUpdateExerciseList, 300);
 
 // ======================================
 //          INITIALIZATION

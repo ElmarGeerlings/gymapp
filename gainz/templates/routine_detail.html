@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ title|default:"Routine Details" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h1 class="card-title h3 mb-0">{{ routine.name }}</h1>
+        </div>
+        <div class="card-body">
+            {% if routine.description %}
+                <p class="card-text">{{ routine.description }}</p>
+            {% else %}
+                <p class="card-text text-muted">No description provided for this routine.</p>
+            {% endif %}
+
+            {% if routine.program %}
+                <p class="card-text">Part of Program: <a href="#">{{ routine.program.name }}</a></p> {# Placeholder link for program detail #}
+            {% endif %}
+        </div>
+    </div>
+
+    <h2 class="mt-4 mb-3">Exercises in this Routine</h2>
+
+    {% if routine_exercises %}
+        <div class="list-group">
+            {% for r_exercise in routine_exercises %}
+                <div class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">{{ r_exercise.exercise.name }}</h5>
+                        <small class="text-muted">Order: {{ r_exercise.order }}</small>
+                    </div>
+                    <p class="mb-1">
+                        <strong>Targets:</strong>
+                        Sets: {{ r_exercise.target_sets|default:"N/A" }} |
+                        Reps: {{ r_exercise.target_reps|default:"N/A" }} |
+                        Rest: {{ r_exercise.target_rest_seconds|default:"N/A" }}s
+                    </p>
+                    {% if r_exercise.progression_strategy_notes %}
+                        <p class="mb-1"><strong>Progression Notes:</strong> {{ r_exercise.progression_strategy_notes }}</p>
+                    {% endif %}
+                    {% if r_exercise.notes %}
+                        <p class="mb-1"><strong>Exercise Notes:</strong> {{ r_exercise.notes }}</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            This routine currently has no exercises defined.
+        </div>
+    {% endif %}
+
+    <div class="mt-4">
+        <a href="{% url 'routine-list' %}" class="btn btn-secondary">Back to Routines</a>
+        <a href="{% url 'routine-update' routine.id %}" class="btn btn-primary">Edit Routine</a>
+        <a href="{% url 'routine-delete' routine.id %}" class="btn btn-danger">Delete Routine</a>
+    </div>
+</div>
+{% endblock content %} 

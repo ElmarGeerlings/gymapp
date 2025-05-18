@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ title|default:"Confirm Deletion" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h1 class="card-title h3 mb-0">{{ title }}</h1>
+        </div>
+        <div class="card-body">
+            <p>Are you sure you want to delete the program "<strong>{{ object.name }}</strong>"?</p>
+            <p>This will also detach any routines currently associated with this program, but it will not delete the routines themselves.</p>
+            <p class="text-danger">This action cannot be undone for the program.</p>
+            
+            <form method="post">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger">Yes, Delete Program</button>
+                <a href="{% url 'routine-list' %}" class="btn btn-secondary">Cancel</a> {#  Back to routine list for now #}
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock content %} 

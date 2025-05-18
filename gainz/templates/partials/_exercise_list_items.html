@@ -1,0 +1,61 @@
+{% if grouped_exercises %}
+    <div class="exercise-categories">
+        {% for category_name, exercises_in_category in grouped_exercises %}
+            <div class="category-section">
+                <h2>{{ category_name }}</h2>
+                {% if exercises_in_category %}
+                    <div class="exercise-grid">
+                        {% for exercise in exercises_in_category %}
+                            <div class="exercise-card">
+                                <h3>{{ exercise.name }} {% if exercise.is_custom %}<span class="badge bg-secondary">Custom</span>{% endif %}</h3>
+                                <div class="exercise-meta mb-2">
+                                    <span class="badge bg-info">{{ exercise.get_exercise_type_display }}</span>
+                                </div>
+                                {% if exercise.description %}
+                                    <p class="small text-muted">{{ exercise.description|truncatewords:15 }}</p>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted fst-italic">No exercises in this category matching your filters.</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+{% if uncategorized %}
+    <div class="category-section">
+        <h2>Uncategorized</h2>
+        {% if uncategorized %}
+            <div class="exercise-grid">
+                {% for exercise in uncategorized %}
+                    <div class="exercise-card">
+                        <h3>{{ exercise.name }} {% if exercise.is_custom %}<span class="badge bg-secondary">Custom</span>{% endif %}</h3>
+                        <div class="exercise-meta mb-2">
+                            <span class="badge bg-info">{{ exercise.get_exercise_type_display }}</span>
+                        </div>
+                        {% if exercise.description %}
+                            <p class="small text-muted">{{ exercise.description|truncatewords:15 }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+             <p class="text-muted fst-italic">No uncategorized exercises matching your filters.</p>
+        {% endif %}
+    </div>
+{% endif %}
+
+{% if not grouped_exercises and not uncategorized %}
+    <div class="empty-state text-center py-5">
+        <p class="lead">No exercises match your current filters.</p>
+        {% if not request.GET.search_query and not request.GET.exercise_type and not request.GET.category %}
+             <p class="text-muted">Consider adding some exercises if your library is empty!</p>
+            <button type="button" class="btn btn-primary mt-3" data-function="click->show_modal" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
+                Add Your First Exercise
+            </button>
+        {% endif %}
+    </div>
+{% endif %} 

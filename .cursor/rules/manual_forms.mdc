@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Rule Name: manual_forms.mdc
+# Description: Prefer manually defined forms (e.g., inheriting from `django.forms.Form`) over `django.forms.ModelForm` or other model-based form helpers. Explicitly define all form fields and handle data processing (validation, saving) manually in the view or form methods.
+

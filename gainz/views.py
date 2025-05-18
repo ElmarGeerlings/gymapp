@@ -9,7 +9,9 @@ from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
 from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
+from django.template.loader import render_to_string
+from django.db.models import Q
 
 # Exercise ViewSets
 class ExerciseCategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -146,13 +148,30 @@ def workout_list(request):
 @login_required
 def exercise_list(request):
     """Display a list of exercises organized by category and provide data for the add modal."""
-    # Fetch all exercises for the list display
-    all_exercises = Exercise.objects.prefetch_related('categories').order_by('name')
+    
+    search_query = request.GET.get('search_query', '')
+    exercise_type_filter = request.GET.get('exercise_type', '')
+    category_filter = request.GET.get('category', '')
 
-    # Group exercises by category for display
+    exercises = Exercise.objects.prefetch_related('categories').select_related('user').order_by('name')
+
+    if search_query:
+        exercises = exercises.filter(
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if exercise_type_filter:
+        exercises = exercises.filter(exercise_type=exercise_type_filter)
+
+    if category_filter:
+        exercises = exercises.filter(categories__id=category_filter)
+    
+    exercises = exercises.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user))
+
     exercises_by_category = {}
     uncategorized_exercises = []
-    for exercise in all_exercises:
+    for exercise in exercises:
         if exercise.categories.exists():
             for category in exercise.categories.all():
                 if category.name not in exercises_by_category:
@@ -164,18 +183,27 @@ def exercise_list(request):
 
     sorted_categories_list = sorted(exercises_by_category.items())
 
-    # Fetch data needed for the 'Add Exercise' modal form
-    all_categories_for_form = ExerciseCategory.objects.all()
+    all_categories_for_form = ExerciseCategory.objects.all().order_by('name')
     exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
 
     context = {
         'grouped_exercises': sorted_categories_list,
         'uncategorized': uncategorized_exercises,
-        'categories_for_form': all_categories_for_form, # For modal dropdown
-        'exercise_types_for_form': exercise_type_choices, # For modal dropdown
-        'title': 'Exercise Library'
+        'categories_for_form': all_categories_for_form,
+        'exercise_types_for_form': exercise_type_choices,
+        'title': 'Exercise Library',
+        'current_search_query': search_query,
+        'current_exercise_type': exercise_type_filter,
+        'current_category': category_filter,
+        'request': request
     }
 
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        # For AJAX requests, render only the partial and return as HTML
+        html = render_to_string('partials/_exercise_list_items.html', context, request=request)
+        return HttpResponse(html)
+    
+    # For regular GET requests, render the full page
     return render(request, 'exercise_list.html', context)
 
 @login_required
@@ -193,6 +221,296 @@ def routine_list(request):
         'title': 'My Routines & Programs'
     }
     return render(request, 'routine_list.html', context)
+
+@login_required
+def routine_detail(request, routine_id):
+    """Display the details of a specific routine and its exercises."""
+    routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+    # Fetch routine exercises, ordered, and prefetch the related exercise object
+    # to avoid extra DB queries in the template.
+    routine_exercises = routine.exercises.select_related('exercise').order_by('order')
+
+    context = {
+        'routine': routine,
+        'routine_exercises': routine_exercises,
+        'title': f"Routine: {routine.name}"
+    }
+    return render(request, 'routine_detail.html', context)
+
+@login_required
+def routine_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
+        program_id = request.POST.get('program')
+        
+        # Basic validation (more can be added)
+        if not name:
+            programs = Program.objects.filter(user=request.user)
+            all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
+            return render(request, 'routine_form.html', {
+                'title': 'Create New Routine',
+                'error': 'Name is required.',
+                'programs': programs,
+                'all_exercises': all_exercises,
+                'name_value': name,
+                'description_value': description,
+                'program_id_value': program_id
+            })
+
+        program = None
+        if program_id:
+            try:
+                program = Program.objects.get(id=program_id, user=request.user)
+            except Program.DoesNotExist:
+                pass 
+
+        routine = Routine.objects.create(
+            user=request.user,
+            name=name,
+            description=description,
+            program=program
+        )
+        
+        # Process RoutineExercise data
+        form_count = int(request.POST.get('routine_exercise_form_count', 0))
+        for i in range(form_count):
+            exercise_pk = request.POST.get(f'exercise_pk_{i}')
+            order = request.POST.get(f'order_{i}', 0)
+            target_sets = request.POST.get(f'target_sets_{i}')
+            target_reps = request.POST.get(f'target_reps_{i}', '')
+            target_rest_seconds = request.POST.get(f'target_rest_seconds_{i}')
+            progression_notes = request.POST.get(f'progression_strategy_notes_{i}', '')
+            notes = request.POST.get(f'notes_{i}', '')
+
+            if not exercise_pk or not target_sets or not target_reps: # Basic validation
+                # Optionally add more robust error handling here, 
+                # e.g. re-render form with errors and submitted data
+                continue # Skip this invalid exercise entry
+
+            try:
+                exercise_instance = Exercise.objects.get(pk=exercise_pk)
+                
+                RoutineExercise.objects.create(
+                    routine=routine,
+                    exercise=exercise_instance,
+                    order=int(order),
+                    target_sets=int(target_sets),
+                    target_reps=target_reps,
+                    target_rest_seconds=int(target_rest_seconds) if target_rest_seconds else None,
+                    progression_strategy_notes=progression_notes,
+                    notes=notes
+                )
+            except Exercise.DoesNotExist:
+                # Handle error: selected exercise does not exist
+                continue # Skip
+            except ValueError: # For int conversion errors
+                # Handle error: invalid number format
+                continue # Skip
+
+        return redirect('routine-detail', routine_id=routine.id)
+    else:
+        programs = Program.objects.filter(user=request.user)
+        all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
+    return render(request, 'routine_form.html', {
+        'title': 'Create New Routine', 
+        'programs': programs, 
+        'all_exercises': all_exercises
+    })
+
+@login_required
+def routine_update(request, routine_id):
+    routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
+        program_id = request.POST.get('program')
+
+        if not name:
+            programs = Program.objects.filter(user=request.user)
+            all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
+            # Fetch existing routine exercises for re-rendering form with errors
+            existing_routine_exercises = routine.exercises.select_related('exercise').order_by('order')
+            return render(request, 'routine_form.html', {
+                'form': None, 
+                'title': f'Edit Routine: {routine.name}',
+                'object': routine,
+                'error': 'Name is required.',
+                'programs': programs,
+                'all_exercises': all_exercises,
+                'routine_exercises': existing_routine_exercises, # Pass existing for error re-render
+                'name_value': name,
+                'description_value': description,
+                'program_id_value': program_id
+            })
+
+        routine.name = name
+        routine.description = description
+        
+        if program_id:
+            try:
+                program = Program.objects.get(id=program_id, user=request.user)
+                routine.program = program
+            except Program.DoesNotExist:
+                routine.program = None 
+        else:
+            routine.program = None 
+        
+        routine.save()
+
+        # Process RoutineExercise data
+        submitted_ids = set() # Keep track of IDs of submitted existing exercises
+        form_count = int(request.POST.get('routine_exercise_form_count', 0))
+
+        for i in range(form_count):
+            exercise_pk = request.POST.get(f'exercise_pk_{i}')
+            order = request.POST.get(f'order_{i}', 0)
+            target_sets = request.POST.get(f'target_sets_{i}')
+            target_reps = request.POST.get(f'target_reps_{i}', '')
+            target_rest_seconds = request.POST.get(f'target_rest_seconds_{i}')
+            progression_notes = request.POST.get(f'progression_strategy_notes_{i}', '')
+            notes = request.POST.get(f'notes_{i}', '')
+            routine_exercise_id = request.POST.get(f'routine_exercise_id_{i}')
+
+            if not exercise_pk or not target_sets or not target_reps: # Basic validation
+                continue
+
+            try:
+                exercise_instance = Exercise.objects.get(pk=exercise_pk)
+                
+                if routine_exercise_id: # Existing exercise
+                    re_instance = RoutineExercise.objects.get(id=routine_exercise_id, routine=routine)
+                    re_instance.exercise = exercise_instance
+                    re_instance.order = int(order)
+                    re_instance.target_sets = int(target_sets)
+                    re_instance.target_reps = target_reps
+                    re_instance.target_rest_seconds = int(target_rest_seconds) if target_rest_seconds else None
+                    re_instance.progression_strategy_notes = progression_notes
+                    re_instance.notes = notes
+                    re_instance.save()
+                    submitted_ids.add(re_instance.id)
+                else: # New exercise
+                    new_re = RoutineExercise.objects.create(
+                        routine=routine,
+                        exercise=exercise_instance,
+                        order=int(order),
+                        target_sets=int(target_sets),
+                        target_reps=target_reps,
+                        target_rest_seconds=int(target_rest_seconds) if target_rest_seconds else None,
+                        progression_strategy_notes=progression_notes,
+                        notes=notes
+                    )
+                    submitted_ids.add(new_re.id) # Though it's new, adding to submitted_ids is harmless here
+            except Exercise.DoesNotExist:
+                continue
+            except RoutineExercise.DoesNotExist: # If an ID was spoofed or belongs to another routine
+                continue
+            except ValueError:
+                continue
+        
+        # Delete RoutineExercises that were not in the submission
+        # This assumes that if an existing exercise is not submitted, it should be deleted.
+        # If an exercise was merely cleared of its values, it might still be submitted with an ID but empty required fields (handled by basic validation above).
+        existing_exercise_ids = set(routine.exercises.values_list('id', flat=True))
+        ids_to_delete = existing_exercise_ids - submitted_ids
+        if ids_to_delete:
+            RoutineExercise.objects.filter(id__in=ids_to_delete, routine=routine).delete()
+
+        return redirect('routine-detail', routine_id=routine.id)
+    else:
+        programs = Program.objects.filter(user=request.user)
+        all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
+        existing_routine_exercises = routine.exercises.select_related('exercise').order_by('order')
+    return render(request, 'routine_form.html', {
+        'form': None, 
+        'title': f'Edit Routine: {routine.name}',
+        'object': routine,
+        'programs': programs,
+        'all_exercises': all_exercises,
+        'routine_exercises': existing_routine_exercises # Pass existing for form pre-fill
+    })
+
+@login_required
+def routine_delete(request, routine_id):
+    routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+    if request.method == 'POST':
+        routine.delete()
+        return redirect('routine-list')
+    return render(request, 'routine_confirm_delete.html', {
+        'object': routine,
+        'title': f'Delete Routine: {routine.name}'
+    })
+
+@login_required
+def program_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
+        is_public_str = request.POST.get('is_public', 'off') # Checkbox value is 'on' or not present
+        is_public = True if is_public_str == 'on' else False
+
+        if not name:
+            # Handle error
+            return render(request, 'program_form.html', {
+                'title': 'Create New Program',
+                'error': 'Name is required.',
+                'name_value': name,
+                'description_value': description,
+                'is_public_value': is_public
+            })
+
+        program = Program.objects.create(
+            user=request.user,
+            name=name,
+            description=description,
+            is_public=is_public
+        )
+        return redirect('routine-list')
+    else:
+        pass # No initial form data to pass for GET
+    return render(request, 'program_form.html', {'title': 'Create New Program'})
+
+@login_required
+def program_update(request, program_id):
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
+        is_public_str = request.POST.get('is_public', 'off')
+        is_public = True if is_public_str == 'on' else False
+
+        if not name:
+            return render(request, 'program_form.html', {
+                'title': f'Edit Program: {program.name}',
+                'object': program,
+                'error': 'Name is required.',
+                'name_value': name, # Pass current (erroneous) values back
+                'description_value': description,
+                'is_public_value': is_public
+            })
+
+        program.name = name
+        program.description = description
+        program.is_public = is_public
+        program.save()
+        return redirect('routine-list')
+    else:
+        pass # For GET, object is passed directly
+    return render(request, 'program_form.html', {
+        'title': f'Edit Program: {program.name}',
+        'object': program
+    })
+
+@login_required
+def program_delete(request, program_id):
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+    if request.method == 'POST':
+        program.delete()
+        return redirect('routine-list')
+    return render(request, 'program_confirm_delete.html', {
+        'object': program,
+        'title': f'Delete Program: {program.name}'
+    })
 
 def simple_api_test(request):
     """

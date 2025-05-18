@@ -16,66 +16,41 @@
         </div>
     </div>
 
-    <div class="search-box">
-        <input type="text" id="exercise-search" placeholder="Search exercises...">
+    <div class="search-and-filters mb-4">
+        <form id="exercise-filter-form" method="get" action="{% url 'exercise-list' %}">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label for="exercise-search" class="form-label visually-hidden">Search Exercises</label>
+                    <input type="text" id="exercise-search" name="search_query" class="form-control" placeholder="Search exercises..." value="{{ request.GET.search_query }}" data-function="input->debouncedFetchExercises">
+                </div>
+                <div class="col-md-3">
+                    <label for="exercise-type-filter" class="form-label visually-hidden">Exercise Type</label>
+                    <select name="exercise_type" id="exercise-type-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
+                        <option value="">All Types</option>
+                        {% for code, name in exercise_types_for_form %}
+                            <option value="{{ code }}" {% if code == request.GET.exercise_type %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="category-filter" class="form-label visually-hidden">Category</label>
+                    <select name="category" id="category-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
+                        <option value="">All Categories</option>
+                        {% for category in categories_for_form %}
+                            <option value="{{ category.id }}" {% if category.id|stringformat:"s" == request.GET.category %}selected{% endif %}>{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {# The submit button is removed for live filtering #}
+            </div>
+        </form>
     </div>
 
-    {% if grouped_exercises %}
-        <div class="exercise-categories">
-            {% for category_name, exercises_in_category in grouped_exercises %}
-                <div class="category-section">
-                    <h2>{{ category_name }}</h2>
+    <div id="exercise-list-container">
+        {# This is where the list of exercises will be rendered initially and updated by AJAX #}
+        {% include 'partials/_exercise_list_items.html' %}
+    </div>
 
-                    {% if exercises_in_category %}
-                        <div class="exercise-grid">
-                            {% for exercise in exercises_in_category %}
-                                <div class="exercise-card">
-                                    <h3>{{ exercise.name }} {% if exercise.is_custom %}(Custom){% endif %}</h3>
-                                    <div class="exercise-meta">
-                                        <span class="exercise-type">{{ exercise.get_exercise_type_display }}</span>
-                                    </div>
-                                    {% if exercise.description %}
-                                        <p>{{ exercise.description|truncatewords:15 }}</p>
-                                    {% endif %}
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {# This case might not happen with the new view logic, but keep for safety #}
-                        <p class="empty-category">No exercises in this category yet.</p>
-                    {% endif %}
-                </div>
-            {% endfor %}
-        </div>
-    {% endif %}
-
-    {% if uncategorized %}
-        <div class="category-section">
-            <h2>Uncategorized</h2>
-            <div class="exercise-grid">
-                {% for exercise in uncategorized %}
-                    <div class="exercise-card">
-                        <h3>{{ exercise.name }} {% if exercise.is_custom %}(Custom){% endif %}</h3>
-                        <div class="exercise-meta">
-                            <span class="exercise-type">{{ exercise.get_exercise_type_display }}</span>
-                        </div>
-                        {% if exercise.description %}
-                            <p>{{ exercise.description|truncatewords:15 }}</p>
-                        {% endif %}
-                    </div>
-                {% endfor %}
-            </div>
-        </div>
-    {% endif %}
-
-    {% if not grouped_exercises and not uncategorized %}
-        <div class="empty-state">
-            <p>No exercises have been added yet.</p>
-            <button type="button" class="btn btn-primary" data-function="click->show_modal" data-modal-name="add-exercise-modal" data-focus="id_name_modal">
-                Add Your First Exercise
-            </button>
-        </div>
-    {% endif %}
 </div>
 
 <div id="add-exercise-modal" class="siu-modal" style="display: none;" data-function="click->close_modal">

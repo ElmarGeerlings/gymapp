@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ title|default:"Manage Program" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h1 class="card-title h3 mb-0">{{ title }}</h1>
+        </div>
+        <div class="card-body">
+            {% if error %}
+                <div class="alert alert-danger" role="alert">
+                    {{ error }}
+                </div>
+            {% endif %}
+            <form method="post" novalidate>
+                {% csrf_token %}
+
+                <div class="mb-3">
+                    <label for="name" class="form-label">Name</label>
+                    <input type="text" class="form-control" id="name" name="name" value="{% if object %}{{ object.name }}{% else %}{{ name_value|default:'' }}{% endif %}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label for="description" class="form-label">Description</label>
+                    <textarea class="form-control" id="description" name="description" rows="3">{% if object %}{{ object.description }}{% else %}{{ description_value|default:'' }}{% endif %}</textarea>
+                </div>
+
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="is_public" name="is_public" 
+                        {% if object and object.is_public %}checked{% endif %}
+                        {% if not object and is_public_value %}checked{% endif %}>
+                    <label class="form-check-label" for="is_public">Publicly Visible</label>
+                </div>
+                
+                <button type="submit" class="btn btn-success mt-3">Save Program</button>
+                <a href="{% url 'routine-list' %}" class="btn btn-secondary mt-3">Cancel</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock content %} 

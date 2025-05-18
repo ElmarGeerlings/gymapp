@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+This will help you decide which rules you should attach and look for:
+
+When doing anything with javascript:
+-data_function_usage.mdc
+
+When working on the workouts page:
+-workout_logging_flow.mdc

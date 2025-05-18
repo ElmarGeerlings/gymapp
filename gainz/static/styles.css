@@ -184,3 +184,168 @@ select, input {
     border-radius: 4px;
     font-size: 1rem;
 }
+
+/* SIU Modal Styles */
+.siu-modal {
+    display: none; /* Hidden by default, shown by JS */
+    position: fixed; /* Stay in place */
+    z-index: 1050; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgba(0,0,0,0.5); /* Black w/ opacity for backdrop */
+    align-items: center; /* Vertical center (if using flex for display) */
+    justify-content: center; /* Horizontal center (if using flex for display) */
+}
+
+.siu-modal-content {
+    background-color: #fefefe;
+    margin: auto; /* Handles centering for non-flex display, good fallback */
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 500px; /* Max width */
+    border-radius: 8px;
+    position: relative;
+    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+}
+
+.siu-modal-close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1; /* ensure it aligns well */
+    padding: 0 5px; /* A bit of padding for easier clicking */
+}
+
+.siu-modal-close:hover,
+.siu-modal-close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Clear floats for modal header/content if close button is floated */
+.siu-modal-content::after {
+    content: "";
+    clear: both;
+    display: table;
+}
+
+/* Styles for form elements within the modal */
+.siu-modal-content h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 1.75rem;
+    text-align: left;
+}
+
+.siu-modal-content .form-group {
+    margin-bottom: 1rem;
+}
+
+.siu-modal-content .form-group label {
+    display: block;
+    margin-bottom: .5rem;
+    font-weight: bold;
+    color: #333;
+}
+
+.siu-modal-content .form-control {
+    display: block;
+    width: 100%;
+    padding: .5rem .75rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid #ced4da;
+    border-radius: .25rem;
+    box-sizing: border-box;
+    transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+}
+
+.siu-modal-content .form-control:focus {
+    border-color: #80bdff;
+    outline: 0;
+    box-shadow: 0 0 0 .2rem rgba(0,123,255,.25);
+}
+
+.siu-modal-content textarea.form-control {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.siu-modal-content select.form-control:not([multiple]) {
+    height: calc(1.5em + 1rem + 2px); /* Matches input height */
+}
+
+.siu-modal-content select[multiple].form-control {
+    min-height: 100px;
+    height: auto;
+}
+
+.siu-modal-content .form-text {
+    display: block;
+    margin-top: .25rem;
+    font-size: .875em;
+    color: #6c757d;
+}
+
+/* Modal Action Buttons */
+.siu-modal-content form .btn {
+    display: inline-block;
+    font-weight: 400;
+    text-align: center;
+    vertical-align: middle;
+    cursor: pointer;
+    user-select: none;
+    background-color: transparent;
+    border: 1px solid transparent;
+    padding: .5rem 1rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    border-radius: .25rem;
+    transition: color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+    margin-top: 10px; 
+    margin-right: 10px;
+}
+
+.siu-modal-content form .btn:last-of-type {
+    margin-right: 0;
+}
+
+.siu-modal-content form .btn-primary {
+    color: #fff;
+    background-color: #4CAF50; /* Green to match existing button style */
+    border-color: #4CAF50;
+}
+
+.siu-modal-content form .btn-primary:hover {
+    background-color: #45a049;
+    border-color: #3e8e41;
+}
+
+.siu-modal-content form .btn-primary:focus {
+    box-shadow: 0 0 0 .2rem rgba(76,175,80,.5);
+}
+
+.siu-modal-content form .btn-secondary {
+    color: #fff;
+    background-color: #6c757d; /* Standard secondary gray */
+    border-color: #6c757d;
+}
+
+.siu-modal-content form .btn-secondary:hover {
+    background-color: #5a6268;
+    border-color: #545b62;
+}
+
+.siu-modal-content form .btn-secondary:focus {
+    box-shadow: 0 0 0 .2rem rgba(108,117,125,.5);
+}

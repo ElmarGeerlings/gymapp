@@ -1,0 +1,34 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Data-Function Attribute Usage
+
+This project utilizes a `data-function` HTML attribute to declaratively bind DOM events to global JavaScript functions. This promotes a clean separation of concerns and allows for event handling to be easily identified directly in the HTML.
+
+## How it Works
+
+- **HTML Attribute**: Elements that need to trigger JavaScript actions on events (like `click`, `input`, `change`) are given a `data-function` attribute.
+    - The format is `data-function="eventName->functionName"`.
+    - Example: `<button data-function="click->myGlobalClickHandler">Click Me</button>`
+- **JavaScript Core (`[gainz/static/gainz.js](mdc:gainz/static/gainz.js)`)**:
+    - A `MutationObserver` (`observer`) monitors the DOM for elements with the `data-function` attribute. This handles both initially loaded elements and those added dynamically.
+    - When such an element is detected, the `handle_attribute` function parses the `data-function` value.
+    - It extracts the `eventName` (e.g., "click") and `targetName` (e.g., "myGlobalClickHandler").
+    - It then attaches an event listener for the specified `eventName` to the element.
+    - The listener, when triggered, attempts to call a **global JavaScript function** named `targetName` (e.g., `window.myGlobalClickHandler`).
+
+## Guidelines
+
+1.  **Global Functions**: Functions intended to be called via `data-function` **must be globally accessible** (e.g., assigned to the `window` object like `window.myFunctionName = function(...) { ... };`).
+2.  **Naming Convention**: Use the format `eventName->functionName`. For example, `input->handleSearchInput` or `change->updateFilterOptions`.
+3.  **Prefer New Functions for New Behaviors**: When adding new interactive behaviors that use this pattern, it's generally better to create new, descriptively named global JavaScript functions.
+4.  **Caution with Existing Functions**:
+    - **Do Not Arbitrarily Change Existing Global Functions**: Be cautious when modifying existing global JavaScript functions, especially those already used by `data-function` attributes elsewhere in the application. Changes to their signature or core behavior can have unintended side effects on other parts of the UI.
+    - If an existing function needs significantly different behavior for a new use case, consider creating a new function or a wrapper function.
+    - Minor, non-breaking enhancements to existing functions are acceptable, but always test thoroughly.
+5.  **Debouncing/Throttling**: If an event (like `input` or `scroll`) fires rapidly, the target JavaScript function (or a wrapper) should implement its own debouncing or throttling if necessary (as seen with `debouncedFetchExercises` in `[gainz/static/gainz.js](mdc:gainz/static/gainz.js)`). The `data-function` mechanism itself does not provide this.
+
+This pattern helps keep JavaScript interactions tied closely to the HTML elements that trigger them and leverages a central system for managing these bindings.
+

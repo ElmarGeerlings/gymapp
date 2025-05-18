@@ -12,7 +12,14 @@ from gainz.views import (
     workout_list,
     exercise_list,
     routine_list,
-    simple_api_test # Add our new view here
+    simple_api_test, # Add our new view here
+    routine_detail, # Add routine_detail here
+    routine_create, # Add routine_create view
+    program_create, # Add program_create view
+    routine_update, # Add routine_update view
+    routine_delete, # Add routine_delete view
+    program_update, # Add program_update view
+    program_delete, # Add program_delete view
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -59,4 +66,25 @@ urlpatterns = [
 
     # Routine list
     path('routines/', routine_list, name='routine-list'),
+
+    # Routine detail
+    path('routines/<int:routine_id>/', routine_detail, name='routine-detail'),
+
+    # Create Routine
+    path('routines/create/', routine_create, name='routine-create'),
+
+    # Update Routine
+    path('routines/<int:routine_id>/edit/', routine_update, name='routine-update'),
+
+    # Delete Routine
+    path('routines/<int:routine_id>/delete/', routine_delete, name='routine-delete'),
+
+    # Create Program
+    path('programs/create/', program_create, name='program-create'),
+
+    # Update Program
+    path('programs/<int:program_id>/edit/', program_update, name='program-update'),
+
+    # Delete Program
+    path('programs/<int:program_id>/delete/', program_delete, name='program-delete'),
 ]
