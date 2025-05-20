@@ -580,6 +580,330 @@ window.fetchAndUpdateExerciseList = async function() {
 window.debouncedFetchExercises = debounce(window.fetchAndUpdateExerciseList, 300);
 
 // ======================================
+//      ROUTINE FORM FUNCTIONS
+// ======================================
+
+function getNextRoutineExerciseIndex() {
+    const exercisesContainer = document.getElementById('routine-exercises-container');
+    if (!exercisesContainer) return 0;
+    let maxIndex = -1;
+    exercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
+        const cardIndex = parseInt(card.dataset.index, 10);
+        if (cardIndex > maxIndex) {
+            maxIndex = cardIndex;
+        }
+    });
+    return maxIndex + 1;
+}
+
+function updateRoutineExerciseOrderNumbers() {
+    const exercisesContainer = document.getElementById('routine-exercises-container');
+    if (!exercisesContainer) return;
+    const cards = exercisesContainer.querySelectorAll('.exercise-routine-card');
+    cards.forEach((card, idx) => {
+        const orderSpan = card.querySelector('.exercise-order');
+        const orderInput = card.querySelector('input[name^="order_"]');
+        const newOrder = idx + 1;
+        if (orderSpan) {
+            orderSpan.textContent = newOrder;
+        }
+        // Only set the input value for newly added cards (those without an existing ID)
+        // or if it still has the placeholder value.
+        const routineExerciseIdInput = card.querySelector('input[name^="routine_exercise_id_"]');
+        if (orderInput && (!routineExerciseIdInput || !routineExerciseIdInput.value || orderInput.value === '__DEFAULT_ORDER__')) {
+            orderInput.value = newOrder;
+        }
+    });
+}
+
+function updateRoutineFormCount() {
+    const exercisesContainer = document.getElementById('routine-exercises-container');
+    if (!exercisesContainer) return;
+    let formCountInput = document.querySelector('input[name="routine_exercise_form_count"]');
+    if (!formCountInput) {
+        formCountInput = document.createElement('input');
+        formCountInput.type = 'hidden';
+        formCountInput.name = 'routine_exercise_form_count';
+        const routineForm = document.getElementById('routineForm');
+        if (routineForm) routineForm.appendChild(formCountInput);
+    }
+    if(formCountInput) formCountInput.value = exercisesContainer.querySelectorAll('.exercise-routine-card').length;
+}
+
+// window.addRoutineExerciseCard = function(event) { // This function is being replaced by the modal workflow
+//     const exercisesContainer = document.getElementById('routine-exercises-container');
+//     const exerciseTemplateHTML = document.getElementById('routine-exercise-template')?.innerHTML;
+//     if (!exercisesContainer || !exerciseTemplateHTML) {
+//         console.error('Missing exercises container or template for routine exercises.');
+//         return;
+//     }
+//
+//     const newIndex = getNextRoutineExerciseIndex();
+//     const defaultOrder = exercisesContainer.querySelectorAll('.exercise-routine-card').length + 1;
+//
+//     const newExerciseHtml = exerciseTemplateHTML.replace(/__INDEX__/g, newIndex)
+//                                               .replace(/__DEFAULT_ORDER__/g, defaultOrder);
+//     const tempDiv = document.createElement('div');
+//     tempDiv.innerHTML = newExerciseHtml;
+//
+//     const newCard = tempDiv.firstElementChild;
+//     if (newCard) {
+//         exercisesContainer.appendChild(newCard);
+//         // Explicitly set order for the new card's input and span
+//         const orderInputForNewCard = newCard.querySelector(`input[name="order_${newIndex}"]`);
+//         if(orderInputForNewCard) orderInputForNewCard.value = defaultOrder;
+//         const orderSpanForNewCard = newCard.querySelector('.exercise-order');
+//         if(orderSpanForNewCard) orderSpanForNewCard.textContent = defaultOrder;
+//     }
+//     updateRoutineFormCount();
+// }
+
+window.removeRoutineExerciseCard = function(event) {
+    const button = event.target;
+    const cardToRemove = button.closest('.exercise-routine-card');
+    if (cardToRemove) {
+        cardToRemove.remove();
+        updateRoutineFormCount();
+        updateRoutineExerciseOrderNumbers();
+    }
+}
+
+// --- Routine Form Modal Functions ---
+window.showAddExerciseToRoutineModal = function(event) {
+    const modal = document.getElementById('add-exercise-to-routine-modal');
+    if (modal) {
+        // Reset the select input and clear any previous error messages
+        const exerciseSelect = modal.querySelector('#modal-exercise-select');
+        if (exerciseSelect) {
+            exerciseSelect.value = ''; // Reset to the placeholder
+            exerciseSelect.classList.remove('is-invalid');
+        }
+        modal.style.display = 'flex';
+    }
+}
+
+let draggedItem = null;
+let floatingClone = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+function handleDragStart(event) {
+    draggedItem = event.target; // The original card
+    if (!draggedItem.classList.contains('exercise-routine-card')) return; // Ensure we are dragging the correct item
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedItem.dataset.index); // Still useful for context
+
+    // Create a transparent 1x1 pixel image to hide the default OS ghost
+    const img = new Image();
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    event.dataTransfer.setDragImage(img, 0, 0);
+
+    // Create a visual clone for dragging
+    floatingClone = draggedItem.cloneNode(true);
+    floatingClone.classList.add('dragging-clone'); // New class for styling the clone
+
+    // Ensure the clone has the same dimensions as the original item
+    const rect = draggedItem.getBoundingClientRect();
+    floatingClone.style.width = `${rect.width}px`;
+    floatingClone.style.height = `${rect.height}px`;
+    // Apply all computed styles from the original to the clone to match appearance as closely as possible
+    // This is more robust than just width/height but can be performance intensive if abused.
+    // For now, let's stick to width/height, if more is needed we can iterate.
+    /*
+    const originalStyles = window.getComputedStyle(draggedItem);
+    for (let i = 0; i < originalStyles.length; i++) {
+        const key = originalStyles[i];
+        floatingClone.style.setProperty(key, originalStyles.getPropertyValue(key), originalStyles.getPropertyPriority(key));
+    }
+    */
+
+    document.body.appendChild(floatingClone);
+
+    // Calculate mouse offset relative to the dragged item (using the new rect)
+    dragOffsetX = event.clientX - rect.left;
+    dragOffsetY = event.clientY - rect.top;
+
+    // Position the clone initially under the mouse
+    floatingClone.style.left = `${event.clientX - dragOffsetX}px`;
+    floatingClone.style.top = `${event.clientY - dragOffsetY}px`;
+
+    // Hide the original item (it will be moved on drop)
+    setTimeout(() => { // Timeout to allow initial setup before hiding
+        if(draggedItem) draggedItem.classList.add('drag-source-hidden');
+    }, 0);
+
+    document.addEventListener('dragover', handleDragMouseMove); // Use dragover on document for continuous position update
+}
+
+function handleDragMouseMove(event) {
+    if (floatingClone) {
+        // event.preventDefault(); // Important if this listener is on a droppable area, less so on document for just tracking mouse
+        floatingClone.style.left = `${event.clientX - dragOffsetX}px`;
+        floatingClone.style.top = `${event.clientY - dragOffsetY}px`;
+    }
+}
+
+function handleDragEnd(event) {
+    if (floatingClone) {
+        document.body.removeChild(floatingClone);
+        floatingClone = null;
+    }
+    if (draggedItem) {
+        draggedItem.classList.remove('drag-source-hidden');
+        draggedItem.style.opacity = ''; // Reset any direct opacity manipulations
+    }
+    draggedItem = null;
+    document.removeEventListener('dragover', handleDragMouseMove);
+}
+
+// handleDragOver on the container needs to be adjusted
+// For now, it will just allow drop and maybe show where draggedItem (original hidden one) would go
+function handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    // Original reordering logic based on the hidden draggedItem might still work
+    // if we consider its placeholder or conceptual position
+    const container = event.currentTarget;
+    if (!draggedItem) return; // If original item reference is lost
+
+    const afterElement = getDragAfterElement(container, event.clientY, draggedItem);
+    if (afterElement === undefined && container.lastChild !== draggedItem && !draggedItem.contains(container.lastChild)) {
+        // append to end if no element to insert before, and it's not already there or a child
+        // This needs to operate on a placeholder for draggedItem or the draggedItem itself if it's only hidden, not removed
+    } else if (afterElement && afterElement !== draggedItem && !draggedItem.contains(afterElement)) {
+        // container.insertBefore(draggedItem, afterElement);
+    }
+     // More complex logic will be needed here to show a placeholder for the hidden draggedItem
+     // and reorder other items around this conceptual placeholder.
+     // For now, let's focus on the floating clone visual.
+}
+
+function getDragAfterElement(container, y, currentDraggedItem) { // Added currentDraggedItem
+    const draggableElements = [...container.querySelectorAll('.exercise-routine-card:not(.drag-source-hidden)')];
+
+    return draggableElements.reduce((closest, child) => {
+        if (child === currentDraggedItem) return closest; // Don't compare with the item being dragged
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function handleDrop(event) {
+    event.preventDefault();
+    if (draggedItem) {
+        // Logic to place the original draggedItem into the correct spot
+        // This will now use the position of the drop event, relative to other items
+        const container = document.getElementById('routine-exercises-container');
+        const afterElement = getDragAfterElement(container, event.clientY, draggedItem);
+
+        if (afterElement) {
+            container.insertBefore(draggedItem, afterElement);
+        } else {
+            container.appendChild(draggedItem); // Append to end if no element to insert before
+        }
+        draggedItem.classList.remove('drag-source-hidden'); // Make it visible
+    }
+
+    updateRoutineExerciseOrderNumbers();
+    // draggedItem is reset in dragend
+}
+
+function setupDragAndDropListeners(cardElement) {
+    cardElement.addEventListener('dragstart', handleDragStart);
+    cardElement.addEventListener('dragend', handleDragEnd);
+}
+
+window.initializeRoutineForm = function() {
+    const exercisesContainer = document.getElementById('routine-exercises-container');
+    if (exercisesContainer) {
+        // Add D&D listeners to container
+        exercisesContainer.addEventListener('dragover', handleDragOver);
+        exercisesContainer.addEventListener('drop', handleDrop);
+
+        // Add D&D listeners to existing cards
+        exercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
+            setupDragAndDropListeners(card);
+        });
+
+        if (exercisesContainer.querySelectorAll('.exercise-routine-card').length > 0) {
+            updateRoutineFormCount();
+            updateRoutineExerciseOrderNumbers();
+        }
+    }
+}
+
+// Update appendExerciseCardToRoutine to also add D&D listeners to new cards
+function appendExerciseCardToRoutine(exerciseId, exerciseName) {
+    const exercisesContainer = document.getElementById('routine-exercises-container');
+    const exerciseTemplateHTML = document.getElementById('routine-exercise-template')?.innerHTML;
+
+    if (!exercisesContainer || !exerciseTemplateHTML) {
+        console.error('Missing exercises container or template.');
+        return;
+    }
+
+    const newIndex = getNextRoutineExerciseIndex();
+    const defaultOrder = exercisesContainer.querySelectorAll('.exercise-routine-card').length + 1;
+
+    let newExerciseHtml = exerciseTemplateHTML.replace(/__INDEX__/g, newIndex)
+                                              .replace(/__DEFAULT_ORDER__/g, defaultOrder);
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = newExerciseHtml;
+    const newCard = tempDiv.firstElementChild;
+
+    if (newCard) {
+        const exerciseSelectInCard = newCard.querySelector(`select[name="exercise_pk_${newIndex}"]`);
+        if (exerciseSelectInCard) {
+            exerciseSelectInCard.value = exerciseId;
+        }
+        exercisesContainer.appendChild(newCard);
+        setupDragAndDropListeners(newCard); // Add D&D listeners to the newly added card
+
+        const orderInputForNewCard = newCard.querySelector(`input[name="order_${newIndex}"]`);
+        if(orderInputForNewCard) orderInputForNewCard.value = defaultOrder;
+        const orderSpanForNewCard = newCard.querySelector('.exercise-order');
+        if(orderSpanForNewCard) orderSpanForNewCard.textContent = defaultOrder;
+
+        updateRoutineFormCount();
+        // Order numbers for existing items are updated by updateRoutineExerciseOrderNumbers if needed,
+        // called from handleDrop or if an item is removed.
+    } else {
+        console.error("Could not create new exercise card from template.");
+    }
+}
+
+window.selectAndAddExerciseToRoutine = function(event) {
+    const selectElement = event.target;
+    const exerciseId = selectElement.value;
+
+    if (!exerciseId) { // User selected the placeholder "Choose an exercise..."
+        return;
+    }
+
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    const exerciseName = selectedOption.dataset.name || selectedOption.text;
+
+    appendExerciseCardToRoutine(exerciseId, exerciseName);
+
+    // Close the modal
+    const modal = document.getElementById('add-exercise-to-routine-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+
+    // It might be good practice to reset the select here too,
+    // though showAddExerciseToRoutineModal will do it when modal is next opened.
+    // selectElement.value = ''; // Optional: reset immediately
+}
+
+// ======================================
 //          INITIALIZATION
 // ======================================
 
@@ -591,6 +915,11 @@ document.addEventListener('DOMContentLoaded', () => {
          console.log('Initial scan found element with data-function:', element);
          handle_attribute(element, element.getAttributeNode('data-function'));
     });
+
+    // Explicitly initialize routine form if its container is present
+    if (document.getElementById('routine-exercises-container')) {
+        initializeRoutineForm();
+    }
 
     // Start observing the body for dynamically added/changed elements
     observer.observe(document.body, {

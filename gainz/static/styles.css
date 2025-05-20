@@ -312,7 +312,7 @@ select, input {
     line-height: 1.5;
     border-radius: .25rem;
     transition: color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out;
-    margin-top: 10px; 
+    margin-top: 10px;
     margin-right: 10px;
 }
 
@@ -348,4 +348,49 @@ select, input {
 
 .siu-modal-content form .btn-secondary:focus {
     box-shadow: 0 0 0 .2rem rgba(108,117,125,.5);
+}
+
+/* Styles for Routine Form Exercise Cards */
+.exercise-routine-card {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    background-color: #f9f9f9;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.exercise-routine-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+.exercise-routine-card .card-header h5 {
+    margin: 0;
+}
+
+/* Drag and Drop Styles */
+.exercise-routine-card.dragging {
+    background: #f0f0f0;
+    border: 1px dashed #ccc;
+}
+
+.dragging-clone {
+    position: fixed;
+    pointer-events: none;
+    z-index: 10000;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+.drag-source-hidden {
+    visibility: hidden;
+}
+
+.drop-placeholder {
+    background-color: #e0e0e0;
+    border: 2px dashed #aaa;
+    margin: 10px 0;
+    height: 50px;
 }

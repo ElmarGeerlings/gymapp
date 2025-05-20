@@ -24,86 +24,57 @@
                 </div>
 
                 <div class="mb-3">
-                    <label for="description" class="form-label">Description</label>
+                    <label for="description" class="form-label">Description (Optional)</label>
                     <textarea class="form-control" id="description" name="description" rows="3">{% if object %}{{ object.description }}{% else %}{{ description_value|default:'' }}{% endif %}</textarea>
-                </div>
-
-                <div class="mb-3">
-                    <label for="program" class="form-label">Program (Optional)</label>
-                    <select class="form-select" id="program" name="program">
-                        <option value="">---------</option> 
-                        {% for p in programs %}
-                            <option value="{{ p.id }}" 
-                                {% if object and object.program and object.program.id == p.id %}selected{% endif %}
-                                {% if not object and program_id_value and program_id_value == p.id|stringformat:"s" %}selected{% endif %}>
-                                {{ p.name }}
-                            </option>
-                        {% endfor %}
-                    </select>
                 </div>
             </div>
         </div>
 
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4>Exercises in this Routine</h4>
-            <button type="button" id="add-exercise-btn" class="btn btn-info">Add Exercise</button>
+            <button type="button" id="add-exercise-btn" class="btn btn-info" data-function="click->showAddExerciseToRoutineModal">Add Exercise to Routine</button>
         </div>
-        
+
         <div id="routine-exercises-container">
             {% if routine_exercises %}
                 {% for r_exercise in routine_exercises %}
-                    <div class="card routine-exercise-form mb-3" data-index="{{ forloop.counter0 }}">
-                        <div class="card-body">
-                            <input type="hidden" name="routine_exercise_id_{{ forloop.counter0 }}" value="{{ r_exercise.id }}">
-                            <div class="row gx-3 mb-2">
-                                <div class="col-md-5">
-                                    <label for="exercise_pk_{{ forloop.counter0 }}" class="form-label">Exercise</label>
-                                    <select name="exercise_pk_{{ forloop.counter0 }}" id="exercise_pk_{{ forloop.counter0 }}" class="form-select exercise-select">
-                                        <option value="">Select Exercise</option>
-                                        {% for ex in all_exercises %}
-                                            <option value="{{ ex.pk }}" {% if r_exercise.exercise.pk == ex.pk %}selected{% endif %}>{{ ex.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="col-md-2">
-                                    <label for="order_{{ forloop.counter0 }}" class="form-label">Step</label>
-                                    <input type="number" name="order_{{ forloop.counter0 }}" id="order_{{ forloop.counter0 }}" value="{{ r_exercise.order|default:forloop.counter }}" class="form-control" placeholder="Seq.">
-                                    <small class="form-text text-muted">Sequence in routine.</small>
-                                </div>
-                                <div class="col-md-2">
-                                    <label for="target_sets_{{ forloop.counter0 }}" class="form-label">Target Sets</label>
-                                    <input type="number" name="target_sets_{{ forloop.counter0 }}" id="target_sets_{{ forloop.counter0 }}" value="{{ r_exercise.target_sets|default:'' }}" class="form-control">
-                                </div>
-                                <div class="col-md-3">
-                                    <label for="target_reps_{{ forloop.counter0 }}" class="form-label">Target Reps</label>
-                                    <input type="text" name="target_reps_{{ forloop.counter0 }}" id="target_reps_{{ forloop.counter0 }}" value="{{ r_exercise.target_reps|default:'' }}" class="form-control" placeholder="e.g. 8-12">
-                                </div>
+                    <div class="exercise-routine-card" data-index="{{ forloop.counter0 }}" draggable="true">
+                        <div class="card-header">
+                            <h5>Exercise <span class="exercise-order">{{ r_exercise.order|default:forloop.counter }}</span></h5>
+                            <button type="button" class="btn btn-sm btn-danger remove-exercise-btn" data-function="click->removeRoutineExerciseCard">Remove</button>
+                        </div>
+                        <input type="hidden" name="routine_exercise_id_{{ forloop.counter0 }}" value="{{ r_exercise.id }}">
+                        <input type="hidden" name="order_{{ forloop.counter0 }}" value="{{ r_exercise.order|default:forloop.counter }}">
+                        <div class="row gx-3 mb-2">
+                            <div class="col-md-7">
+                                <label for="exercise_pk_{{ forloop.counter0 }}" class="form-label">Exercise</label>
+                                <select name="exercise_pk_{{ forloop.counter0 }}" id="exercise_pk_{{ forloop.counter0 }}" class="form-select exercise-select">
+                                    <option value="">Select Exercise</option>
+                                    {% for ex in all_exercises %}
+                                        <option value="{{ ex.pk }}" {% if r_exercise.exercise.pk == ex.pk %}selected{% endif %}>{{ ex.name }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
-                            <div class="row gx-3 mb-2">
-                                <div class="col-md-5">
-                                    <label for="target_rest_seconds_{{ forloop.counter0 }}" class="form-label">Target Rest (seconds)</label>
-                                    <input type="number" name="target_rest_seconds_{{ forloop.counter0 }}" id="target_rest_seconds_{{ forloop.counter0 }}" value="{{ r_exercise.target_rest_seconds|default:'' }}" class="form-control">
-                                </div>
-                                <div class="col-md-5">
-                                    <label for="progression_strategy_notes_{{ forloop.counter0 }}" class="form-label">Progression Notes</label>
-                                    <textarea name="progression_strategy_notes_{{ forloop.counter0 }}" id="progression_strategy_notes_{{ forloop.counter0 }}" class="form-control" rows="1">{{ r_exercise.progression_strategy_notes|default:'' }}</textarea>
-                                </div>
-                                <div class="col-md-2 d-flex align-items-end">
-                                    <button type="button" class="btn btn-danger w-100 remove-exercise-btn">Remove</button>
-                                </div>
+                            <div class="col-md-2">
+                                <label for="target_sets_{{ forloop.counter0 }}" class="form-label">Target Sets</label>
+                                <input type="number" name="target_sets_{{ forloop.counter0 }}" id="target_sets_{{ forloop.counter0 }}" value="{{ r_exercise.target_sets|default:'' }}" class="form-control">
                             </div>
-                            <div class="row gx-3">
-                                <div class="col-12">
-                                    <label for="notes_{{ forloop.counter0 }}" class="form-label">Exercise Notes (General)</label>
-                                    <textarea name="notes_{{ forloop.counter0 }}" id="notes_{{ forloop.counter0 }}" class="form-control" rows="1">{{ r_exercise.notes|default:'' }}</textarea>
-                                </div>
+                            <div class="col-md-3">
+                                <label for="target_reps_{{ forloop.counter0 }}" class="form-label">Target Reps</label>
+                                <input type="text" name="target_reps_{{ forloop.counter0 }}" id="target_reps_{{ forloop.counter0 }}" value="{{ r_exercise.target_reps|default:'' }}" class="form-control" placeholder="e.g. 8-12">
                             </div>
                         </div>
-                    </div> 
+                        <div class="row gx-3">
+                            <div class="col-md-12"> {# Adjusted for full width #}
+                                <label for="target_rest_seconds_{{ forloop.counter0 }}" class="form-label">Target Rest (seconds)</label>
+                                <input type="number" name="target_rest_seconds_{{ forloop.counter0 }}" id="target_rest_seconds_{{ forloop.counter0 }}" value="{{ r_exercise.target_rest_seconds|default:'' }}" class="form-control">
+                            </div>
+                        </div>
+                    </div>
                 {% endfor %}
             {% endif %}
         </div>
-        
+
         <hr class="my-4">
         <div class="d-flex justify-content-end">
             <a href="{% if object %}{% url 'routine-detail' object.id %}{% else %}{% url 'routine-list' %}{% endif %}" class="btn btn-secondary me-2">Cancel</a>
@@ -112,111 +83,60 @@
     </form>
 </div>
 
+<!-- Modal for Adding Exercise to Routine -->
+<div id="add-exercise-to-routine-modal" class="siu-modal" style="display: none;" data-function="click->close_modal"> {# Outer click closes modal #}
+    <div class="siu-modal-content">
+        <span class="siu-modal-close" data-function="click->close_modal">&times;</span>
+        <h2>Select Exercise to Add</h2>
+
+        <div class="form-group mb-3">
+            <label for="modal-exercise-select" class="form-label">Exercise:</label>
+            <select id="modal-exercise-select" class="form-select" data-function="change->selectAndAddExerciseToRoutine">
+                <option value="" selected disabled>Choose an exercise...</option>
+                {% for ex in all_exercises %}
+                    <option value="{{ ex.pk }}" data-name="{{ ex.name }}">{{ ex.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="button" class="btn btn-secondary siu-modal-close" data-function="click->close_modal">Cancel</button>
+    </div>
+</div>
+
 <template id="routine-exercise-template">
-    <div class="card routine-exercise-form mb-3" data-index="__INDEX__">
-        <div class="card-body">
-            <input type="hidden" name="routine_exercise_id___INDEX__" value="">
-            <div class="row gx-3 mb-2">
-                <div class="col-md-5">
-                    <label for="exercise_pk___INDEX__" class="form-label">Exercise</label>
-                    <select name="exercise_pk___INDEX__" id="exercise_pk___INDEX__" class="form-select exercise-select">
-                        <option value="">Select Exercise</option>
-                        {% for ex in all_exercises %}
-                            <option value="{{ ex.pk }}">{{ ex.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label for="order___INDEX__" class="form-label">Step</label>
-                    <input type="number" name="order___INDEX__" id="order___INDEX__" value="__DEFAULT_ORDER__" class="form-control" placeholder="Seq.">
-                     <small class="form-text text-muted">Sequence in routine.</small>
-                </div>
-                <div class="col-md-2">
-                    <label for="target_sets___INDEX__" class="form-label">Target Sets</label>
-                    <input type="number" name="target_sets___INDEX__" id="target_sets___INDEX__" class="form-control">
-                </div>
-                <div class="col-md-3">
-                    <label for="target_reps___INDEX__" class="form-label">Target Reps</label>
-                    <input type="text" name="target_reps___INDEX__" id="target_reps___INDEX__" class="form-control" placeholder="e.g. 8-12">
-                </div>
+    <div class="exercise-routine-card" data-index="__INDEX__" draggable="true">
+        <div class="card-header">
+            <h5>Exercise <span class="exercise-order">__DEFAULT_ORDER__</span></h5>
+            <button type="button" class="btn btn-sm btn-danger remove-exercise-btn" data-function="click->removeRoutineExerciseCard">Remove</button>
+        </div>
+        <input type="hidden" name="routine_exercise_id___INDEX__" value="">
+        <input type="hidden" name="order___INDEX__" value="__DEFAULT_ORDER__">
+        <div class="row gx-3 mb-2">
+            <div class="col-md-7">
+                <label for="exercise_pk___INDEX__" class="form-label">Exercise</label>
+                <select name="exercise_pk___INDEX__" id="exercise_pk___INDEX__" class="form-select exercise-select">
+                    <option value="">Select Exercise</option>
+                    {% for ex in all_exercises %}
+                        <option value="{{ ex.pk }}">{{ ex.name }}</option>
+                    {% endfor %}
+                </select>
             </div>
-            <div class="row gx-3 mb-2">
-                <div class="col-md-5">
-                    <label for="target_rest_seconds___INDEX__" class "form-label">Target Rest (seconds)</label>
-                    <input type="number" name="target_rest_seconds___INDEX__" id="target_rest_seconds___INDEX__" class="form-control">
-                </div>
-                <div class="col-md-5">
-                    <label for="progression_strategy_notes___INDEX__" class="form-label">Progression Notes</label>
-                    <textarea name="progression_strategy_notes___INDEX__" id="progression_strategy_notes___INDEX__" class="form-control" rows="1"></textarea>
-                </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button type="button" class="btn btn-danger w-100 remove-exercise-btn">Remove</button>
-                </div>
+            <div class="col-md-2">
+                <label for="target_sets___INDEX__" class="form-label">Target Sets</label>
+                <input type="number" name="target_sets___INDEX__" id="target_sets___INDEX__" class="form-control">
             </div>
-            <div class="row gx-3">
-                <div class="col-12">
-                    <label for="notes___INDEX__" class="form-label">Exercise Notes (General)</label>
-                    <textarea name="notes___INDEX__" id="notes___INDEX__" class="form-control" rows="1"></textarea>
-                </div>
+            <div class="col-md-3">
+                <label for="target_reps___INDEX__" class="form-label">Target Reps</label>
+                <input type="text" name="target_reps___INDEX__" id="target_reps___INDEX__" class="form-control" placeholder="e.g. 8-12">
+            </div>
+        </div>
+        <div class="row gx-3">
+            <div class="col-md-12"> {# Adjusted for full width #}
+                <label for="target_rest_seconds___INDEX__" class="form-label">Target Rest (seconds)</label>
+                <input type="number" name="target_rest_seconds___INDEX__" id="target_rest_seconds___INDEX__" class="form-control">
             </div>
         </div>
     </div>
 </template>
 
 {% endblock content %}
-
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const addExerciseBtn = document.getElementById('add-exercise-btn');
-    const exercisesContainer = document.getElementById('routine-exercises-container');
-    const exerciseTemplateHTML = document.getElementById('routine-exercise-template').innerHTML;
-    
-    function getNextExerciseIndex() {
-        return exercisesContainer.querySelectorAll('.routine-exercise-form').length;
-    }
-
-    addExerciseBtn.addEventListener('click', function () {
-        const newIndex = getNextExerciseIndex();
-        // Replace __INDEX__ and set default order to be newIndex + 1 for 1-based display
-        const newExerciseHtml = exerciseTemplateHTML.replace(/__INDEX__/g, newIndex)
-                                                  .replace(/__DEFAULT_ORDER__/g, newIndex + 1);
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = newExerciseHtml; //innerHTML for a temporary div to parse the string into DOM elements
-        exercisesContainer.appendChild(tempDiv.firstElementChild); // Append the actual card element
-        updateFormCount();
-    });
-
-    exercisesContainer.addEventListener('click', function (e) {
-        if (e.target && e.target.classList.contains('remove-exercise-btn')) {
-            e.target.closest('.routine-exercise-form').remove();
-            updateFormCount();
-            // After removing an element, re-evaluate order for subsequent elements if desired, or just for new ones.
-            // For now, new items get next available number. Existing items keep their numbers.
-        }
-    });
-    
-    function updateFormCount() {
-        let formCountInput = document.querySelector('input[name="routine_exercise_form_count"]');
-        if (!formCountInput) {
-            formCountInput = document.createElement('input');
-            formCountInput.type = 'hidden';
-            formCountInput.name = 'routine_exercise_form_count';
-            document.getElementById('routineForm').appendChild(formCountInput);
-        }
-        formCountInput.value = getNextExerciseIndex(); // Use the length which is the count
-    }
-
-    // Initialize form count if routine_exercises exist on page load
-    if (exercisesContainer.querySelectorAll('.routine-exercise-form').length > 0) {
-        updateFormCount();
-    }
-    // Set initial value for order field to be the next available index for the first new item
-    if (addExerciseBtn) { // Ensure button exists
-        const initialNextIndex = getNextExerciseIndex();
-         // This part is tricky as the template only has __DEFAULT_ORDER__ when it's cloned.
-         // We'll set the default order dynamically when adding an exercise.
-    }
-});
-</script>
-{% endblock extra_js %} 

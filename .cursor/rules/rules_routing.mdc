@@ -1,7 +1,7 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+description:
+globs:
+alwaysApply: true
 ---
 This will help you decide which rules you should attach and look for:
 

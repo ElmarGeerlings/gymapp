@@ -1,12 +1,18 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+description:
+globs:
+alwaysApply: true
 ---
 # Don't use try excepts
 
 # Don't delete existing functions, if you need to you should ask and get confirmation before.
 
-# Rule Name: data_function_usage.mdc
-
 # Description: Avoid Django Forms (django.forms.Form, django.forms.ModelForm, etc.) completely for data submission, validation, and rendering. Views should handle raw request.POST data directly for create and update operations. Data retrieval may utilize functions marked with a 'data-function' attribute if specified, but the primary instruction is the complete avoidance of the Django Forms framework for data handling and submission workflows. Manual validation will be required in views or helper functions.
+
+# Put all javascript in gain.js. Read data_function_usage.mdc on how to use data-function to communicate with the server via websockets. Try to re use functions as much as possible.
+
+# Put all css in styles.css. Avoid using inline styling.
+
+# Avoid adding dependencies as much as possible, try to keep things natively.
+
+# Don't add unneccessary error handling or try excepts.

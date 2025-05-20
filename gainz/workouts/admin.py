@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    Program, Routine, RoutineExercise, 
+    Program, Routine, RoutineExercise,
     Workout, WorkoutExercise, ExerciseSet
 )
 
@@ -11,9 +11,9 @@ class RoutineExerciseInline(admin.TabularInline):
     model = RoutineExercise
     extra = 1 # Show one empty form
     # Consider adding fields like 'exercise', 'order', 'target_sets', 'target_reps' to readonly_fields or list_display if needed
-    fields = ('order', 'exercise', 'target_sets', 'target_reps', 'target_rest_seconds', 'notes', 'progression_strategy_notes')
+    fields = ('order', 'exercise', 'target_sets', 'target_reps', 'target_rest_seconds')
     # Autocomplete fields are good for ForeignKeys with many options
-    autocomplete_fields = ['exercise'] 
+    autocomplete_fields = ['exercise']
 
 class RoutineInline(admin.TabularInline):
     """ Inline for showing routines within a Program. """
@@ -28,21 +28,21 @@ class ProgramAdmin(admin.ModelAdmin):
     list_display = ('name', 'user', 'is_public')
     list_filter = ('user', 'is_public')
     search_fields = ('name', 'description', 'user__username')
-    inlines = [RoutineInline]
+    inlines = []
 
 @admin.register(Routine)
 class RoutineAdmin(admin.ModelAdmin):
-    list_display = ('name', 'user', 'program')
-    list_filter = ('user', 'program')
-    search_fields = ('name', 'description', 'program__name', 'user__username')
+    list_display = ('name', 'user')
+    list_filter = ('user',)
+    search_fields = ('name', 'description', 'user__username')
     inlines = [RoutineExerciseInline]
     # Autocomplete fields are good for ForeignKeys with many options
-    autocomplete_fields = ['program', 'user']
+    autocomplete_fields = ['user']
 
 @admin.register(RoutineExercise)
 class RoutineExerciseAdmin(admin.ModelAdmin):
     list_display = ('routine', 'exercise', 'order', 'target_sets', 'target_reps')
-    list_filter = ('routine__program', 'routine', 'exercise')
+    list_filter = ('routine', 'exercise')
     search_fields = ('routine__name', 'exercise__name')
     list_editable = ('order',)
     # Autocomplete fields are good for ForeignKeys with many options
@@ -53,7 +53,7 @@ class RoutineExerciseAdmin(admin.ModelAdmin):
 class ExerciseSetInline(admin.TabularInline):
     """ Inline for adding/editing sets within a WorkoutExercise log. """
     model = ExerciseSet
-    extra = 1 
+    extra = 1
     fields = ('set_number', 'weight', 'reps', 'is_warmup')
 
 # Removed the WorkoutExerciseInline as it might be confusing within WorkoutAdmin

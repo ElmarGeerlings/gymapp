@@ -16,10 +16,6 @@
             {% else %}
                 <p class="card-text text-muted">No description provided for this routine.</p>
             {% endif %}
-
-            {% if routine.program %}
-                <p class="card-text">Part of Program: <a href="#">{{ routine.program.name }}</a></p> {# Placeholder link for program detail #}
-            {% endif %}
         </div>
     </div>
 
@@ -39,12 +35,6 @@
                         Reps: {{ r_exercise.target_reps|default:"N/A" }} |
                         Rest: {{ r_exercise.target_rest_seconds|default:"N/A" }}s
                     </p>
-                    {% if r_exercise.progression_strategy_notes %}
-                        <p class="mb-1"><strong>Progression Notes:</strong> {{ r_exercise.progression_strategy_notes }}</p>
-                    {% endif %}
-                    {% if r_exercise.notes %}
-                        <p class="mb-1"><strong>Exercise Notes:</strong> {{ r_exercise.notes }}</p>
-                    {% endif %}
                 </div>
             {% endfor %}
         </div>
@@ -60,4 +50,4 @@
         <a href="{% url 'routine-delete' routine.id %}" class="btn btn-danger">Delete Routine</a>
     </div>
 </div>
-{% endblock content %} 
+{% endblock content %}

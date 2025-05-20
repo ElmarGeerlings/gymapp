@@ -71,7 +71,7 @@ class Command(BaseCommand):
                 exercise.categories.set(ex_cats)
                 self.stdout.write(self.style.SUCCESS(f'Created exercise: {exercise.name}'))
             created_exercises[exercise.name] = exercise
-        
+
         # Ensure all base exercises exist for routine creation
         required_ex_for_routine = ["Bench Press", "Squat", "Overhead Press"]
         for ex_name in required_ex_for_routine:
@@ -98,7 +98,7 @@ class Command(BaseCommand):
         routine, created = Routine.objects.get_or_create(
             user=user,
             name="Full Body Workout A",
-            defaults={"program": program, "description": "Full body session focusing on compound lifts."}
+            defaults={"description": "Full body session focusing on compound lifts."}
         )
         if created:
             self.stdout.write(self.style.SUCCESS(f'Created routine: {routine.name}'))
@@ -139,7 +139,7 @@ class Command(BaseCommand):
         )
         if created:
             self.stdout.write(self.style.SUCCESS(f'Created workout: {workout1.name} on {workout1_date.strftime("%Y-%m-%d")}'))
-        
+
         # Create a workout for 3 days ago
         workout2_date = timezone.now() - datetime.timedelta(days=3)
         workout2, created = Workout.objects.get_or_create(
@@ -157,7 +157,7 @@ class Command(BaseCommand):
 
         # 7. Add WorkoutExercises and ExerciseSets
         workouts_to_populate = [workout1, workout2]
-        
+
         for workout_instance in workouts_to_populate:
             # Use exercises from the routine_source if available
             exercises_for_this_workout = []
@@ -205,4 +205,4 @@ class Command(BaseCommand):
                              self.stdout.write(self.style.SUCCESS(f'  Added Set {i}: {reps} reps @ {weight}kg for {we_data["exercise_model"].name}'))
 
 
-        self.stdout.write(self.style.SUCCESS('Successfully populated the database with sample data.')) 
+        self.stdout.write(self.style.SUCCESS('Successfully populated the database with sample data.'))

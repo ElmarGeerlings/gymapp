@@ -8,50 +8,27 @@
         <h1>{{ title }}</h1>
         <div>
             <a href="{% url 'routine-create' %}" class="btn btn-success me-2">Create New Routine</a>
-            <a href="{% url 'program-create' %}" class="btn btn-primary">Create New Program</a>
         </div>
     </div>
 
-    {% if not programs and not standalone_routines %}
+    {% if not routines %}
         <div class="alert alert-info" role="alert">
-            You haven't created any routines or programs yet.
+            You haven't created any routines yet.
         </div>
     {% else %}
-        {% if programs %}
-            <h2>Programs</h2>
-            {% for program in programs %}
-                <div class="card mb-3">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span>{{ program.name }}</span>
-                        <div>
-                            <a href="{% url 'program-update' program.id %}" class="btn btn-sm btn-outline-primary me-1">Edit</a>
-                            <a href="{% url 'program-delete' program.id %}" class="btn btn-sm btn-outline-danger">Delete</a>
-                        </div>
+        <h2>Your Routines</h2>
+        <ul class="list-group">
+            {% for routine in routines %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <a href="{% url 'routine-detail' routine.id %}">{{ routine.name }}</a>
+                    <div>
+                        <a href="{% url 'routine-update' routine.id %}" class="btn btn-sm btn-outline-primary me-1">Edit</a>
+                        <a href="{% url 'routine-delete' routine.id %}" class="btn btn-sm btn-outline-danger">Delete</a>
                     </div>
-                    <ul class="list-group list-group-flush">
-                        {% for routine in program.routines.all %}
-                            <li class="list-group-item">
-                                <a href="{% url 'routine-detail' routine.id %}">{{ routine.name }}</a>
-                            </li>
-                        {% empty %}
-                            <li class="list-group-item text-muted">No routines in this program yet.</li>
-                        {% endfor %}
-                    </ul>
-                </div>
+                </li>
             {% endfor %}
-        {% endif %}
-
-        {% if standalone_routines %}
-            <h2>Standalone Routines</h2>
-            <ul class="list-group">
-                {% for routine in standalone_routines %}
-                    <li class="list-group-item">
-                        <a href="{% url 'routine-detail' routine.id %}">{{ routine.name }}</a>
-                    </li>
-                {% endfor %}
-            </ul>
-        {% endif %}
+        </ul>
     {% endif %}
 
 </div>
-{% endblock %} 
+{% endblock %}

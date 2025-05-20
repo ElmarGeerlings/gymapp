@@ -148,7 +148,7 @@ def workout_list(request):
 @login_required
 def exercise_list(request):
     """Display a list of exercises organized by category and provide data for the add modal."""
-    
+
     search_query = request.GET.get('search_query', '')
     exercise_type_filter = request.GET.get('exercise_type', '')
     category_filter = request.GET.get('category', '')
@@ -166,7 +166,7 @@ def exercise_list(request):
 
     if category_filter:
         exercises = exercises.filter(categories__id=category_filter)
-    
+
     exercises = exercises.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user))
 
     exercises_by_category = {}
@@ -202,7 +202,7 @@ def exercise_list(request):
         # For AJAX requests, render only the partial and return as HTML
         html = render_to_string('partials/_exercise_list_items.html', context, request=request)
         return HttpResponse(html)
-    
+
     # For regular GET requests, render the full page
     return render(request, 'exercise_list.html', context)
 
@@ -213,11 +213,11 @@ def routine_list(request):
     programs = Program.objects.filter(user=request.user).prefetch_related('routines').order_by('name')
 
     # Fetch standalone routines (those not assigned to any program)
-    standalone_routines = Routine.objects.filter(user=request.user, program__isnull=True).order_by('name')
+    routines = Routine.objects.filter(user=request.user).order_by('name')
 
     context = {
         'programs': programs,
-        'standalone_routines': standalone_routines,
+        'routines': routines,
         'title': 'My Routines & Programs'
     }
     return render(request, 'routine_list.html', context)
@@ -242,36 +242,24 @@ def routine_create(request):
     if request.method == 'POST':
         name = request.POST.get('name')
         description = request.POST.get('description', '')
-        program_id = request.POST.get('program')
-        
+
         # Basic validation (more can be added)
         if not name:
-            programs = Program.objects.filter(user=request.user)
             all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
             return render(request, 'routine_form.html', {
                 'title': 'Create New Routine',
                 'error': 'Name is required.',
-                'programs': programs,
                 'all_exercises': all_exercises,
                 'name_value': name,
                 'description_value': description,
-                'program_id_value': program_id
             })
-
-        program = None
-        if program_id:
-            try:
-                program = Program.objects.get(id=program_id, user=request.user)
-            except Program.DoesNotExist:
-                pass 
 
         routine = Routine.objects.create(
             user=request.user,
             name=name,
             description=description,
-            program=program
         )
-        
+
         # Process RoutineExercise data
         form_count = int(request.POST.get('routine_exercise_form_count', 0))
         for i in range(form_count):
@@ -280,17 +268,15 @@ def routine_create(request):
             target_sets = request.POST.get(f'target_sets_{i}')
             target_reps = request.POST.get(f'target_reps_{i}', '')
             target_rest_seconds = request.POST.get(f'target_rest_seconds_{i}')
-            progression_notes = request.POST.get(f'progression_strategy_notes_{i}', '')
-            notes = request.POST.get(f'notes_{i}', '')
 
             if not exercise_pk or not target_sets or not target_reps: # Basic validation
-                # Optionally add more robust error handling here, 
+                # Optionally add more robust error handling here,
                 # e.g. re-render form with errors and submitted data
                 continue # Skip this invalid exercise entry
 
             try:
                 exercise_instance = Exercise.objects.get(pk=exercise_pk)
-                
+
                 RoutineExercise.objects.create(
                     routine=routine,
                     exercise=exercise_instance,
@@ -298,8 +284,6 @@ def routine_create(request):
                     target_sets=int(target_sets),
                     target_reps=target_reps,
                     target_rest_seconds=int(target_rest_seconds) if target_rest_seconds else None,
-                    progression_strategy_notes=progression_notes,
-                    notes=notes
                 )
             except Exercise.DoesNotExist:
                 # Handle error: selected exercise does not exist
@@ -310,12 +294,14 @@ def routine_create(request):
 
         return redirect('routine-detail', routine_id=routine.id)
     else:
-        programs = Program.objects.filter(user=request.user)
+        # Generate default routine name
+        last_routine_number = Routine.objects.filter(user=request.user).count()
+        default_routine_name = f"Routine {last_routine_number + 1}"
         all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
     return render(request, 'routine_form.html', {
-        'title': 'Create New Routine', 
-        'programs': programs, 
-        'all_exercises': all_exercises
+        'title': 'Create New Routine',
+        'all_exercises': all_exercises,
+        'name_value': default_routine_name, # Pass default name
     })
 
 @login_required
@@ -324,38 +310,25 @@ def routine_update(request, routine_id):
     if request.method == 'POST':
         name = request.POST.get('name')
         description = request.POST.get('description', '')
-        program_id = request.POST.get('program')
 
         if not name:
-            programs = Program.objects.filter(user=request.user)
             all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
             # Fetch existing routine exercises for re-rendering form with errors
             existing_routine_exercises = routine.exercises.select_related('exercise').order_by('order')
             return render(request, 'routine_form.html', {
-                'form': None, 
+                'form': None,
                 'title': f'Edit Routine: {routine.name}',
                 'object': routine,
                 'error': 'Name is required.',
-                'programs': programs,
                 'all_exercises': all_exercises,
                 'routine_exercises': existing_routine_exercises, # Pass existing for error re-render
                 'name_value': name,
                 'description_value': description,
-                'program_id_value': program_id
             })
 
         routine.name = name
         routine.description = description
-        
-        if program_id:
-            try:
-                program = Program.objects.get(id=program_id, user=request.user)
-                routine.program = program
-            except Program.DoesNotExist:
-                routine.program = None 
-        else:
-            routine.program = None 
-        
+
         routine.save()
 
         # Process RoutineExercise data
@@ -368,8 +341,6 @@ def routine_update(request, routine_id):
             target_sets = request.POST.get(f'target_sets_{i}')
             target_reps = request.POST.get(f'target_reps_{i}', '')
             target_rest_seconds = request.POST.get(f'target_rest_seconds_{i}')
-            progression_notes = request.POST.get(f'progression_strategy_notes_{i}', '')
-            notes = request.POST.get(f'notes_{i}', '')
             routine_exercise_id = request.POST.get(f'routine_exercise_id_{i}')
 
             if not exercise_pk or not target_sets or not target_reps: # Basic validation
@@ -377,7 +348,7 @@ def routine_update(request, routine_id):
 
             try:
                 exercise_instance = Exercise.objects.get(pk=exercise_pk)
-                
+
                 if routine_exercise_id: # Existing exercise
                     re_instance = RoutineExercise.objects.get(id=routine_exercise_id, routine=routine)
                     re_instance.exercise = exercise_instance
@@ -385,8 +356,6 @@ def routine_update(request, routine_id):
                     re_instance.target_sets = int(target_sets)
                     re_instance.target_reps = target_reps
                     re_instance.target_rest_seconds = int(target_rest_seconds) if target_rest_seconds else None
-                    re_instance.progression_strategy_notes = progression_notes
-                    re_instance.notes = notes
                     re_instance.save()
                     submitted_ids.add(re_instance.id)
                 else: # New exercise
@@ -397,8 +366,6 @@ def routine_update(request, routine_id):
                         target_sets=int(target_sets),
                         target_reps=target_reps,
                         target_rest_seconds=int(target_rest_seconds) if target_rest_seconds else None,
-                        progression_strategy_notes=progression_notes,
-                        notes=notes
                     )
                     submitted_ids.add(new_re.id) # Though it's new, adding to submitted_ids is harmless here
             except Exercise.DoesNotExist:
@@ -407,7 +374,7 @@ def routine_update(request, routine_id):
                 continue
             except ValueError:
                 continue
-        
+
         # Delete RoutineExercises that were not in the submission
         # This assumes that if an existing exercise is not submitted, it should be deleted.
         # If an exercise was merely cleared of its values, it might still be submitted with an ID but empty required fields (handled by basic validation above).
@@ -418,14 +385,12 @@ def routine_update(request, routine_id):
 
         return redirect('routine-detail', routine_id=routine.id)
     else:
-        programs = Program.objects.filter(user=request.user)
         all_exercises = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
         existing_routine_exercises = routine.exercises.select_related('exercise').order_by('order')
     return render(request, 'routine_form.html', {
-        'form': None, 
+        'form': None,
         'title': f'Edit Routine: {routine.name}',
         'object': routine,
-        'programs': programs,
         'all_exercises': all_exercises,
         'routine_exercises': existing_routine_exercises # Pass existing for form pre-fill
     })
