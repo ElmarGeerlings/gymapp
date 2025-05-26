@@ -1,6 +1,42 @@
+console.log('gainz.js script started execution.'); // Log at the very top
+
 // ======================================
 //          CORE FRAMEWORK
 // ======================================
+
+// WebSocket Setup (from stolen_js.js example)
+// const port = window.location.port ? `:${window.location.port}` : '';
+// const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+// const wsUrl = `${wsProtocol}://${window.location.hostname}${port}/ws/gainz/`; // Adjusted path
+
+// let ws = null;
+// const requestMap = new Map();
+// let reconnectAttempts = 0;
+// const maxReconnectAttempts = 10;
+// const reconnectInterval = 3000; // 3 seconds
+
+// function connectWebSocket() { // REMOVED
+    // ... WebSocket connection logic ...
+// }
+
+// Initialize WebSocket connection
+// connectWebSocket(); // REMOVED
+
+
+// Loading Indicator (can be kept if used by httpRequestHelper or other AJAX calls, or removed if only for WebSockets)
+// let intervalId; // REMOVED if show/hideLoading are removed
+// function showLoading() { // REMOVED or adapted for general AJAX
+    // ... loading logic ...
+// }
+
+// function hideLoading() { // REMOVED or adapted for general AJAX
+    // ... loading logic ...
+// }
+
+// sendWsRequest (from stolen_js.js example, adapted)
+// function sendWsRequest(endpoint, element) { // REMOVED
+    // ... WebSocket send logic ...
+// }
 
 const observer = new MutationObserver(process_mutations);
 
@@ -41,6 +77,11 @@ function handle_attribute(element, attr) {
             return;
         }
         const [eventName, targetName] = parts;
+
+        // Debugging log for the specific button
+        if (element.id === 'add-exercise-btn' && eventName === 'click' && targetName === 'showAddExerciseToRoutineModal') {
+            console.log('Attempting to bind click->showAddExerciseToRoutineModal to #add-exercise-btn');
+        }
 
         const listenerKey = `_${attrName}_${eventName}_${targetName}_listener`;
         if (element[listenerKey]) {
@@ -288,6 +329,83 @@ function clearFormErrors(formId) {
 // ======================================
 //      APPLICATION-SPECIFIC FUNCTIONS
 // ======================================
+
+// UI update function using httpRequestHelper
+window.handle_and_morph = async function(event) { // Made async to use await with httpRequestHelper
+    if (event.type === 'keydown' && event.key !== 'Enter') {
+        return;
+    }
+    event.preventDefault();
+
+    const element = event.currentTarget;
+    let endpoint = element.getAttribute('data-routing');
+    const targetSelector = element.getAttribute('data-target');
+
+    if (!endpoint) {
+        console.error('handle_and_morph: data-routing attribute is missing on element:', element);
+        send_toast('Configuration error: Missing routing.', 'danger', 'Error');
+        return;
+    }
+
+    // Construct URL with query parameters from data-* attributes
+    const params = new URLSearchParams();
+    for (const dataAttr in element.dataset) {
+        // data-routing and data-target are for control, others are params
+        // data-function is also for control
+        if (dataAttr !== 'routing' && dataAttr !== 'target' && dataAttr !== 'function') {
+            params.append(dataAttr, element.dataset[dataAttr]);
+        }
+    }
+    if (params.toString()) {
+        endpoint += (endpoint.includes('?') ? '&' : '?') + params.toString();
+    }
+
+    console.log(`handle_and_morph: HTTP GET to "${endpoint}" for target "${targetSelector || 'none'}"`);
+
+    try {
+        // showLoading(); // Optional: if you have a generic AJAX loading indicator
+        const response = await httpRequestHelper(endpoint, 'GET');
+        // hideLoading(); // Optional
+        console.log('handle_and_morph received HTTP response:', response);
+
+        if (!response.ok) {
+            const errorDetail = response.data?.detail || response.data?.error || response.statusText || 'An error occurred.';
+            console.error('Error from backend in handle_and_morph:', errorDetail, response);
+            send_toast(errorDetail, 'danger', 'Server Error');
+            // If the server provides HTML in the error response for the target, display it
+            if (targetSelector && response.data?.html) {
+                 const targetElement = document.querySelector(targetSelector);
+                 if (targetElement) targetElement.innerHTML = response.data.html;
+            }
+            return;
+        }
+
+        if (targetSelector && response.data && response.data.html !== undefined) {
+            const targetElement = document.querySelector(targetSelector);
+            if (targetElement) {
+                targetElement.innerHTML = response.data.html;
+            } else {
+                console.warn(`handle_and_morph: Target element "${targetSelector}" not found.`);
+                send_toast(`UI update error: Target '${targetSelector}' not found.`, 'warning', 'Client Error');
+            }
+        } else if (targetSelector && (!response.data || response.data.html === undefined)) {
+            console.warn(`handle_and_morph: No HTML content provided in response for target "${targetSelector}". Response:`, response);
+        }
+
+        // Handle toast messages from response.data if structured accordingly
+        if (response.data && response.data.toast) {
+            const toast = response.data.toast;
+            send_toast(toast.body, toast.status || 'info', toast.title || '');
+        }
+
+    } catch (error) {
+        // hideLoading(); // Optional: ensure loading is hidden on error
+        // This catch handles errors from httpRequestHelper itself (e.g., network errors)
+        console.error('Error in httpRequestHelper call for handle_and_morph:', error);
+        const message = error.data?.detail || error.message || 'Error processing action.';
+        send_toast(message, 'danger', 'Request Failed');
+    }
+};
 
 // --- Add Exercise Modal Submission ---
 // This function will be triggered by data-function="click->saveExercise"
@@ -819,66 +937,62 @@ function setupDragAndDropListeners(cardElement) {
     cardElement.addEventListener('dragend', handleDragEnd);
 }
 
-window.initializeRoutineForm = function() {
-    const exercisesContainer = document.getElementById('routine-exercises-container');
-    if (exercisesContainer) {
-        // Add D&D listeners to container
-        exercisesContainer.addEventListener('dragover', handleDragOver);
-        exercisesContainer.addEventListener('drop', handleDrop);
-
-        // Add D&D listeners to existing cards
-        exercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
-            setupDragAndDropListeners(card);
-        });
-
-        if (exercisesContainer.querySelectorAll('.exercise-routine-card').length > 0) {
-            updateRoutineFormCount();
-            updateRoutineExerciseOrderNumbers();
-        }
-    }
-}
-
-// Update appendExerciseCardToRoutine to also add D&D listeners to new cards
+// This function was modified to correctly handle new card structure and add a default set.
 function appendExerciseCardToRoutine(exerciseId, exerciseName) {
-    const exercisesContainer = document.getElementById('routine-exercises-container');
-    const exerciseTemplateHTML = document.getElementById('routine-exercise-template')?.innerHTML;
-
-    if (!exercisesContainer || !exerciseTemplateHTML) {
-        console.error('Missing exercises container or template.');
-        return;
+    const template = document.getElementById('routine-exercise-template');
+    if (!template) {
+        console.error('#routine-exercise-template not found!');
+        return null; // Return null or throw error
     }
 
-    const newIndex = getNextRoutineExerciseIndex();
-    const defaultOrder = exercisesContainer.querySelectorAll('.exercise-routine-card').length + 1;
+    const container = document.getElementById('routine-exercises-container');
+    if (!container) {
+        console.error('#routine-exercises-container not found!');
+        return null;
+    }
 
-    let newExerciseHtml = exerciseTemplateHTML.replace(/__INDEX__/g, newIndex)
-                                              .replace(/__DEFAULT_ORDER__/g, defaultOrder);
+    const nextIndex = getNextRoutineExerciseIndex(); // Ensure this gives a unique index
+    const defaultOrder = nextIndex + 1; // Order is 1-based
+
+    let content = template.innerHTML;
+    content = content.replace(/__INDEX__/g, nextIndex)
+                     .replace(/__ORDER__/g, defaultOrder)
+                     .replace(/__EXERCISE_NAME__/g, exerciseName || 'Select Exercise');
 
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = newExerciseHtml;
+    tempDiv.innerHTML = content;
     const newCard = tempDiv.firstElementChild;
-
-    if (newCard) {
-        const exerciseSelectInCard = newCard.querySelector(`select[name="exercise_pk_${newIndex}"]`);
-        if (exerciseSelectInCard) {
-            exerciseSelectInCard.value = exerciseId;
-        }
-        exercisesContainer.appendChild(newCard);
-        setupDragAndDropListeners(newCard); // Add D&D listeners to the newly added card
-
-        const orderInputForNewCard = newCard.querySelector(`input[name="order_${newIndex}"]`);
-        if(orderInputForNewCard) orderInputForNewCard.value = defaultOrder;
-        const orderSpanForNewCard = newCard.querySelector('.exercise-order');
-        if(orderSpanForNewCard) orderSpanForNewCard.textContent = defaultOrder;
-
-        updateRoutineFormCount();
-        // Order numbers for existing items are updated by updateRoutineExerciseOrderNumbers if needed,
-        // called from handleDrop or if an item is removed.
-    } else {
-        console.error("Could not create new exercise card from template.");
+    
+    if (!newCard) {
+        console.error("Could not create new exercise card from template content.");
+        return null;
     }
+    newCard.dataset.index = nextIndex; // Set the data-index attribute
+
+    // Set the selected exercise in the dropdown
+    const exerciseSelect = newCard.querySelector('.exercise-select');
+    if (exerciseSelect && exerciseId) {
+        exerciseSelect.value = exerciseId;
+        // Trigger update for name and default type display after setting value
+        updateExerciseCardName({ target: exerciseSelect });
+    } else if (exerciseSelect) {
+        // If no exerciseId, ensure default type display is generic
+        const specificTypeSelect = newCard.querySelector('select[name*="routine_specific_exercise_type"]');
+        if (specificTypeSelect && specificTypeSelect.options.length > 0 && specificTypeSelect.options[0].value === '') {
+            specificTypeSelect.options[0].textContent = 'Default (Select Exercise First)';
+        }
+    }
+    
+    container.appendChild(newCard);
+    setupDragAndDropListeners(newCard); // Add D&D listeners
+    updateRoutineExerciseOrderNumbers(); // Update order numbers for all cards
+
+    // Automatically add one default set to the new exercise card
+    window.addSetToExerciseCard(newCard); // Pass the new card element directly
+    return newCard; // Return the created card element
 }
 
+// Restore window.selectAndAddExerciseToRoutine
 window.selectAndAddExerciseToRoutine = function(event) {
     const selectElement = event.target;
     const exerciseId = selectElement.value;
@@ -890,42 +1004,296 @@ window.selectAndAddExerciseToRoutine = function(event) {
     const selectedOption = selectElement.options[selectElement.selectedIndex];
     const exerciseName = selectedOption.dataset.name || selectedOption.text;
 
-    appendExerciseCardToRoutine(exerciseId, exerciseName);
+    // Call the corrected appendExerciseCardToRoutine
+    const newCard = appendExerciseCardToRoutine(exerciseId, exerciseName);
+
+    if (newCard) {
+        // Optional: Scroll to the new card or highlight it
+    }
 
     // Close the modal
     const modal = document.getElementById('add-exercise-to-routine-modal');
     if (modal) {
         modal.style.display = 'none';
     }
-
-    // It might be good practice to reset the select here too,
-    // though showAddExerciseToRoutineModal will do it when modal is next opened.
-    // selectElement.value = ''; // Optional: reset immediately
+    // Reset the select for next time (already done in showAddExerciseToRoutineModal, but good practice)
+    selectElement.value = ''; 
 }
 
-// ======================================
-//          INITIALIZATION
-// ======================================
+function initializeRoutineForm() {
+    const routineExercisesContainer = document.getElementById('routine-exercises-container');
+    if (routineExercisesContainer) {
+        // Initial setup for existing cards from server
+        routineExercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
+            setupDragAndDropListeners(card);
+            // Update exercise name and default type for existing cards
+            const exerciseSelect = card.querySelector('.exercise-select');
+            if (exerciseSelect && exerciseSelect.value) {
+                // Ensure the event object or a compatible structure is passed if the function expects it
+                updateExerciseCardName({target: exerciseSelect}); 
+            }
+        });
 
+        // Add dragover listener to the container for D&D reordering indication
+        routineExercisesContainer.addEventListener('dragover', handleDragOver);
+        // Add drop listener to the container
+        routineExercisesContainer.addEventListener('drop', handleDrop);
+    }
+
+    updateRoutineExerciseOrderNumbers(); // Update order numbers for any server-rendered cards
+
+    // Setup field visibility toggles - NO LONGER NEEDED HERE, data-function handles it.
+    // const rpeToggle = document.getElementById('toggle-rpe-visibility');
+    // const restToggle = document.getElementById('toggle-rest-time-visibility');
+    // const notesToggle = document.getElementById('toggle-notes-visibility');
+
+    // if(rpeToggle) rpeToggle.addEventListener('change', updateSetRowFieldVisibility);
+    // if(restToggle) restToggle.addEventListener('change', updateSetRowFieldVisibility);
+    // if(notesToggle) notesToggle.addEventListener('change', updateSetRowFieldVisibility);
+
+    // Call it once to set initial state of all fields (including those from server)
+    // This needs to be on window object if data-function calls it, which it already is.
+    window.updateSetRowFieldVisibility(); 
+}
+
+// Initialization on DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded event fired');
+    console.log('DOMContentLoaded event fired from gainz.js');
 
-    // Initial scan for elements present on page load
+    // Explicitly scan for and handle data-function attributes on existing elements
+    console.log('Scanning for initial data-function attributes...');
     document.querySelectorAll('[data-function]').forEach(element => {
-         console.log('Initial scan found element with data-function:', element);
-         handle_attribute(element, element.getAttributeNode('data-function'));
+        console.log('Initial scan processing element:', element); // Log the element itself
+        const attrNode = element.getAttributeNode('data-function');
+        if (attrNode) { // Ensure the attribute node exists
+            handle_attribute(element, attrNode);
+        } else {
+            console.warn('Element found by querySelectorAll but getAttributeNode("data-function") is null for:', element);
+        }
     });
 
-    // Explicitly initialize routine form if its container is present
-    if (document.getElementById('routine-exercises-container')) {
+    if (document.getElementById('routineForm')) { 
         initializeRoutineForm();
     }
 
     // Start observing the body for dynamically added/changed elements
+    console.log('Starting MutationObserver for data-function attributes...');
     observer.observe(document.body, {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['data-function'] // Only observe data-function
+        attributeFilter: ['data-function'] 
     });
 });
+
+// Make updateSetRowFieldVisibility explicitly global if not already, for data-function
+window.updateSetRowFieldVisibility = updateSetRowFieldVisibility;
+
+// Helper function to update visibility of optional set fields based on checkboxes
+function updateSetRowFieldVisibility() {
+    const showRPE = document.getElementById('toggle-rpe-visibility')?.checked;
+    const showRestTime = document.getElementById('toggle-rest-time-visibility')?.checked;
+    const showNotes = document.getElementById('toggle-notes-visibility')?.checked;
+
+    document.querySelectorAll('.set-row').forEach(setRow => {
+        const rpeField = setRow.querySelector('.rpe-field');
+        const restTimeField = setRow.querySelector('.rest-time-field');
+        const notesField = setRow.querySelector('.notes-field');
+
+        if (rpeField) rpeField.style.display = showRPE ? 'block' : 'none';
+        if (restTimeField) restTimeField.style.display = showRestTime ? 'block' : 'none';
+        if (notesField) notesField.style.display = showNotes ? 'block' : 'none';
+    });
+}
+
+// Helper function to update set numbers and input names within an exercise card
+function updateSetNumbers(exerciseCardElement) {
+    const exerciseIndex = exerciseCardElement.dataset.index;
+    const setRows = exerciseCardElement.querySelectorAll('.sets-container .set-row');
+    setRows.forEach((setRow, newSetIndex) => {
+        setRow.dataset.setIndex = newSetIndex;
+        
+        const setNumberDisplay = setRow.querySelector('.set-number-display');
+        if (setNumberDisplay) setNumberDisplay.textContent = `Set ${newSetIndex + 1}`;
+
+        const setNumberInput = setRow.querySelector('.set-number-input');
+        if (setNumberInput) setNumberInput.value = newSetIndex + 1;
+
+        // Update name attributes for all inputs in the set row
+        setRow.querySelectorAll('input[name*="planned_sets"], select[name*="planned_sets"], textarea[name*="planned_sets"]').forEach(input => {
+            const oldName = input.getAttribute('name');
+            const newName = oldName.replace(/planned_sets\[\d+\]/, `planned_sets[${newSetIndex}]`);
+            // Also, ensure the exercise index part is correct if it was a placeholder
+            // This is more for newly added cards from template than for re-ordering existing ones
+            const routineExerciseIdInput = exerciseCardElement.querySelector('input[name^="routine_exercise_id_"]');
+            if (routineExerciseIdInput && !routineExerciseIdInput.value) {
+                newName = newName.replace(/routine_exercise\[\d+\]/, `routine_exercise[${exerciseIndex}]`);
+            }
+            input.setAttribute('name', newName);
+
+            // Update IDs if they follow a similar pattern (important for labels)
+            if (input.id) {
+                const oldId = input.id;
+                const newId = oldId.replace(/planned_sets_\d+_/g, `planned_sets_${newSetIndex}_`).replace(/__EXERCISE_INDEX__/g, exerciseIndex);
+                input.setAttribute('id', newId);
+                const label = document.querySelector(`label[for='${oldId}']`);
+                if (label) label.setAttribute('for', newId);
+            }
+        });
+    });
+}
+
+window.updateExerciseCardName = function(event) {
+    const selectElement = event.target;
+    const exerciseCard = selectElement.closest('.exercise-routine-card');
+    if (!exerciseCard) return;
+
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    const exerciseName = selectedOption.dataset.name || 'Exercise';
+    
+    const nameDisplay = exerciseCard.querySelector('.exercise-name-display');
+    if (nameDisplay) nameDisplay.textContent = exerciseName;
+
+    // Update the default exercise type in the specific type dropdown
+    const specificTypeSelect = exerciseCard.querySelector('select[name*="routine_specific_exercise_type"]');
+    if (specificTypeSelect && specificTypeSelect.options.length > 0) {
+        const defaultOption = specificTypeSelect.options[0];
+        // Assumption: all_exercises_details (JS object) is available globally or passed appropriately
+        // It should map exercise PK to its details including default type display
+        // For now, we'll just clear it if we don't have the data readily.
+        // This part needs the exercise_type_choices passed to the template AND the actual default type of the selected ex.
+        const exercisePk = selectedOption.value;
+        // Placeholder: In a real scenario, you'd fetch this from a data structure if not on the option itself.
+        // For now, if ex.default_type_display was a data attribute on the option:
+        const defaultTypeDisplay = selectedOption.dataset.defaultTypeDisplay || 'Type'; 
+        if (defaultOption.value === '') { // Ensure it's the "Default" option
+            defaultOption.textContent = `Default (${defaultTypeDisplay})`;
+        }
+    }
+}
+
+window.addSetToExerciseCard = function(eventOrCardElement) {
+    let exerciseCard;
+    if (eventOrCardElement instanceof HTMLElement) {
+        exerciseCard = eventOrCardElement;
+    } else { // It's an event
+        exerciseCard = eventOrCardElement.target.closest('.exercise-routine-card');
+    }
+    
+    if (!exerciseCard) return;
+
+    const exerciseIndex = exerciseCard.dataset.index;
+    const setsContainer = exerciseCard.querySelector('.sets-container');
+    if (!setsContainer) return;
+
+    const setTemplate = document.getElementById('set-row-template');
+    if (!setTemplate) {
+        console.error('#set-row-template not found!');
+        return;
+    }
+
+    const nextSetIndex = setsContainer.querySelectorAll('.set-row').length;
+    const newSetNumber = nextSetIndex + 1;
+
+    const clone = setTemplate.content.cloneNode(true);
+    const newSetRow = clone.querySelector('.set-row');
+    newSetRow.dataset.setIndex = nextSetIndex;
+
+    const setNumberDisplay = newSetRow.querySelector('.set-number-display');
+    if (setNumberDisplay) setNumberDisplay.textContent = `Set ${newSetNumber}`;
+
+    const setNumberInput = newSetRow.querySelector('.set-number-input');
+    if (setNumberInput) setNumberInput.value = newSetNumber;
+
+    // Update name attributes and IDs
+    newSetRow.querySelectorAll('input, select, textarea').forEach(input => {
+        let name = input.getAttribute('name');
+        if (name) {
+            name = name.replace(/__EXERCISE_INDEX__/g, exerciseIndex)
+                       .replace(/__SET_INDEX__/g, nextSetIndex)
+                       .replace(/__SET_NUMBER__/g, newSetNumber); // Though set number is mostly for display
+            input.setAttribute('name', name);
+        }
+        let id = input.getAttribute('id');
+        if (id) {
+            id = id.replace(/__EXERCISE_INDEX__/g, exerciseIndex)
+                   .replace(/__SET_INDEX__/g, nextSetIndex)
+                   .replace(/__SET_NUMBER__/g, newSetNumber);
+            input.setAttribute('id', id);
+            const label = clone.querySelector(`label[for='${id.replace(nextSetIndex, '__SET_INDEX__').replace(exerciseIndex, '__EXERCISE_INDEX__')}']`);
+            if (label) label.setAttribute('for', id);
+        }
+    });
+    
+    setsContainer.appendChild(newSetRow);
+    updateSetRowFieldVisibility(); // Apply current visibility settings
+    // Event listeners for new buttons will be handled by the global mutation observer for data-function
+}
+
+window.removeSetFromExerciseCard = function(event) {
+    const setRow = event.target.closest('.set-row');
+    if (!setRow) return;
+
+    const exerciseCard = setRow.closest('.exercise-routine-card');
+    setRow.remove();
+
+    if (exerciseCard) {
+        updateSetNumbers(exerciseCard);
+    }
+}
+
+window.duplicateSetRow = function(event) {
+    const sourceSetRow = event.target.closest('.set-row');
+    if (!sourceSetRow) return;
+
+    const exerciseCard = sourceSetRow.closest('.exercise-routine-card');
+    if (!exerciseCard) return;
+
+    const setsContainer = exerciseCard.querySelector('.sets-container');
+    if (!setsContainer) return;
+
+    const exerciseIndex = exerciseCard.dataset.index;
+    const newSetIndex = setsContainer.querySelectorAll('.set-row').length; // Index for the new row
+    const newSetNumber = newSetIndex + 1;
+
+    const clone = sourceSetRow.cloneNode(true);
+    clone.dataset.setIndex = newSetIndex;
+
+    // Clear the ID field for the new set (so backend treats it as new)
+    const idInput = clone.querySelector('input[name*="_id"]');
+    if (idInput) idInput.value = '';
+
+    const setNumberDisplay = clone.querySelector('.set-number-display');
+    if (setNumberDisplay) setNumberDisplay.textContent = `Set ${newSetNumber}`;
+
+    const setNumberInput = clone.querySelector('.set-number-input');
+    if (setNumberInput) setNumberInput.value = newSetNumber;
+
+    // Update name attributes and IDs for the cloned row
+    clone.querySelectorAll('input, select, textarea').forEach(input => {
+        let name = input.getAttribute('name');
+        if (name) {
+            name = name.replace(/planned_sets\[\d+\]/, `planned_sets[${newSetIndex}]`);
+            // Ensure exercise index is correct (especially if source was also from template)
+            name = name.replace(/routine_exercise\[(?:\|__EXERCISE_INDEX__\|)\]/g, `routine_exercise[${exerciseIndex}]`);
+            input.setAttribute('name', name);
+        }
+        let id = input.getAttribute('id');
+        if (id) {
+            const oldSetIndexPattern = /planned_sets_\d+_/; // Matches planned_sets_0_, planned_sets_1_, etc.
+            id = id.replace(oldSetIndexPattern, `planned_sets_${newSetIndex}_`)
+                   .replace(/__EXERCISE_INDEX__/g, exerciseIndex) // if coming from a template placeholder
+                   .replace(/routine_exercise_\d+_/, `routine_exercise_${exerciseIndex}_`); // if coming from an existing item
+            input.setAttribute('id', id);
+            const label = clone.querySelector(`label[for='${input.getAttribute('data-original-id-for-label') || id}']`); // A bit hacky, assumes original ID for label if complex IDs
+            if (label) label.setAttribute('for', id);
+        }
+    });
+
+    // Insert after the source row
+    sourceSetRow.parentNode.insertBefore(clone, sourceSetRow.nextSibling);
+    
+    // Update numbers for all subsequent sets (including the one just added if it wasn't last)
+    updateSetNumbers(exerciseCard);
+    updateSetRowFieldVisibility(); // Apply visibility to the new row
+}

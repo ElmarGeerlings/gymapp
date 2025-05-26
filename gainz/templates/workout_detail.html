@@ -1,45 +1,76 @@
 {% extends "base.html" %}
 
-{% block title %}{{ title }}{% endblock %}
+{% block title %}
+    {{ title|default:"Workout Details" }}
+{% endblock title %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>{{ workout.name }}</h2>
-    <p class="text-muted">{{ workout.date|date:"F d, Y, P" }}</p>
-    {% if workout.notes %}
-        <p><strong>Notes:</strong> {{ workout.notes|linebreaksbr }}</p>
-    {% endif %}
-    {% if workout.duration %}
-        <p><strong>Duration:</strong> {{ workout.duration }}</p> {# Adjust formatting as needed #}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-info text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="card-title h3 mb-0">{{ workout.name }}</h1>
+                {# Placeholder for Edit/Delete Workout buttons - to be positioned better #}
+                <div>
+                    {# <a href="#" class="btn btn-light btn-sm me-2">Edit Workout</a> #}
+                    {# <a href="#" class="btn btn-danger btn-sm">Delete Workout</a> #}
+                </div>
+            </div>
+            <p class="mb-0"><small>{{ workout.date|date:"l, F d, Y, P" }}</small></p>
+        </div>
+        <div class="card-body">
+            {% if workout.notes %}
+                <h6 class="card-subtitle mb-2 text-muted">Notes:</h6>
+                <p class="card-text">{{ workout.notes|linebreaksbr }}</p>
+            {% endif %}
+            {% if workout.duration %}
+                <p class="card-text"><strong>Duration:</strong> {{ workout.duration }}</p>
+            {% endif %}
+            {% if workout.routine_source %}
+                <p class="card-text"><small class="text-muted">Based on routine: <a href="{% url 'routine-detail' workout.routine_source.id %}">{{ workout.routine_source.name }}</a></small></p>
+            {% endif %}
+        </div>
+    </div>
+
+    <h2 class="mt-4 mb-3">Logged Exercises</h2>
+
+    {# Consolidate exercise iteration if possible, or keep categorized #}
+    {# For now, maintaining the categorized structure from the view #}
+    
+    {% if primary_exercises or secondary_exercises or accessory_exercises %}
+        {% if primary_exercises %}
+            <h4 class="mt-4 mb-3 text-primary">Primary Exercises</h4>
+            {% for we in primary_exercises %}
+                {% include "partials/workout_exercise_card.html" with workout_exercise=we %}
+            {% endfor %}
+        {% endif %}
+
+        {% if secondary_exercises %}
+            <h4 class="mt-4 mb-3 text-secondary">Secondary Exercises</h4>
+            {% for we in secondary_exercises %}
+                {% include "partials/workout_exercise_card.html" with workout_exercise=we %}
+            {% endfor %}
+        {% endif %}
+
+        {% if accessory_exercises %}
+            <h4 class="mt-4 mb-3 text-info">Accessory Exercises</h4>
+            {% for we in accessory_exercises %}
+                {% include "partials/workout_exercise_card.html" with workout_exercise=we %}
+            {% endfor %}
+        {% endif %}
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            No exercises were logged for this workout.
+        </div>
     {% endif %}
 
-    <hr>
-
-    {% if primary_exercises %}
-        <h3>Primary Exercises</h3>
-        {% for we in primary_exercises %}
-            {% include "partials/workout_exercise_detail.html" with workout_exercise=we %}
-        {% endfor %}
-    {% endif %}
-
-    {% if secondary_exercises %}
-        <h3>Secondary Exercises</h3>
-        {% for we in secondary_exercises %}
-            {% include "partials/workout_exercise_detail.html" with workout_exercise=we %}
-        {% endfor %}
-    {% endif %}
-
-    {% if accessory_exercises %}
-        <h3>Accessory Exercises</h3>
-        {% for we in accessory_exercises %}
-            {% include "partials/workout_exercise_detail.html" with workout_exercise=we %}
-        {% endfor %}
-    {% endif %}
-
-    <div class="mt-4">
-        <a href="{% url 'workout-list' %}" class="btn btn-secondary">Back to Workouts</a>
-        {# Add Edit/Delete buttons later if needed #}
+    <div class="mt-4 d-flex justify-content-between">
+        <a href="{% url 'workout-list' %}" class="btn btn-outline-secondary">Back to Workouts</a>
+        <div>
+            <a href="{% url 'workout-update' workout.id %}" class="btn btn-primary me-2">Edit Workout</a>
+            <a href="{% url 'workout-delete' workout.id %}" class="btn btn-danger">Delete Workout</a>
+        </div>
     </div>
 
 </div>
-{% endblock %}
+{% endblock content %}

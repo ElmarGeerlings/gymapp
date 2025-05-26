@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ title|default:"Start Workout" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h1 class="card-title h3 mb-0">Start Workout: {{ routine.name }}</h1>
+        </div>
+        <div class="card-body">
+            {% if routine.description %}
+                <p class="card-text">{{ routine.description }}</p>
+            {% else %}
+                <p class="card-text text-muted">No description provided for this routine.</p>
+            {% endif %}
+            <p class="card-text"><small class="text-muted">You are about to start a new workout based on this routine. Suggested reps and weights are pre-filled based on your history and the routine targets. Adjust as needed.</small></p>
+        </div>
+    </div>
+
+    <h2 class="mt-4 mb-3">Log Your Workout</h2>
+
+    <form method="POST" action="{% url 'start-workout-from-routine' routine.id %}">
+        {% csrf_token %}
+        
+        <input type="hidden" name="routine_id" value="{{ routine.id }}">
+        {# Add a field for Workout Name, prefill with Routine name #}
+        <div class="mb-3">
+            <label for="workout_name" class="form-label">Workout Name</label>
+            <input type="text" class="form-control" id="workout_name" name="workout_name" value="{{ routine.name }}" required>
+        </div>
+
+        {% if routine_exercises_with_sets %}
+            {% for exercise_item in routine_exercises_with_sets %}
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header">
+                        <div class="d-flex w-100 justify-content-between align-items-center">
+                            <h5 class="mb-0">{{ exercise_item.exercise.name }}</h5>
+                            <input type="hidden" name="routine_exercise_id_{{ forloop.counter0 }}" value="{{ exercise_item.routine_exercise.id }}">
+                        </div>
+                        {% if exercise_item.routine_exercise.routine_specific_exercise_type %}
+                            <small class="text-muted">Type: {{ exercise_item.routine_exercise.get_routine_specific_exercise_type_display }}</small>
+                        {% else %}
+                             <small class="text-muted">Type: {{ exercise_item.exercise.get_exercise_type_display }} (Default)</small>
+                        {% endif %}
+                    </div>
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">Log Sets:</h6>
+                        {% for set_data in exercise_item.sets %}
+                            <input type="hidden" name="set_template_id_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" value="{{ set_data.template.id }}">
+                            <div class="set-log-item border rounded p-3 mb-2 bg-light">
+                                <p class="fw-bold">Set {{ set_data.template.set_number }}</p>
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-4">
+                                        <label for="reps_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label small">Reps (Target: {{ set_data.template.target_reps|default:"N/A" }})</label>
+                                        <input type="number" class="form-control form-control-sm" id="reps_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" name="reps_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" value="{{ set_data.prefill_reps|default:'' }}" placeholder="Reps">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="weight_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label small">Weight (Target: {{ set_data.template.target_weight|default:"N/A" }}{% if set_data.template.target_weight %}kg{% endif %})</label>
+                                        <input type="number" step="0.01" class="form-control form-control-sm" id="weight_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" name="weight_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" value="{{ set_data.prefill_weight|default:'' }}" placeholder="Weight">
+                                    </div>
+                                    <div class="col-md-2">
+                                         <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" value="true" id="warmup_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" name="is_warmup_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}">
+                                            <label class="form-check-label small" for="warmup_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}">
+                                                Warmup
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% if set_data.template.notes %}
+                                    <p class="mb-0 mt-2 pt-2 border-top"><small class="text-muted"><em>Notes: {{ set_data.template.notes }}</em></small></p>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                         <div class="mt-2">
+                            <label for="exercise_notes_{{ forloop.counter0 }}" class="form-label small">Notes for {{ exercise_item.exercise.name }} (this workout)</label>
+                            <textarea class="form-control form-control-sm" id="exercise_notes_{{ forloop.counter0 }}" name="exercise_notes_{{ forloop.counter0 }}" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-warning" role="alert">
+                This routine has no exercises defined. You can still log an empty workout or add exercises manually after starting.
+            </div>
+        {% endif %}
+
+        <div class="mb-3">
+            <label for="workout_notes" class="form-label">General Workout Notes</label>
+            <textarea class="form-control" id="workout_notes" name="workout_notes" rows="3"></textarea>
+        </div>
+        
+        <div class="mt-4 d-flex justify-content-between">
+            <a href="{% url 'routine-detail' routine.id %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-success">Finish & Save Workout</button>
+        </div>
+    </form>
+</div>
+{% endblock content %} 

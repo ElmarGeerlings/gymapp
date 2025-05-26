@@ -1,81 +1,71 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: false
 ---
-Project Goal: Overhaul the UI/UX for creating and managing routines in the Gainz workout tracking application. The user wants a more intuitive and modern interface, moving away from a simple form to a card-based, interactive system.
-Current State & Accomplishments:
-Backend Model Simplification:
-Routine model: Removed the direct program ForeignKey. Routines are now standalone entities in terms of their direct model definition (program association will be handled differently, likely by programs having a list of routines).
-RoutineExercise model: Removed notes and progression_strategy_notes fields.
-Corresponding changes were made to Django admin, views (routine_create, routine_update), and the data population script (populate_data.py).
-Database migrations for these changes have been created and applied.
-Routine Form UI (routine_form.html):
-Card-Based Exercises: Exercises within a routine are now represented as individual "cards" (.exercise-routine-card).
-Styling: Basic CSS for these cards has been added to gainz/static/styles.css.
-JS Logic in gainz.js: All JavaScript for the routine form has been moved to gainz.js and is invoked primarily through data-function attributes or explicit calls during DOMContentLoaded.
-initializeRoutineForm(): Sets up the form on load, including D&D listeners and initial order numbering.
-Helper functions (getNextRoutineExerciseIndex, updateRoutineExerciseOrderNumbers, updateRoutineFormCount) manage card indexing and order.
-Modal for Adding Exercises:
-A modal (#add-exercise-to-routine-modal) allows users to select an exercise from a dropdown (#modal-exercise-select populated with all_exercises).
-window.showAddExerciseToRoutineModal(event): Displays this modal and resets the select input. Triggered by data-function="click->showAddExerciseToRoutineModal" on the "Add Exercise to Routine" button.
-Generic close_modal(event): Handles closing the modal via backdrop click or close/cancel buttons (using data-function="click->close_modal").
-window.selectAndAddExerciseToRoutine(event): Triggered by data-function="change->selectAndAddExerciseToRoutine" on the modal's select dropdown. When an exercise is chosen, this function:
-Calls appendExerciseCardToRoutine(exerciseId, exerciseName) to create and add a new exercise card to the form, pre-filled with the selected exercise.
-Closes the modal.
-Drag-and-Drop Reordering of Exercise Cards:
-Native HTML5 Drag and Drop is implemented.
-The "Step" input field has been removed; order is managed by drag-and-drop. Hidden inputs (order_X) store the sequence for form submission.
-Visuals:
-When dragging starts (handleDragStart), a clone of the card (floatingClone) is created, styled to look "lifted" and maintain its original size, and follows the mouse.
-The original card in the list (draggedItem) is hidden using visibility: hidden; (.drag-source-hidden class).
-The OS-level default ghost drag image is hidden using a transparent pixel set via setDragImage.
-The handleDragMouseMove function (attached to document.dragover during a drag) updates the position of the floatingClone.
-On handleDrop, the original hidden card is moved to the correct DOM position, made visible, and the floatingClone is removed.
-Order numbers and hidden inputs are updated via updateRoutineExerciseOrderNumbers.
-Listeners are set up in initializeRoutineForm for existing cards and the container, and in appendExerciseCardToRoutine for newly added cards.
-Relevant Files Modified/Created:
-gainz/workouts/models.py
-gainz/workouts/admin.py
-gainz/views.py (specifically routine_list, routine_detail, routine_create, routine_update)
-gainz/exercises/management/commands/populate_data.py
-gainz/workouts/migrations/0003_...py
-gainz/templates/routine_detail.html
-gainz/templates/routine_form.html
-gainz/templates/routine_list.html
-gainz/static/gainz.js (significant additions for card management, modal, and D&D)
-gainz/static/styles.css (new styles for cards, D&D visual feedback)
-Next Steps (Based on User's Original Request & Subsequent Feedback):
-Dynamic Sets/Reps within Exercise Cards:
-Goal: Allow users to dynamically add/remove rows for "sets and reps" within each exercise card on the routine_form.html. Currently, each card has fixed inputs for target_sets and target_reps.
-Implementation Ideas:
-Modify the .exercise-routine-card structure (in routine_form.html template and main loop) to include:
-A container area within each card for set/rep rows.
-An "Add Set" button within each card.
-In gainz.js, create new functions (callable via data-function):
-addSetRepRowToCard(event): Triggered by the "Add Set" button on a specific card. It would:
-Identify the parent card.
-Clone a new template for a set/rep row (containing inputs for set number (likely auto-incremented or display-only), reps, and potentially weight/RPE/etc. if desired for routine planning).
-Append this new row to the card's set/rep container.
-Ensure inputs have unique names, likely indexed per card and then per set row (e.g., card_0_set_0_reps, card_0_set_1_reps). This will require careful backend processing in routine_create and routine_update views to parse these potentially numerous and variably-named inputs.
-removeSetRepRowFromCard(event): To remove a specific set/rep row.
-The backend views (routine_create, routine_update) will need significant changes to handle the submission of these dynamic set/rep rows, as the number of sets per exercise will no longer be fixed. RoutineExercise.target_sets and RoutineExercise.target_reps might need to be rethought. Perhaps RoutineExercise still stores overall targets/notes, and a new related model RoutineExerciseSetDetail (or similar) would store individual planned sets/reps if that level of detail is desired in the plan. Alternatively, the current target_sets could become a "number of working sets" and target_reps a general guideline, with the detailed rows being a UI convenience for logging if this form also serves as a template for starting a workout log (which is a more advanced concept).
-Simpler approach if detailed set/rep rows are only for the template: We could keep target_sets as a number and target_reps as a string (e.g., "3x5-8" or "AMRAP"). The "add row" could be purely a UI feature to help construct this string, or simply a way to note down multiple target rep ranges if an exercise has varying rep targets per set in the plan. If we want distinct rep targets per set in the plan, the model structure would need to change.
-Exercise Categorization (Primary/Secondary/Accessory) within a Routine:
-Goal: Allow the user to override or set an exercise's type (Primary, Secondary, Accessory) specifically for its inclusion in a given routine, defaulting to the exercise's globally defined type. Make this feature potentially optional via a user setting.
-Implementation Ideas:
-Add a new field to RoutineExercise model, e.g., routine_specific_exercise_type = models.CharField(choices=Exercise.EXERCISE_TYPE_CHOICES, blank=True, null=True).
-Update routine_form.html (cards) to include a dropdown for this if the setting is enabled.
-Update views to save/load this field.
-Implement the user setting mechanism (this is a larger feature itself).
-Refine Drag-and-Drop Visuals (Optional):
-Currently, items reorder on drop. A more advanced visual would be to insert a placeholder element into the list where the card would drop during dragover, making other items shift live. This makes handleDragOver more complex.
-Recommendation for Immediate Next Step:
-Given the complexity, I'd recommend focusing on Step 1: Dynamic Sets/Reps within Exercise Cards next, but starting with the simpler interpretation:
-Keep RoutineExercise.target_sets (e.g., 3) and RoutineExercise.target_reps (e.g., "5-8"). The "add row" feature within a card on the routine form might be deferred if it's primarily for logging individual set details rather than planning them. If the goal for the routine template is just to say "Bench Press: 3 sets of 5-8 reps", the current inputs are mostly sufficient.
-If the "add row" for sets/reps is indeed about planning distinct rep/weight targets for each set within the routine template itself, then we need to clarify the model structure first (e.g., a new RoutineExerciseSetTarget model linked to RoutineExercise).
-Clarification Question:
-For the "add a row, here you can choose the amount of sets and reps" feature within each exercise card in the routine planning form:
-Is the idea to define different rep targets for each set (e.g., Set 1: 10 reps, Set 2: 8 reps, Set 3: 6 reps) as part of the routine plan?
-Or is it more about having a single target (like "3 sets of 5-8 reps") and the "add row" was a miscommunication or intended for a different context (like actual workout logging)?
-Understanding this will determine how we proceed with the "sets/reps" part.
+Okay, here's a plan and context for handover to a new agent:
+
+**Project Goal:** Implement dynamic updates for "Performance Feedback" on the workout detail page. When a user clicks "Increase", "Stay", or "Decrease" for a logged exercise, the feedback should be saved, and the UI text indicating the current feedback should update instantly without a full page reload.
+
+**Current Situation & Approach:**
+
+*   **AJAX-based Solution:** We've opted for an AJAX-based solution using the project's existing JavaScript framework. This avoids introducing WebSockets for this specific feature to maintain simplicity.
+*   **JavaScript (`gainz/static/gainz.js`):**
+    *   The WebSocket-related code previously added has been **removed**.
+    *   The global function `window.handle_and_morph(event)` is the core client-side handler.
+    *   `handle_and_morph` is triggered by `data-function="click->handle_and_morph"` on HTML elements.
+    *   It reads `data-routing` (an HTTP URL) and `data-target` (a CSS selector for the element to update) from the triggering element.
+    *   It collects all other `data-*` attributes from the element (e.g., `data-workout-exercise-id`, `data-feedback`) and appends them as **query parameters** to the URL specified in `data-routing`.
+    *   It then makes an **HTTP GET request** to this constructed URL using the existing `httpRequestHelper` function.
+    *   Upon receiving a JSON response, it updates the `innerHTML` of the `data-target` element with `response.data.html`.
+    *   It can also display toast notifications if `response.data.toast` is provided.
+*   **HTML (`gainz/templates/partials/workout_exercise_card.html`):**
+    *   The "Decrease", "Stay", and "Increase" feedback buttons have been configured with the necessary `data-*` attributes:
+        *   `data-function="click->handle_and_morph"`
+        *   `data-routing="{% url 'ajax_update_workout_exercise_feedback' %}"` (points to the Django view)
+        *   `data-target="#feedback-status-{{ workout_exercise.id }}"` (points to the `<span>` that displays the feedback text)
+        *   `data-workout-exercise-id="{{ workout_exercise.id }}"`
+        *   `data-feedback="decrease|stay|increase"`
+    *   The `<span>` to display the feedback text has the ID `feedback-status-{{ workout_exercise.id }}`.
+*   **Django Backend:**
+    *   **View (`gainz/views.py`):**
+        *   A new view function `ajax_update_workout_exercise_feedback(request)` has been created.
+        *   It's decorated with `@login_required`.
+        *   It handles HTTP GET requests.
+        *   It extracts `workoutExerciseId` (note the camelCase from JS `dataset` conversion) and `feedback` from `request.GET` parameters.
+        *   It performs permission checks to ensure the logged-in user owns the `WorkoutExercise`.
+        *   It validates the feedback value against choices in the `WorkoutExercise` model.
+        *   It updates the `performance_feedback` field of the `WorkoutExercise` object in the database.
+        *   It returns a `JsonResponse` containing:
+            *   `html`: The new display text for the feedback (e.g., from `workout_exercise.get_performance_feedback_display()`).
+            *   `toast` (optional): An object with `body`, `status`, and `title` for client-side toast notifications.
+    *   **URLs (`gainz/urls.py`):**
+        *   A new URL pattern `path('ajax/update_workout_exercise_feedback/', views.ajax_update_workout_exercise_feedback, name='ajax_update_workout_exercise_feedback')` has been added.
+    *   **WebSockets Removed:**
+        *   `gainz/consumers.py` and `gainz/routing.py` have been deleted.
+        *   `gainz/asgi.py` has been reverted to the default Django ASGI application setup, removing Channels-specific configurations.
+
+**Plan for New Agent / Next Steps:**
+
+1.  **Verify Functionality:**
+    *   Thoroughly test the feedback buttons on the `workout_detail.html` page.
+    *   Confirm that clicking a button:
+        *   Sends an AJAX GET request to `/ajax/update_workout_exercise_feedback/` with the correct query parameters (`workoutExerciseId`, `feedback`).
+        *   The `ajax_update_workout_exercise_feedback` view correctly processes the request, updates the database, and returns the appropriate `JsonResponse`.
+        *   The `handle_and_morph` JavaScript function successfully updates the `innerHTML` of the `#feedback-status-{{ workout_exercise.id }}` span with the HTML from the response.
+        *   Toast notifications appear as expected for success and error scenarios.
+        *   Permission checks in the view function correctly prevent unauthorized updates.
+        *   Input validation (e.g., for `feedback_value`) works as intended.
+2.  **Review Error Handling:**
+    *   Check client-side error handling in `handle_and_morph` for network issues or non-OK HTTP responses.
+    *   Check server-side error handling in the `ajax_update_workout_exercise_feedback` view (e.g., `DoesNotExist`, `ValueError`, permissions). Ensure appropriate JSON responses are sent back for `handle_and_morph` to display errors or update the target HTML with an error message.
+3.  **Code Review & Refinements:**
+    *   Review the JavaScript in `gainz.js`, particularly `handle_and_morph`, for clarity and robustness.
+    *   Review the Python code in `gainz/views.py` for the `ajax_update_workout_exercise_feedback` view, checking for efficiency, security, and adherence to Django best practices.
+4.  **Consider Edge Cases:**
+    *   What happens if multiple clicks are made rapidly? (The current AJAX setup should handle these as separate requests; `event.preventDefault()` is used).
+    *   Are there any specific UI states that need to be managed during the AJAX request (e.g., temporarily disabling buttons)? (Currently not implemented, but could be added to `handle_and_morph` if desired).
+5.  **Documentation (if necessary):**
+    *   Ensure comments in the code are clear, especially around the `handle_and_morph` flow and the `ajax_update_workout_exercise_feedback` view.
+
+This approach leverages the existing client-side infrastructure for AJAX calls and Django's standard request-response cycle for the backend, providing a simpler path to achieving the desired dynamic UI update compared to introducing WebSockets solely for this feature.

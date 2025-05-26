@@ -1,19 +1,27 @@
 from django.contrib import admin
 from .models import (
-    Program, Routine, RoutineExercise,
+    Program, Routine, RoutineExercise, RoutineExerciseSet,
     Workout, WorkoutExercise, ExerciseSet
 )
 
 # --- Planning Model Admins ---
+
+class RoutineExerciseSetInline(admin.TabularInline):
+    """ Inline for defining planned sets within a RoutineExercise. """
+    model = RoutineExerciseSet
+    extra = 1 # Show one empty form for a new set
+    fields = ('set_number', 'target_reps', 'target_weight', 'target_rpe', 'rest_time_seconds', 'notes')
+    # To make it more compact, you could consider using fieldsets or a different layout if it gets too wide.
 
 class RoutineExerciseInline(admin.TabularInline):
     """ Inline for defining exercises within a Routine. """
     model = RoutineExercise
     extra = 1 # Show one empty form
     # Consider adding fields like 'exercise', 'order', 'target_sets', 'target_reps' to readonly_fields or list_display if needed
-    fields = ('order', 'exercise', 'target_sets', 'target_reps', 'target_rest_seconds')
+    fields = ('order', 'exercise', 'routine_specific_exercise_type') # Removed target_sets, target_reps, target_rest_seconds and added routine_specific_exercise_type
     # Autocomplete fields are good for ForeignKeys with many options
     autocomplete_fields = ['exercise']
+    # inlines = [RoutineExerciseSetInline] # Cannot nest inlines further in TabularInline directly
 
 class RoutineInline(admin.TabularInline):
     """ Inline for showing routines within a Program. """
@@ -41,12 +49,13 @@ class RoutineAdmin(admin.ModelAdmin):
 
 @admin.register(RoutineExercise)
 class RoutineExerciseAdmin(admin.ModelAdmin):
-    list_display = ('routine', 'exercise', 'order', 'target_sets', 'target_reps')
-    list_filter = ('routine', 'exercise')
+    list_display = ('routine', 'exercise', 'order', 'routine_specific_exercise_type') # Removed target_sets, target_reps, added routine_specific_exercise_type
+    list_filter = ('routine', 'exercise', 'routine_specific_exercise_type')
     search_fields = ('routine__name', 'exercise__name')
-    list_editable = ('order',)
+    list_editable = ('order', 'routine_specific_exercise_type')
     # Autocomplete fields are good for ForeignKeys with many options
     autocomplete_fields = ['routine', 'exercise']
+    inlines = [RoutineExerciseSetInline] # Added inline for planned sets
 
 # --- Logging Model Admins ---
 

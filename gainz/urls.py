@@ -20,6 +20,11 @@ from gainz.views import (
     routine_delete, # Add routine_delete view
     program_update, # Add program_update view
     program_delete, # Add program_delete view
+    start_workout_from_routine, # Add start_workout_from_routine view
+    workout_update,
+    workout_delete,
+    ajax_get_exercise_details,
+    ajax_update_workout_exercise_feedback,
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -79,6 +84,9 @@ urlpatterns = [
     # Delete Routine
     path('routines/<int:routine_id>/delete/', routine_delete, name='routine-delete'),
 
+    # Start Workout from Routine
+    path('routines/<int:routine_id>/start-workout/', start_workout_from_routine, name='start-workout-from-routine'),
+
     # Create Program
     path('programs/create/', program_create, name='program-create'),
 
@@ -87,4 +95,13 @@ urlpatterns = [
 
     # Delete Program
     path('programs/<int:program_id>/delete/', program_delete, name='program-delete'),
+
+    # Update Workout
+    path('workouts/<int:workout_id>/edit/', workout_update, name='workout-update'),
+
+    # Delete Workout
+    path('workouts/<int:workout_id>/delete/', workout_delete, name='workout-delete'),
+
+    path('ajax/get_exercise_details/', ajax_get_exercise_details, name='ajax_get_exercise_details'),
+    path('ajax/update_workout_exercise_feedback/', ajax_update_workout_exercise_feedback, name='ajax_update_workout_exercise_feedback'),
 ]

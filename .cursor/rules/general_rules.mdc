@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: true
 ---
 # Don't use try excepts
@@ -16,3 +16,18 @@ alwaysApply: true
 # Avoid adding dependencies as much as possible, try to keep things natively.
 
 # Don't add unneccessary error handling or try excepts.
+
+# JavaScript Function Reusability and Abstraction
+
+When creating new JavaScript functions, especially those intended for event handling (e.g., via `data-function` or other mechanisms), assess if the core logic or a significant part of it could be applicable to other components or scenarios within the application.
+
+- **Prioritize Abstraction**: If similar functionality is anticipated elsewhere, design the function to be as generic and reusable as possible. This might involve:
+    - Parameterizing a_string_var = """Hello World!"""
+    - Avoiding hardcoding of selectors or specific behaviors that could vary.
+    - Separating data manipulation/communication logic from highly specific DOM update logic if the DOM updates are too unique.
+- **Helper Functions**: Consider breaking down complex operations into smaller, reusable helper functions.
+- **Balance**: While aiming for reusability, avoid over-engineering if a piece of functionality is genuinely unique to a specific context. The goal is maintainable and understandable code.
+- **Data-Driven Behavior**: Leverage HTML `data-*` attributes to pass parameters and control behavior from the HTML, allowing JavaScript functions to be more generic. Your existing `sendWsRequest` which collects all attributes is a good example of this principle.
+- **Configuration Objects**: For functions with many options, consider passing a configuration object as a parameter.
+
+This approach aims to reduce code duplication, improve maintainability, and make the JavaScript codebase more robust and adaptable to future changes.

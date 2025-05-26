@@ -28,15 +28,40 @@ class RoutineExercise(models.Model):
     routine = models.ForeignKey(Routine, related_name='exercises', on_delete=models.CASCADE)
     exercise = models.ForeignKey('exercises.Exercise', on_delete=models.CASCADE)
     order = models.IntegerField(default=0)
-    target_sets = models.PositiveIntegerField()
-    target_reps = models.CharField(max_length=50) # e.g., "5", "8-12", "AMRAP"
-    target_rest_seconds = models.PositiveIntegerField(null=True, blank=True)
+    # target_sets = models.PositiveIntegerField()
+    # target_reps = models.CharField(max_length=50) # e.g., "5", "8-12", "AMRAP"
+    # target_rest_seconds = models.PositiveIntegerField(null=True, blank=True)
+    routine_specific_exercise_type = models.CharField(
+        max_length=20, # Adjusted to match Exercise.exercise_type max_length
+        choices=Exercise.EXERCISE_TYPE_CHOICES, # Assuming Exercise model is imported
+        blank=True,
+        null=True,
+        help_text="Override the default exercise type for this routine."
+    )
 
     class Meta:
         ordering = ['order']
 
     def __str__(self):
         return f"{self.routine.name} - {self.exercise.name}"
+
+class RoutineExerciseSet(models.Model):
+    """ Represents a planned set for an exercise within a routine. """
+    routine_exercise = models.ForeignKey(RoutineExercise, related_name='planned_sets', on_delete=models.CASCADE)
+    set_number = models.PositiveIntegerField()
+    target_reps = models.CharField(max_length=50, blank=True, help_text='e.g., "8-12", "AMRAP", "5"') # Reps can be a range or specific
+    target_weight = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    target_rpe = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True, help_text="Rate of Perceived Exertion (e.g., 7.5)")
+    rest_time_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Rest time in seconds after this set")
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['set_number']
+        # Unique together to ensure set numbers are unique per routine_exercise
+        unique_together = ('routine_exercise', 'set_number')
+
+    def __str__(self):
+        return f"{self.routine_exercise.exercise.name} - Set {self.set_number}"
 
 # -- Workout Logging Models --
 

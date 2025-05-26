@@ -1,0 +1,84 @@
+{# Template: gainz/templates/partials/workout_exercise_card.html #}
+{# Context: Expects a `workout_exercise` object #}
+
+<div class="card mb-3 shadow-sm workout-exercise-card" data-workout-exercise-id="{{ workout_exercise.id }}">
+    <div class="card-header">
+        <div class="d-flex w-100 justify-content-between align-items-center">
+            <h5 class="mb-0">{{ workout_exercise.exercise.name }}</h5>
+            {# Placeholder for Edit/Delete WorkoutExercise #}
+            <div>
+                {# <button class="btn btn-outline-secondary btn-sm">Edit</button> #}
+            </div>
+        </div>
+        <small class="text-muted">Type: {{ workout_exercise.get_exercise_type_display }}</small>
+        {% if workout_exercise.routine_exercise_source %}
+            <small class="text-muted d-block">From Routine: <a href="{% url 'routine-detail' workout_exercise.routine_exercise_source.routine.id %}">{{ workout_exercise.routine_exercise_source.routine.name }}</a> (Exercise: {{workout_exercise.routine_exercise_source.order }})</small>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if workout_exercise.notes %}
+            <h6 class="card-subtitle mb-2 text-muted">Notes for this performance:</h6>
+            <p class="card-text"><small><em>{{ workout_exercise.notes|linebreaksbr }}</em></small></p>
+        {% endif %}
+
+        {% if workout_exercise.sets.all %}
+            <h6 class="card-subtitle mt-3 mb-2 text-muted">Logged Sets:</h6>
+            {% for set in workout_exercise.sets.all %}
+                <div class="set-detail-item border rounded p-3 mb-2 bg-light">
+                    <div class="row">
+                        <div class="col-md-8 col-lg-9">
+                            <strong>Set {{ set.set_number }}</strong><br>
+                            Reps: {{ set.reps }}<br>
+                            Weight: {{ set.weight }} kg {# Assuming kg, adjust unit if needed #}
+                        </div>
+                        <div class="col-md-4 col-lg-3 text-md-end">
+                            {% if set.is_warmup %}
+                                <span class="badge bg-warning text-dark">Warmup</span>
+                            {% else %}
+                                <span class="badge bg-success">Working</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No sets recorded for this exercise.</p>
+        {% endif %}
+        
+        {# Performance Feedback UI - Placeholder for data-function integration #}
+        <div class="mt-3 pt-3 border-top">
+            <h6 class="card-subtitle mb-2 text-muted">Performance Feedback:</h6>
+            <div class="col-md-4 text-center text-md-end mt-2 mt-md-0">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Performance Feedback">
+                    <button type="button" class="btn btn-outline-danger"
+                            data-function="click->handle_and_morph"
+                            data-routing="{% url 'ajax_update_workout_exercise_feedback' %}"
+                            data-target="#feedback-status-{{ workout_exercise.id }}"
+                            data-workout-exercise-id="{{ workout_exercise.id }}"
+                            data-feedback="decrease">
+                        <i class="fas fa-arrow-down"></i> <span class="d-none d-sm-inline">Decrease</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary"
+                            data-function="click->handle_and_morph"
+                            data-routing="{% url 'ajax_update_workout_exercise_feedback' %}"
+                            data-target="#feedback-status-{{ workout_exercise.id }}"
+                            data-workout-exercise-id="{{ workout_exercise.id }}"
+                            data-feedback="stay">
+                        <i class="fas fa-equals"></i> <span class="d-none d-sm-inline">Stay</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-success"
+                            data-function="click->handle_and_morph"
+                            data-routing="{% url 'ajax_update_workout_exercise_feedback' %}"
+                            data-target="#feedback-status-{{ workout_exercise.id }}"
+                            data-workout-exercise-id="{{ workout_exercise.id }}"
+                            data-feedback="increase">
+                        <i class="fas fa-arrow-up"></i> <span class="d-none d-sm-inline">Increase</span>
+                    </button>
+                </div>
+                <p class="mt-1 mb-0">
+                    <small>Feedback: <span id="feedback-status-{{ workout_exercise.id }}" class="fw-bold">{{ workout_exercise.get_performance_feedback_display|default:"Not set" }}</span></small>
+                </p>
+            </div>
+        </div>
+    </div>
+</div> 

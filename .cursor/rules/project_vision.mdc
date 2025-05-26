@@ -1,9 +1,9 @@
 ---
-description:
-globs:
-alwaysApply: true
+description: 
+globs: 
+alwaysApply: false
 ---
- # Gainz Project Vision & Goals
+# Gainz Project Vision & Goals
 
 This document outlines the high-level vision for the Gainz workout tracking application, based on initial brainstorming notes. The goal is to create more than just a tracker, but a social platform for lifters focused on community, accurate information, and comprehensive tracking.
 
@@ -36,4 +36,4 @@ This document outlines the high-level vision for the Gainz workout tracking appl
 
 ### Community/Engagement:
 - Include a "For Fun" section for general discussion.
-- Reward contributing users (e.g., icons, achievements, ad removal, free sponsored products).
+- Reward contributing users (e.g., icons, achievements, ad removal, free sponsored products). 

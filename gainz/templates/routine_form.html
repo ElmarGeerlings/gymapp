@@ -30,49 +30,101 @@
             </div>
         </div>
 
+        <div class="card mb-3">
+            <div class="card-header">
+                Set Field Visibility
+            </div>
+            <div class="card-body">
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" id="toggle-rpe-visibility" data-target-class="rpe-field" data-function="change->updateSetRowFieldVisibility" checked>
+                    <label class="form-check-label" for="toggle-rpe-visibility">Show RPE</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" id="toggle-rest-time-visibility" data-target-class="rest-time-field" data-function="change->updateSetRowFieldVisibility" checked>
+                    <label class="form-check-label" for="toggle-rest-time-visibility">Show Rest Times</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" id="toggle-notes-visibility" data-target-class="notes-field" data-function="change->updateSetRowFieldVisibility">
+                    <label class="form-check-label" for="toggle-notes-visibility">Show Set Notes</label>
+                </div>
+            </div>
+        </div>
+
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4>Exercises in this Routine</h4>
             <button type="button" id="add-exercise-btn" class="btn btn-info" data-function="click->showAddExerciseToRoutineModal">Add Exercise to Routine</button>
         </div>
 
         <div id="routine-exercises-container">
-            {% if routine_exercises %}
-                {% for r_exercise in routine_exercises %}
-                    <div class="exercise-routine-card" data-index="{{ forloop.counter0 }}" draggable="true">
-                        <div class="card-header">
-                            <h5>Exercise <span class="exercise-order">{{ r_exercise.order|default:forloop.counter }}</span></h5>
-                            <button type="button" class="btn btn-sm btn-danger remove-exercise-btn" data-function="click->removeRoutineExerciseCard">Remove</button>
+            {% for r_exercise in routine_exercises %}
+                <div class="exercise-routine-card mb-3 p-3 border rounded" data-index="{{ forloop.counter0 }}" draggable="true">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="mb-0">Exercise <span class="exercise-order">{{ r_exercise.order|default:forloop.counter }}</span>: <span class="exercise-name-display">{{ r_exercise.exercise.name }}</span></h5>
+                        <button type="button" class="btn btn-sm btn-danger remove-exercise-btn" data-function="click->removeRoutineExerciseCard">Remove Exercise</button>
+                    </div>
+                    <input type="hidden" name="routine_exercise_{{ forloop.counter0 }}_id" value="{{ r_exercise.id }}">
+                    <input type="hidden" class="exercise-order-input" name="routine_exercise_{{ forloop.counter0 }}_order" value="{{ r_exercise.order|default:forloop.counter }}">
+                    
+                    <div class="row gx-3 mb-2">
+                        <div class="col-md-6">
+                            <label for="exercise_pk_{{ forloop.counter0 }}" class="form-label">Exercise</label>
+                            <select name="routine_exercise_{{ forloop.counter0 }}_exercise_pk" id="exercise_pk_{{ forloop.counter0 }}" class="form-select exercise-select" data-function="change->updateExerciseCardName">
+                                <option value="">Select Exercise</option>
+                                {% for ex_dict in all_exercises %}
+                                    <option value="{{ ex_dict.pk }}" 
+                                            data-name="{{ ex_dict.name }}" 
+                                            data-default-type-display="{{ ex_dict.default_type_display }}"
+                                            {% if r_exercise.exercise.pk == ex_dict.pk %}selected{% endif %}>
+                                        {{ ex_dict.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
                         </div>
-                        <input type="hidden" name="routine_exercise_id_{{ forloop.counter0 }}" value="{{ r_exercise.id }}">
-                        <input type="hidden" name="order_{{ forloop.counter0 }}" value="{{ r_exercise.order|default:forloop.counter }}">
-                        <div class="row gx-3 mb-2">
-                            <div class="col-md-7">
-                                <label for="exercise_pk_{{ forloop.counter0 }}" class="form-label">Exercise</label>
-                                <select name="exercise_pk_{{ forloop.counter0 }}" id="exercise_pk_{{ forloop.counter0 }}" class="form-select exercise-select">
-                                    <option value="">Select Exercise</option>
-                                    {% for ex in all_exercises %}
-                                        <option value="{{ ex.pk }}" {% if r_exercise.exercise.pk == ex.pk %}selected{% endif %}>{{ ex.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-2">
-                                <label for="target_sets_{{ forloop.counter0 }}" class="form-label">Target Sets</label>
-                                <input type="number" name="target_sets_{{ forloop.counter0 }}" id="target_sets_{{ forloop.counter0 }}" value="{{ r_exercise.target_sets|default:'' }}" class="form-control">
-                            </div>
-                            <div class="col-md-3">
-                                <label for="target_reps_{{ forloop.counter0 }}" class="form-label">Target Reps</label>
-                                <input type="text" name="target_reps_{{ forloop.counter0 }}" id="target_reps_{{ forloop.counter0 }}" value="{{ r_exercise.target_reps|default:'' }}" class="form-control" placeholder="e.g. 8-12">
-                            </div>
-                        </div>
-                        <div class="row gx-3">
-                            <div class="col-md-12"> {# Adjusted for full width #}
-                                <label for="target_rest_seconds_{{ forloop.counter0 }}" class="form-label">Target Rest (seconds)</label>
-                                <input type="number" name="target_rest_seconds_{{ forloop.counter0 }}" id="target_rest_seconds_{{ forloop.counter0 }}" value="{{ r_exercise.target_rest_seconds|default:'' }}" class="form-control">
-                            </div>
+                        <div class="col-md-6">
+                            <label for="routine_specific_exercise_type_{{ forloop.counter0 }}" class="form-label">Exercise Type (Optional)</label>
+                            <select name="routine_exercise_{{ forloop.counter0 }}_routine_specific_exercise_type" id="routine_specific_exercise_type_{{ forloop.counter0 }}" class="form-select">
+                                <option value="">Default ({{ r_exercise.exercise.get_exercise_type_display }})</option>
+                                {% for type_val, type_display in exercise_type_choices %}
+                                    <option value="{{ type_val }}" {% if r_exercise.routine_specific_exercise_type == type_val %}selected{% endif %}>{{ type_display }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
-                {% endfor %}
-            {% endif %}
+
+                    <h6>Planned Sets:</h6>
+                    <div class="sets-container mb-2">
+                        {% for set_plan in r_exercise.planned_sets.all %}
+                            <div class="set-row d-flex align-items-center mb-2 p-2 border rounded" data-set-index="{{ forloop.counter0 }}">
+                                <input type="hidden" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_id" value="{{ set_plan.id }}">
+                                <strong class="me-2 set-number-display">Set {{ set_plan.set_number }}</strong>
+                                <input type="hidden" class="set-number-input" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_set_number" value="{{ set_plan.set_number }}">
+                                
+                                <label for="reps_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">Reps</label>
+                                <input type="text" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_target_reps" value="{{ set_plan.target_reps|default:'' }}" class="form-control form-control-sm me-2" placeholder="Reps (e.g. 8-12)" style="width: 100px;">
+                                
+                                <label for="weight_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">Weight</label>
+                                <input type="number" step="0.01" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_target_weight" value="{{ set_plan.target_weight|default:'' }}" class="form-control form-control-sm me-2" placeholder="Weight" style="width: 90px;">
+                                
+                                <div class="rpe-field" style="display: block;"> <!-- Initially visible based on checkbox default -->
+                                    <label for="rpe_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">RPE</label>
+                                    <input type="number" step="0.1" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_target_rpe" value="{{ set_plan.target_rpe|default:'' }}" class="form-control form-control-sm me-2" placeholder="RPE" style="width: 70px;">
+                                </div>
+                                <div class="rest-time-field" style="display: block;"> <!-- Initially visible -->
+                                    <label for="rest_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">Rest</label>
+                                    <input type="number" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_rest_time_seconds" value="{{ set_plan.rest_time_seconds|default:'' }}" class="form-control form-control-sm me-2" placeholder="Rest (s)" style="width: 80px;">
+                                </div>
+                                <div class="notes-field" style="display: none;"> <!-- Initially hidden -->
+                                    <label for="notes_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">Notes</label>
+                                    <input type="text" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_notes" value="{{ set_plan.notes|default:'' }}" class="form-control form-control-sm me-2 flex-grow-1" placeholder="Set Notes">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary me-1 duplicate-set-btn" data-function="click->duplicateSetRow">Dup</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-set-btn" data-function="click->removeSetFromExerciseCard">Del</button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="add-set-btn btn btn-sm btn-outline-success" data-function="click->addSetToExerciseCard">Add Set</button>
+                </div>
+            {% endfor %}
         </div>
 
         <hr class="my-4">
@@ -93,8 +145,8 @@
             <label for="modal-exercise-select" class="form-label">Exercise:</label>
             <select id="modal-exercise-select" class="form-select" data-function="change->selectAndAddExerciseToRoutine">
                 <option value="" selected disabled>Choose an exercise...</option>
-                {% for ex in all_exercises %}
-                    <option value="{{ ex.pk }}" data-name="{{ ex.name }}">{{ ex.name }}</option>
+                {% for ex_dict in all_exercises %}
+                    <option value="{{ ex_dict.pk }}" data-name="{{ ex_dict.name }}" data-default-type-display="{{ ex_dict.default_type_display }}">{{ ex_dict.name }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -104,38 +156,69 @@
 </div>
 
 <template id="routine-exercise-template">
-    <div class="exercise-routine-card" data-index="__INDEX__" draggable="true">
-        <div class="card-header">
-            <h5>Exercise <span class="exercise-order">__DEFAULT_ORDER__</span></h5>
-            <button type="button" class="btn btn-sm btn-danger remove-exercise-btn" data-function="click->removeRoutineExerciseCard">Remove</button>
+    <div class="exercise-routine-card mb-3 p-3 border rounded" data-index="__INDEX__" draggable="true">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Exercise <span class="exercise-order">__ORDER__</span>: <span class="exercise-name-display">__EXERCISE_NAME__</span></h5>
+            <button type="button" class="btn btn-sm btn-danger remove-exercise-btn" data-function="click->removeRoutineExerciseCard">Remove Exercise</button>
         </div>
-        <input type="hidden" name="routine_exercise_id___INDEX__" value="">
-        <input type="hidden" name="order___INDEX__" value="__DEFAULT_ORDER__">
+        <input type="hidden" name="routine_exercise___INDEX___id" value="">
+        <input type="hidden" class="exercise-order-input" name="routine_exercise___INDEX___order" value="__ORDER__">
+        
         <div class="row gx-3 mb-2">
-            <div class="col-md-7">
+            <div class="col-md-6">
                 <label for="exercise_pk___INDEX__" class="form-label">Exercise</label>
-                <select name="exercise_pk___INDEX__" id="exercise_pk___INDEX__" class="form-select exercise-select">
+                <select name="routine_exercise___INDEX___exercise_pk" id="exercise_pk___INDEX__" class="form-select exercise-select" data-function="change->updateExerciseCardName">
                     <option value="">Select Exercise</option>
-                    {% for ex in all_exercises %}
-                        <option value="{{ ex.pk }}">{{ ex.name }}</option>
+                    {% for ex_dict in all_exercises %}
+                        <option value="{{ ex_dict.pk }}" data-name="{{ ex_dict.name }}" data-default-type-display="{{ ex_dict.default_type_display }}">{{ ex_dict.name }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2">
-                <label for="target_sets___INDEX__" class="form-label">Target Sets</label>
-                <input type="number" name="target_sets___INDEX__" id="target_sets___INDEX__" class="form-control">
-            </div>
-            <div class="col-md-3">
-                <label for="target_reps___INDEX__" class="form-label">Target Reps</label>
-                <input type="text" name="target_reps___INDEX__" id="target_reps___INDEX__" class="form-control" placeholder="e.g. 8-12">
-            </div>
-        </div>
-        <div class="row gx-3">
-            <div class="col-md-12"> {# Adjusted for full width #}
-                <label for="target_rest_seconds___INDEX__" class="form-label">Target Rest (seconds)</label>
-                <input type="number" name="target_rest_seconds___INDEX__" id="target_rest_seconds___INDEX__" class="form-control">
+            <div class="col-md-6">
+                <label for="routine_specific_exercise_type___INDEX__" class="form-label">Exercise Type (Optional)</label>
+                <select name="routine_exercise___INDEX___routine_specific_exercise_type" id="routine_specific_exercise_type___INDEX__" class="form-select">
+                    <option value="">Default</option> {# JS will update this if an exercise is selected #}
+                    {% for type_val, type_display in exercise_type_choices %}
+                        <option value="{{ type_val }}">{{ type_display }}</option>
+                    {% endfor %}
+                </select>
             </div>
         </div>
+
+        <h6>Planned Sets:</h6>
+        <div class="sets-container mb-2">
+            <!-- Set rows will be dynamically added here by JS -->
+        </div>
+        <button type="button" class="add-set-btn btn btn-sm btn-outline-success" data-function="click->addSetToExerciseCard">Add Set</button>
+    </div>
+</template>
+
+<template id="set-row-template">
+    <div class="set-row d-flex align-items-center mb-2 p-2 border rounded" data-set-index="__SET_INDEX__">
+        <input type="hidden" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___id" value="">
+        <strong class="me-2 set-number-display">Set __SET_NUMBER__</strong>
+        <input type="hidden" class="set-number-input" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___set_number" value="__SET_NUMBER__">
+        
+        <label for="reps___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">Reps</label>
+        <input type="text" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___target_reps" class="form-control form-control-sm me-2" placeholder="Reps (e.g. 8-12)" style="width: 100px;">
+        
+        <label for="weight___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">Weight</label>
+        <input type="number" step="0.01" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___target_weight" class="form-control form-control-sm me-2" placeholder="Weight" style="width: 90px;">
+        
+        <div class="rpe-field" style="display: block;"> <!-- JS will manage display based on global toggle -->
+            <label for="rpe___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">RPE</label>
+            <input type="number" step="0.1" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___target_rpe" class="form-control form-control-sm me-2" placeholder="RPE" style="width: 70px;">
+        </div>
+        <div class="rest-time-field" style="display: block;"> <!-- JS will manage display -->
+            <label for="rest___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">Rest</label>
+            <input type="number" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___rest_time_seconds" class="form-control form-control-sm me-2" placeholder="Rest (s)" style="width: 80px;">
+        </div>
+        <div class="notes-field" style="display: none;"> <!-- JS will manage display -->
+            <label for="notes___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">Notes</label>
+            <input type="text" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___notes" class="form-control form-control-sm me-2 flex-grow-1" placeholder="Set Notes">
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary me-1 duplicate-set-btn" data-function="click->duplicateSetRow" title="Duplicate Set">Dup</button>
+        <button type="button" class="btn btn-sm btn-outline-danger remove-set-btn" data-function="click->removeSetFromExerciseCard" title="Delete Set">Del</button>
     </div>
 </template>
 

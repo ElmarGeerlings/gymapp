@@ -6,7 +6,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    <div class="card">
+    <div class="card mb-4">
         <div class="card-header bg-primary text-white">
             <h1 class="card-title h3 mb-0">{{ routine.name }}</h1>
         </div>
@@ -22,32 +22,61 @@
     <h2 class="mt-4 mb-3">Exercises in this Routine</h2>
 
     {% if routine_exercises %}
-        <div class="list-group">
-            {% for r_exercise in routine_exercises %}
-                <div class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1">{{ r_exercise.exercise.name }}</h5>
-                        <small class="text-muted">Order: {{ r_exercise.order }}</small>
+        {% for r_exercise in routine_exercises %}
+            <div class="card mb-3 shadow-sm">
+                <div class="card-header">
+                    <div class="d-flex w-100 justify-content-between align-items-center">
+                        <h5 class="mb-0">{{ r_exercise.exercise.name }}</h5>
                     </div>
-                    <p class="mb-1">
-                        <strong>Targets:</strong>
-                        Sets: {{ r_exercise.target_sets|default:"N/A" }} |
-                        Reps: {{ r_exercise.target_reps|default:"N/A" }} |
-                        Rest: {{ r_exercise.target_rest_seconds|default:"N/A" }}s
-                    </p>
+                    {% if r_exercise.routine_specific_exercise_type %}
+                        <small class="text-muted">Type: {{ r_exercise.get_routine_specific_exercise_type_display }}</small>
+                    {% else %}
+                         <small class="text-muted">Type: {{ r_exercise.exercise.get_exercise_type_display }} (Default)</small>
+                    {% endif %}
                 </div>
-            {% endfor %}
-        </div>
+                <div class="card-body">
+                    {% if r_exercise.planned_sets.all %}
+                        <h6 class="card-subtitle mb-2 text-muted">Planned Sets:</h6>
+                        {% for set_plan in r_exercise.planned_sets.all %}
+                            <div class="set-detail-item border rounded p-3 mb-2 bg-light">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <strong>Set {{ set_plan.set_number }}</strong><br>
+                                        Reps: {{ set_plan.target_reps|default:"N/A" }}<br>
+                                        Weight: {{ set_plan.target_weight|default:"N/A" }} {% if set_plan.target_weight %}kg{% endif %}
+                                    </div>
+                                    <div class="col-md-6 text-md-end">
+                                        {% if set_plan.target_rpe is not None %}
+                                            <span class="d-block mb-1"><span class="badge bg-info">RPE: {{ set_plan.target_rpe }}</span></span>
+                                        {% endif %}
+                                        {% if set_plan.rest_time_seconds is not None %}
+                                            <span class="d-block"><span class="badge bg-secondary">Rest: {{ set_plan.rest_time_seconds }}s</span></span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if set_plan.notes %}
+                                    <p class="mb-0 mt-2 pt-2 border-top"><small class="text-muted"><em>Notes: {{ set_plan.notes }}</em></small></p>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No planned sets for this exercise.</p>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
     {% else %}
         <div class="alert alert-info" role="alert">
             This routine currently has no exercises defined.
         </div>
     {% endif %}
 
-    <div class="mt-4">
-        <a href="{% url 'routine-list' %}" class="btn btn-secondary">Back to Routines</a>
-        <a href="{% url 'routine-update' routine.id %}" class="btn btn-primary">Edit Routine</a>
-        <a href="{% url 'routine-delete' routine.id %}" class="btn btn-danger">Delete Routine</a>
+    <div class="mt-4 d-flex justify-content-between">
+        <a href="{% url 'routine-list' %}" class="btn btn-outline-secondary">Back to Routines</a>
+        <div>
+            <a href="{% url 'routine-update' routine.id %}" class="btn btn-primary me-2">Edit Routine</a>
+            <a href="{% url 'routine-delete' routine.id %}" class="btn btn-danger">Delete Routine</a>
+        </div>
     </div>
 </div>
 {% endblock content %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ title|default:"Confirm Delete" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h1 class="card-title h3 mb-0">{{ title }}</h1>
+        </div>
+        <div class="card-body">
+            <p>Are you sure you want to delete the workout "<strong>{{ object.name }}</strong>" logged on {{ object.date|date:"F d, Y" }}?</p>
+            <p class="text-danger">This action cannot be undone.</p>
+            
+            <form method="post" action="{% url 'workout-delete' object.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                <a href="{% url 'workout-detail' object.id %}" class="btn btn-secondary">Cancel</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock content %} 
