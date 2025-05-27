@@ -1,35 +1,37 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container">
+<div class="container home-container">
     <div class="home-header">
         <h1>Welcome to Gainz</h1>
         <p>Your personal workout tracking application</p>
+        <div class="cta-section">
+            {% if user.is_authenticated %}
+                <a href="{% url 'workout-list' %}" class="button-primary">View My Workouts</a>
+            {% else %}
+                <a href="{% url 'login' %}" class="button-primary">Login</a>
+            {% endif %}
+        </div>
     </div>
 
     <div class="features">
         <div class="feature-card">
+            <span class="feature-icon">[TRK]</span>
             <h2>Track Your Workouts</h2>
             <p>Log your exercises, sets, reps, and weights to monitor your progress over time.</p>
         </div>
 
         <div class="feature-card">
+            <span class="feature-icon">[ORG]</span>
             <h2>Organize Exercises</h2>
             <p>Categorize exercises as primary, secondary, or accessory to structure your workouts effectively.</p>
         </div>
 
         <div class="feature-card">
+            <span class="feature-icon">[MON]</span>
             <h2>Monitor Progress</h2>
             <p>See your strength gains and improvements over time with detailed tracking.</p>
         </div>
-    </div>
-
-    <div class="cta-section">
-        {% if user.is_authenticated %}
-            <a href="{% url 'workout-list' %}" class="cta-button">View My Workouts</a>
-        {% else %}
-            <a href="{% url 'login' %}" class="cta-button">Login</a>
-        {% endif %}
     </div>
 </div>
 {% endblock %}

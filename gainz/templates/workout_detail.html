@@ -6,70 +6,90 @@
 
 {% block content %}
 <div class="container mt-4">
-    <div class="card mb-4 shadow-sm">
-        <div class="card-header bg-info text-white">
-            <div class="d-flex justify-content-between align-items-center">
-                <h1 class="card-title h3 mb-0">{{ workout.name }}</h1>
-                {# Placeholder for Edit/Delete Workout buttons - to be positioned better #}
-                <div>
-                    {# <a href="#" class="btn btn-light btn-sm me-2">Edit Workout</a> #}
-                    {# <a href="#" class="btn btn-danger btn-sm">Delete Workout</a> #}
-                </div>
+    <div class="workout-header mb-4 pb-3 border-bottom">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 class="mb-0">{{ workout.name }}</h1>
+            <div>
+                <a href="{% url 'workout-update' workout.id %}" class="btn btn-sm btn-outline-primary me-2">Edit Workout</a>
+                <a href="{% url 'workout-delete' workout.id %}" class="btn btn-sm btn-outline-danger">Delete Workout</a>
             </div>
-            <p class="mb-0"><small>{{ workout.date|date:"l, F d, Y, P" }}</small></p>
         </div>
-        <div class="card-body">
-            {% if workout.notes %}
-                <h6 class="card-subtitle mb-2 text-muted">Notes:</h6>
-                <p class="card-text">{{ workout.notes|linebreaksbr }}</p>
-            {% endif %}
-            {% if workout.duration %}
-                <p class="card-text"><strong>Duration:</strong> {{ workout.duration }}</p>
-            {% endif %}
-            {% if workout.routine_source %}
-                <p class="card-text"><small class="text-muted">Based on routine: <a href="{% url 'routine-detail' workout.routine_source.id %}">{{ workout.routine_source.name }}</a></small></p>
-            {% endif %}
-        </div>
+        <p class="workout-date text-muted mt-1">{{ workout.date|date:"l, F j, Y, P" }}</p>
+        {% if workout.notes %}
+            <p class="mt-2"><strong>Notes:</strong> {{ workout.notes|linebreaksbr }}</p>
+        {% endif %}
+        {% if workout.routine_source %}
+            <p class="mt-2">Based on Routine: <a href="{% url 'routine-detail' workout.routine_source.id %}">{{ workout.routine_source.name }}</a></p>
+        {% endif %}
     </div>
 
-    <h2 class="mt-4 mb-3">Logged Exercises</h2>
-
-    {# Consolidate exercise iteration if possible, or keep categorized #}
-    {# For now, maintaining the categorized structure from the view #}
-    
-    {% if primary_exercises or secondary_exercises or accessory_exercises %}
+    {% if not primary_exercises and not secondary_exercises and not accessory_exercises %}
+        <div class="alert alert-info" role="alert">
+            No exercises have been logged for this workout yet.
+        </div>
+    {% else %}
         {% if primary_exercises %}
-            <h4 class="mt-4 mb-3 text-primary">Primary Exercises</h4>
-            {% for we in primary_exercises %}
-                {% include "partials/workout_exercise_card.html" with workout_exercise=we %}
-            {% endfor %}
+            <div class="exercise-category-section mb-4">
+                <h2 class="h4 mb-3">Primary Lifts</h2>
+                {% for wo_exercise in primary_exercises %}
+                    {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
+                {% endfor %}
+            </div>
         {% endif %}
 
         {% if secondary_exercises %}
-            <h4 class="mt-4 mb-3 text-secondary">Secondary Exercises</h4>
-            {% for we in secondary_exercises %}
-                {% include "partials/workout_exercise_card.html" with workout_exercise=we %}
-            {% endfor %}
+            <div class="exercise-category-section mb-4">
+                <h2 class="h4 mb-3">Secondary Lifts</h2>
+                {% for wo_exercise in secondary_exercises %}
+                    {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
+                {% endfor %}
+            </div>
         {% endif %}
 
         {% if accessory_exercises %}
-            <h4 class="mt-4 mb-3 text-info">Accessory Exercises</h4>
-            {% for we in accessory_exercises %}
-                {% include "partials/workout_exercise_card.html" with workout_exercise=we %}
-            {% endfor %}
+            <div class="exercise-category-section mb-4">
+                <h2 class="h4 mb-3">Accessory Lifts</h2>
+                {% for wo_exercise in accessory_exercises %}
+                    {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
+                {% endfor %}
+            </div>
         {% endif %}
-    {% else %}
-        <div class="alert alert-info" role="alert">
-            No exercises were logged for this workout.
-        </div>
     {% endif %}
 
-    <div class="mt-4 d-flex justify-content-between">
-        <a href="{% url 'workout-list' %}" class="btn btn-outline-secondary">Back to Workouts</a>
-        <div>
-            <a href="{% url 'workout-update' workout.id %}" class="btn btn-primary me-2">Edit Workout</a>
-            <a href="{% url 'workout-delete' workout.id %}" class="btn btn-danger">Delete Workout</a>
-        </div>
+    {# Add Exercise to Workout Section - Form #}
+    <div class_="mt-5 pt-4 border-top">
+        <h3 class="mb-3">Add Exercise to This Workout</h3>
+        <form id="add-exercise-to-workout-form-{{ workout.id }}" class="add-exercise-controls">
+            {% csrf_token %} {# Good practice, though not strictly needed for client-side handling that hits API if API uses token auth #}
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <label for="exercise-select-{{ workout.id }}" class="form-label">Exercise</label>
+                    <select id="exercise-select-{{ workout.id }}" name="exercise" class="form-select">
+                        <option value="" selected disabled>Choose an exercise...</option>
+                        {# Populate this with exercises via context or an AJAX call #}
+                        {% for ex in all_exercises_for_form %}
+                            <option value="{{ ex.id }}">{{ ex.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="exercise-type-{{ workout.id }}" class="form-label">Type (Optional)</label>
+                    <select id="exercise-type-{{ workout.id }}" name="exercise_type" class="form-select">
+                        <option value="">Default</option> {# Server will use Exercise default if null #}
+                        {% for type_val, type_display in exercise_type_choices %}
+                            <option value="{{ type_val }}">{{ type_display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="button" class="btn btn-primary w-100"
+                            data-function="click->addExerciseToWorkout"
+                            data-workout-id="{{ workout.id }}">
+                        Add Exercise
+                    </button>
+                </div>
+            </div>
+        </form>
     </div>
 
 </div>

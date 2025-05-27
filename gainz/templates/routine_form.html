@@ -20,12 +20,12 @@
                 {% endif %}
                 <div class="mb-3">
                     <label for="name" class="form-label">Routine Name</label>
-                    <input type="text" class="form-control {% if error and 'name' in error_fields %}is-invalid{% endif %}" id="name" name="name" value="{% if object %}{{ object.name }}{% else %}{{ name_value|default:'' }}{% endif %}" required>
+                    <input type="text" class="form-control {% if error and 'name' in error_fields %}is-invalid{% endif %}" id="name" name="name" value="{% if object %}{{ object.name }}{% else %}{{ form_data.name|default:'' }}{% endif %}" required>
                 </div>
 
                 <div class="mb-3">
-                    <label for="description" class="form-label">Description (Optional)</label>
-                    <textarea class="form-control" id="description" name="description" rows="3">{% if object %}{{ object.description }}{% else %}{{ description_value|default:'' }}{% endif %}</textarea>
+                    <label for="description" class="form-label">Description</label>
+                    <textarea class="form-control" id="description" name="description" rows="3">{% if object %}{{ object.description }}{% else %}{{ form_data.description|default:'' }}{% endif %}</textarea>
                 </div>
             </div>
         </div>
@@ -36,15 +36,15 @@
             </div>
             <div class="card-body">
                 <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" id="toggle-rpe-visibility" data-target-class="rpe-field" data-function="change->updateSetRowFieldVisibility" checked>
+                    <input class="form-check-input" type="checkbox" id="toggle-rpe-visibility" data-target-class="rpe-field" data-function="change->updateSetRowFieldVisibility" {% if user_preferences.show_rpe %}checked{% endif %}>
                     <label class="form-check-label" for="toggle-rpe-visibility">Show RPE</label>
                 </div>
                 <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" id="toggle-rest-time-visibility" data-target-class="rest-time-field" data-function="change->updateSetRowFieldVisibility" checked>
+                    <input class="form-check-input" type="checkbox" id="toggle-rest-time-visibility" data-target-class="rest-time-field" data-function="change->updateSetRowFieldVisibility" {% if user_preferences.show_rest_time %}checked{% endif %}>
                     <label class="form-check-label" for="toggle-rest-time-visibility">Show Rest Times</label>
                 </div>
                 <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" id="toggle-notes-visibility" data-target-class="notes-field" data-function="change->updateSetRowFieldVisibility">
+                    <input class="form-check-input" type="checkbox" id="toggle-notes-visibility" data-target-class="notes-field" data-function="change->updateSetRowFieldVisibility" {% if user_preferences.show_notes %}checked{% endif %}>
                     <label class="form-check-label" for="toggle-notes-visibility">Show Set Notes</label>
                 </div>
             </div>
@@ -64,15 +64,15 @@
                     </div>
                     <input type="hidden" name="routine_exercise_{{ forloop.counter0 }}_id" value="{{ r_exercise.id }}">
                     <input type="hidden" class="exercise-order-input" name="routine_exercise_{{ forloop.counter0 }}_order" value="{{ r_exercise.order|default:forloop.counter }}">
-                    
+
                     <div class="row gx-3 mb-2">
                         <div class="col-md-6">
                             <label for="exercise_pk_{{ forloop.counter0 }}" class="form-label">Exercise</label>
                             <select name="routine_exercise_{{ forloop.counter0 }}_exercise_pk" id="exercise_pk_{{ forloop.counter0 }}" class="form-select exercise-select" data-function="change->updateExerciseCardName">
                                 <option value="">Select Exercise</option>
                                 {% for ex_dict in all_exercises %}
-                                    <option value="{{ ex_dict.pk }}" 
-                                            data-name="{{ ex_dict.name }}" 
+                                    <option value="{{ ex_dict.pk }}"
+                                            data-name="{{ ex_dict.name }}"
                                             data-default-type-display="{{ ex_dict.default_type_display }}"
                                             {% if r_exercise.exercise.pk == ex_dict.pk %}selected{% endif %}>
                                         {{ ex_dict.name }}
@@ -98,13 +98,13 @@
                                 <input type="hidden" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_id" value="{{ set_plan.id }}">
                                 <strong class="me-2 set-number-display">Set {{ set_plan.set_number }}</strong>
                                 <input type="hidden" class="set-number-input" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_set_number" value="{{ set_plan.set_number }}">
-                                
+
                                 <label for="reps_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">Reps</label>
                                 <input type="text" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_target_reps" value="{{ set_plan.target_reps|default:'' }}" class="form-control form-control-sm me-2" placeholder="Reps (e.g. 8-12)" style="width: 100px;">
-                                
+
                                 <label for="weight_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">Weight</label>
                                 <input type="number" step="0.01" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_target_weight" value="{{ set_plan.target_weight|default:'' }}" class="form-control form-control-sm me-2" placeholder="Weight" style="width: 90px;">
-                                
+
                                 <div class="rpe-field" style="display: block;"> <!-- Initially visible based on checkbox default -->
                                     <label for="rpe_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="form-label visually-hidden">RPE</label>
                                     <input type="number" step="0.1" name="routine_exercise_{{ forloop.parentloop.counter0 }}_planned_sets_{{ forloop.counter0 }}_target_rpe" value="{{ set_plan.target_rpe|default:'' }}" class="form-control form-control-sm me-2" placeholder="RPE" style="width: 70px;">
@@ -163,7 +163,7 @@
         </div>
         <input type="hidden" name="routine_exercise___INDEX___id" value="">
         <input type="hidden" class="exercise-order-input" name="routine_exercise___INDEX___order" value="__ORDER__">
-        
+
         <div class="row gx-3 mb-2">
             <div class="col-md-6">
                 <label for="exercise_pk___INDEX__" class="form-label">Exercise</label>
@@ -198,13 +198,13 @@
         <input type="hidden" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___id" value="">
         <strong class="me-2 set-number-display">Set __SET_NUMBER__</strong>
         <input type="hidden" class="set-number-input" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___set_number" value="__SET_NUMBER__">
-        
+
         <label for="reps___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">Reps</label>
         <input type="text" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___target_reps" class="form-control form-control-sm me-2" placeholder="Reps (e.g. 8-12)" style="width: 100px;">
-        
+
         <label for="weight___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">Weight</label>
         <input type="number" step="0.01" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___target_weight" class="form-control form-control-sm me-2" placeholder="Weight" style="width: 90px;">
-        
+
         <div class="rpe-field" style="display: block;"> <!-- JS will manage display based on global toggle -->
             <label for="rpe___EXERCISE_INDEX_____SET_INDEX__" class="form-label visually-hidden">RPE</label>
             <input type="number" step="0.1" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___target_rpe" class="form-control form-control-sm me-2" placeholder="RPE" style="width: 70px;">

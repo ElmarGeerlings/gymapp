@@ -10,9 +10,41 @@ class Program(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     is_public = models.BooleanField(default=False) # For future sharing
+    is_active = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        if self.is_active:
+            # Deactivate other active programs for the same user
+            Program.objects.filter(user=self.user, is_active=True).exclude(pk=self.pk).update(is_active=False)
+        super().save(*args, **kwargs)
+
+# Days of week choices, can be moved to a common utils if used elsewhere
+DAYS_OF_WEEK_CHOICES = [
+    (0, 'Monday'), (1, 'Tuesday'), (2, 'Wednesday'),
+    (3, 'Thursday'), (4, 'Friday'), (5, 'Saturday'), (6, 'Sunday'),
+]
+
+class ProgramRoutine(models.Model):
+    """ Intermediate model to link Program and Routine with order and day assignment. """
+    program = models.ForeignKey(Program, related_name='program_routines', on_delete=models.CASCADE)
+    routine = models.ForeignKey('Routine', related_name='program_associations', on_delete=models.CASCADE)
+    order = models.PositiveIntegerField(help_text="Order of the routine within the program (e.g., 1, 2, 3). Used if not assigning by day.")
+    assigned_day = models.IntegerField(choices=DAYS_OF_WEEK_CHOICES, null=True, blank=True, help_text="Specific day of the week this routine is scheduled for in this program.")
+
+    class Meta:
+        ordering = ['program', 'order', 'assigned_day']
+        unique_together = ('program', 'routine') # A routine can only be in a program once
+        # A program can't have two routines on the same day, if day is assigned
+        # constraints = [
+        #     models.UniqueConstraint(fields=['program', 'assigned_day'], condition=models.Q(assigned_day__isnull=False), name='unique_program_assigned_day')
+        # ] # This constraint might be too restrictive if order is also used. Let's omit for now.
+
+    def __str__(self):
+        day_str = f" (Day: {self.get_assigned_day_display()})" if self.assigned_day is not None else ""
+        return f"{self.program.name} - {self.routine.name} (Order: {self.order}){day_str}"
 
 class Routine(models.Model):
     """ Represents a specific reusable workout structure (template). """

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}
-    {{ title|default:"Edit Workout" }}
+    {{ title|default:"Manage Workout" }}
 {% endblock title %}
 
 {% block content %}
@@ -11,43 +11,38 @@
             <h1 class="card-title h3 mb-0">{{ title }}</h1>
         </div>
         <div class="card-body">
-            <form method="post" action="{% url 'workout-update' object.id %}">
+            {% if error %}
+                <div class="alert alert-danger" role="alert">
+                    {{ error }}
+                </div>
+            {% endif %}
+            <form method="post">
                 {% csrf_token %}
-                
+
                 <div class="mb-3">
-                    <label for="name" class="form-label">Workout Name</label>
+                    <label for="name" class="form-label">Name</label>
                     <input type="text" class="form-control" id="name" name="name" value="{{ object.name|default:'' }}" required>
                 </div>
 
                 <div class="mb-3">
-                    <label for="date" class="form-label">Date & Time</label>
-                    {# Format datetime value for datetime-local input. It expects YYYY-MM-DDTHH:MM #}
-                    <input type="datetime-local" class="form-control" id="date" name="date" value="{{ object.date|date:'Y-m-d\TH:i' }}">
+                    <label for="date" class="form-label">Date</label>
+                    <input type="datetime-local" class="form-control" id="date" name="date" value="{{ object.date|date:'Y-m-d\TH:i' }}" required>
                 </div>
+
+                {# <div class="mb-3">
+                    <label for="duration" class="form-label">Duration (e.g., 1h 30m or HH:MM:SS)</label>
+                    <input type="text" class="form-control" id="duration" name="duration" value="{{ object.duration|default:'' }}" placeholder="HH:MM:SS or e.g. 1h 30m">
+                </div> #}
 
                 <div class="mb-3">
                     <label for="notes" class="form-label">Notes</label>
                     <textarea class="form-control" id="notes" name="notes" rows="3">{{ object.notes|default:'' }}</textarea>
                 </div>
 
-                <div class="mb-3">
-                    <label for="duration" class="form-label">Duration (HH:MM or HH:MM:SS)</label>
-                    {# Django's DurationField can be tricky with HTML input. For now, simple text. #}
-                    {# Consider custom widget or JS for better UX if complex duration input needed. #}
-                    <input type="text" class="form-control" id="duration" name="duration" value="{{ object.duration|default:'' }}" placeholder="e.g., 01:30:00 for 1h 30m">
-                    {% if object.duration %}<small class="form-text text-muted">Current: {{ object.duration }}</small>{% endif %}
-                </div>
-
-                {# Placeholder for editing exercises and sets - to be added later #}
-                <h3 class="mt-4 mb-3">Logged Exercises</h3>
-                <p class="text-muted">(Editing exercises and sets within a workout will be implemented here.)</p>
-                
-                <div class="mt-4 d-flex justify-content-between">
-                    <a href="{% url 'workout-detail' object.id %}" class="btn btn-secondary">Cancel</a>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                </div>
+                <button type="submit" class="btn btn-success mt-3">Save Workout</button>
+                <a href="{% if object %}{% url 'workout-detail' object.id %}{% else %}{% url 'workout-list' %}{% endif %}" class="btn btn-secondary mt-3">Cancel</a>
             </form>
         </div>
     </div>
 </div>
-{% endblock content %} 
+{% endblock content %}

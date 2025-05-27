@@ -269,7 +269,9 @@ function send_toast(body, status = 'default', title = '', delete_time = 3000) {
 function displayFormErrors(formId, errors) {
     const form = document.getElementById(formId);
     if (!form) return;
-    const generalErrorDiv = form.querySelector('#form-errors');
+    // Use the specific error div ID for workouts modal, or fallback to generic
+    const generalErrorDivId = formId === 'add-workout-form' ? 'form-errors-workout' : 'form-errors';
+    const generalErrorDiv = form.querySelector(`#${generalErrorDivId}`);
     let firstFieldWithError = null;
     if (generalErrorDiv) {
         generalErrorDiv.innerHTML = '';
@@ -447,68 +449,6 @@ async function saveExercise(event) {
     } else {
         displayFormErrors(formId, response.data || { detail: response.statusText });
         send_toast(response.data?.detail || 'Error saving exercise.', 'danger');
-    }
-}
-
-// --- Save Workout Modal Submission ---
-// This function will be triggered by data-function="click->saveWorkout"
-async function saveWorkout(event) {
-    const form = event.target.closest('form');
-    if (!form) return;
-    const formId = form.id;
-    clearFormErrors(formId);
-
-    const formData = new FormData(form);
-    const data = {};
-    formData.forEach((value, key) => {
-        data[key] = value;
-    });
-
-    // Handle duration: API expects HH:MM:SS or null
-    // Basic parsing for "Xh Ym Zs" or HH:MM:SS - can be improved
-    if (data.duration) {
-        let durationStr = data.duration;
-        let hours = 0, minutes = 0, seconds = 0;
-        const timeParts = durationStr.match(/(\d+)\s*h|(\d+)\s*m|(\d+)\s*s|(\d{1,2}:\d{2}(:\d{2})?)/gi);
-
-        if (timeParts) {
-            if (durationStr.includes(':')) { // HH:MM:SS format
-                const parts = durationStr.split(':');
-                hours = parseInt(parts[0]) || 0;
-                minutes = parseInt(parts[1]) || 0;
-                seconds = parts[2] ? parseInt(parts[2]) : 0;
-            } else { // Xh Ym Zs format
-                timeParts.forEach(part => {
-                    if (part.toLowerCase().includes('h')) hours = parseInt(part) || 0;
-                    else if (part.toLowerCase().includes('m')) minutes = parseInt(part) || 0;
-                    else if (part.toLowerCase().includes('s')) seconds = parseInt(part) || 0;
-                });
-            }
-            data.duration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        } else if (durationStr.trim() === '') {
-            data.duration = null; // Send null if empty string
-        } else {
-            // If parsing fails and it's not empty, keep original for server-side validation to catch
-            // Or display a client-side error immediately
-            displayFormErrors(formId, { duration: ['Invalid duration format. Use HH:MM:SS or like 1h 30m.'] });
-            send_toast('Invalid duration format.', 'warning');
-            return;
-        }
-    } else {
-        data.duration = null; // Send null if field is not present or empty
-    }
-
-    const response = await httpRequestHelper(form.action, 'POST', data);
-
-    if (response.ok) {
-        send_toast('Workout added successfully!', 'success');
-        const modal = form.closest('.siu-modal');
-        if (modal) modal.style.display = 'none';
-        form.reset();
-        window.location.reload(); // Reload to see the new workout in the list
-    } else {
-        displayFormErrors(formId, response.data || { detail: response.statusText });
-        send_toast(response.data?.detail || 'Error saving workout.', 'danger');
     }
 }
 
@@ -962,7 +902,7 @@ function appendExerciseCardToRoutine(exerciseId, exerciseName) {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = content;
     const newCard = tempDiv.firstElementChild;
-    
+
     if (!newCard) {
         console.error("Could not create new exercise card from template content.");
         return null;
@@ -982,7 +922,7 @@ function appendExerciseCardToRoutine(exerciseId, exerciseName) {
             specificTypeSelect.options[0].textContent = 'Default (Select Exercise First)';
         }
     }
-    
+
     container.appendChild(newCard);
     setupDragAndDropListeners(newCard); // Add D&D listeners
     updateRoutineExerciseOrderNumbers(); // Update order numbers for all cards
@@ -1017,7 +957,7 @@ window.selectAndAddExerciseToRoutine = function(event) {
         modal.style.display = 'none';
     }
     // Reset the select for next time (already done in showAddExerciseToRoutineModal, but good practice)
-    selectElement.value = ''; 
+    selectElement.value = '';
 }
 
 function initializeRoutineForm() {
@@ -1026,34 +966,28 @@ function initializeRoutineForm() {
         // Initial setup for existing cards from server
         routineExercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
             setupDragAndDropListeners(card);
-            // Update exercise name and default type for existing cards
             const exerciseSelect = card.querySelector('.exercise-select');
             if (exerciseSelect && exerciseSelect.value) {
-                // Ensure the event object or a compatible structure is passed if the function expects it
-                updateExerciseCardName({target: exerciseSelect}); 
+                updateExerciseCardName({target: exerciseSelect});
             }
         });
-
-        // Add dragover listener to the container for D&D reordering indication
         routineExercisesContainer.addEventListener('dragover', handleDragOver);
-        // Add drop listener to the container
         routineExercisesContainer.addEventListener('drop', handleDrop);
     }
 
-    updateRoutineExerciseOrderNumbers(); // Update order numbers for any server-rendered cards
+    updateRoutineExerciseOrderNumbers();
 
-    // Setup field visibility toggles - NO LONGER NEEDED HERE, data-function handles it.
-    // const rpeToggle = document.getElementById('toggle-rpe-visibility');
-    // const restToggle = document.getElementById('toggle-rest-time-visibility');
-    // const notesToggle = document.getElementById('toggle-notes-visibility');
+    // Load and apply checkbox states from Redis
+    const rpeToggle = document.getElementById('toggle-rpe-visibility');
+    const restToggle = document.getElementById('toggle-rest-time-visibility');
+    const notesToggle = document.getElementById('toggle-notes-visibility');
 
-    // if(rpeToggle) rpeToggle.addEventListener('change', updateSetRowFieldVisibility);
-    // if(restToggle) restToggle.addEventListener('change', updateSetRowFieldVisibility);
-    // if(notesToggle) notesToggle.addEventListener('change', updateSetRowFieldVisibility);
+    if(rpeToggle) rpeToggle.checked = localStorage.getItem('gainz.routineForm.showRPE') === 'true';
+    if(restToggle) restToggle.checked = localStorage.getItem('gainz.routineForm.showRestTime') === 'true';
+    if(notesToggle) notesToggle.checked = localStorage.getItem('gainz.routineForm.showNotes') === 'true';
+    // localStorage logic removed, states are now set by Django template from Redis
 
-    // Call it once to set initial state of all fields (including those from server)
-    // This needs to be on window object if data-function calls it, which it already is.
-    window.updateSetRowFieldVisibility(); 
+    window.updateSetRowFieldVisibility(); // Initial call based on server-provided states
 }
 
 // Initialization on DOMContentLoaded
@@ -1072,7 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    if (document.getElementById('routineForm')) { 
+    if (document.getElementById('routineForm')) {
         initializeRoutineForm();
     }
 
@@ -1082,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['data-function'] 
+        attributeFilter: ['data-function']
     });
 });
 
@@ -1090,10 +1024,37 @@ document.addEventListener('DOMContentLoaded', () => {
 window.updateSetRowFieldVisibility = updateSetRowFieldVisibility;
 
 // Helper function to update visibility of optional set fields based on checkboxes
-function updateSetRowFieldVisibility() {
-    const showRPE = document.getElementById('toggle-rpe-visibility')?.checked;
-    const showRestTime = document.getElementById('toggle-rest-time-visibility')?.checked;
-    const showNotes = document.getElementById('toggle-notes-visibility')?.checked;
+async function updateSetRowFieldVisibility(event) { // Made async
+    const rpeToggle = document.getElementById('toggle-rpe-visibility');
+    const restToggle = document.getElementById('toggle-rest-time-visibility');
+    const notesToggle = document.getElementById('toggle-notes-visibility');
+
+    const showRPE = rpeToggle?.checked;
+    const showRestTime = restToggle?.checked;
+    const showNotes = notesToggle?.checked;
+
+    // Save states to Redis via backend API call
+    // const preferencesToSave = []; // Not needed, send one by one or identify caller
+
+    if (event && event.target) { // Check if called by an event on a specific toggle
+        const checkbox = event.target;
+        const preferenceKeySuffix = checkbox.id.replace('toggle-', '').replace('-visibility', '');
+        const preferenceKey = `routineForm.${preferenceKeySuffix}`;
+        const preferenceValue = checkbox.checked;
+        console.log(`[gainz.js] Attempting to save preference: Key='${preferenceKey}', Value=${preferenceValue}`);
+        await httpRequestHelper('/ajax/update_user_preferences/', 'POST', {
+            preference_key: preferenceKey,
+            preference_value: preferenceValue
+        }).then(response => {
+            console.log('[gainz.js] Save preference response:', response);
+        }).catch(error => {
+            console.error('[gainz.js] Save preference error:', error);
+        });
+    }
+    // Removed localStorage saving logic
+    // if(rpeToggle) localStorage.setItem('gainz.routineForm.showRPE', showRPE);
+    // if(restToggle) localStorage.setItem('gainz.routineForm.showRestTime', showRestTime);
+    // if(notesToggle) localStorage.setItem('gainz.routineForm.showNotes', showNotes);
 
     document.querySelectorAll('.set-row').forEach(setRow => {
         const rpeField = setRow.querySelector('.rpe-field');
@@ -1112,7 +1073,7 @@ function updateSetNumbers(exerciseCardElement) {
     const setRows = exerciseCardElement.querySelectorAll('.sets-container .set-row');
     setRows.forEach((setRow, newSetIndex) => {
         setRow.dataset.setIndex = newSetIndex;
-        
+
         const setNumberDisplay = setRow.querySelector('.set-number-display');
         if (setNumberDisplay) setNumberDisplay.textContent = `Set ${newSetIndex + 1}`;
 
@@ -1150,7 +1111,7 @@ window.updateExerciseCardName = function(event) {
 
     const selectedOption = selectElement.options[selectElement.selectedIndex];
     const exerciseName = selectedOption.dataset.name || 'Exercise';
-    
+
     const nameDisplay = exerciseCard.querySelector('.exercise-name-display');
     if (nameDisplay) nameDisplay.textContent = exerciseName;
 
@@ -1165,7 +1126,7 @@ window.updateExerciseCardName = function(event) {
         const exercisePk = selectedOption.value;
         // Placeholder: In a real scenario, you'd fetch this from a data structure if not on the option itself.
         // For now, if ex.default_type_display was a data attribute on the option:
-        const defaultTypeDisplay = selectedOption.dataset.defaultTypeDisplay || 'Type'; 
+        const defaultTypeDisplay = selectedOption.dataset.defaultTypeDisplay || 'Type';
         if (defaultOption.value === '') { // Ensure it's the "Default" option
             defaultOption.textContent = `Default (${defaultTypeDisplay})`;
         }
@@ -1179,7 +1140,7 @@ window.addSetToExerciseCard = function(eventOrCardElement) {
     } else { // It's an event
         exerciseCard = eventOrCardElement.target.closest('.exercise-routine-card');
     }
-    
+
     if (!exerciseCard) return;
 
     const exerciseIndex = exerciseCard.dataset.index;
@@ -1224,7 +1185,7 @@ window.addSetToExerciseCard = function(eventOrCardElement) {
             if (label) label.setAttribute('for', id);
         }
     });
-    
+
     setsContainer.appendChild(newSetRow);
     updateSetRowFieldVisibility(); // Apply current visibility settings
     // Event listeners for new buttons will be handled by the global mutation observer for data-function
@@ -1292,7 +1253,7 @@ window.duplicateSetRow = function(event) {
 
     // Insert after the source row
     sourceSetRow.parentNode.insertBefore(clone, sourceSetRow.nextSibling);
-    
+
     // Update numbers for all subsequent sets (including the one just added if it wasn't last)
     updateSetNumbers(exerciseCard);
     updateSetRowFieldVisibility(); // Apply visibility to the new row

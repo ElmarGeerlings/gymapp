@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: true
 ---
 # Don't use try excepts
@@ -31,3 +31,5 @@ When creating new JavaScript functions, especially those intended for event hand
 - **Configuration Objects**: For functions with many options, consider passing a configuration object as a parameter.
 
 This approach aims to reduce code duplication, improve maintainability, and make the JavaScript codebase more robust and adaptable to future changes.
+
+# At the end of making changes, tell me briefly what you did, how I should test it (if applicable) and what you rplan is to do next.

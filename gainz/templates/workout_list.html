@@ -2,9 +2,11 @@
 
 {% block content %}
 <div class="container">
-    <div class="page-header">
+    <div class="page-header d-flex justify-content-between align-items-center mb-4">
         <h1>My Workouts</h1>
-        <button class="btn btn-primary" data-function="click->show_modal" data-modal-name="add-workout-modal">Create New Workout</button>
+        <div class="actions">
+            <a href="{% url 'start-next-workout' %}" class="btn btn-primary">Start Next Workout</a>
+        </div>
     </div>
 
     <div class="workouts-list">
@@ -31,41 +33,9 @@
         {% else %}
             <div class="empty-state">
                 <p>You haven't created any workouts yet.</p>
-                <button class="btn btn-primary" data-function="click->show_modal" data-modal-name="add-workout-modal">Create Your First Workout</button>
             </div>
         {% endif %}
     </div>
 </div>
 
-<!-- Add Workout Modal -->
-<div id="add-workout-modal" class="siu-modal" style="display: none;" data-function="click->close_modal">
-    <div class="siu-modal-content">
-        <span class="siu-modal-close" data-function="click->close_modal">&times;</span>
-        <h2>Add New Workout</h2>
-        <form id="add-workout-form" action="{% url 'workout-list' %}" method="POST">
-            {% csrf_token %}
-            <div class="form-group">
-                <label for="workout-name">Workout Name:</label>
-                <input type="text" id="workout-name" name="name" class="form-control" required>
-                <div class="invalid-feedback"></div>
-            </div>
-            <div class="form-group">
-                <label for="workout-date">Date:</label>
-                <input type="datetime-local" id="workout-date" name="date" class="form-control" required>
-                <div class="invalid-feedback"></div>
-            </div>
-            <div class="form-group">
-                <label for="workout-duration">Duration (e.g., 1h 30m):</label>
-                <input type="text" id="workout-duration" name="duration" class="form-control" placeholder="HH:MM:SS or e.g. 1h 30m">
-                <div class="invalid-feedback"></div>
-            </div>
-            <div class="form-group">
-                <label for="workout-notes">Notes:</label>
-                <textarea id="workout-notes" name="notes" class="form-control"></textarea>
-                <div class="invalid-feedback"></div>
-            </div>
-            <button type="submit" class="btn btn-primary" data-function="click->saveWorkout">Save Workout</button>
-        </form>
-    </div>
-</div>
 {% endblock %}

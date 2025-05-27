@@ -24,12 +24,12 @@
 
     <form method="POST" action="{% url 'start-workout-from-routine' routine.id %}">
         {% csrf_token %}
-        
+
         <input type="hidden" name="routine_id" value="{{ routine.id }}">
         {# Add a field for Workout Name, prefill with Routine name #}
         <div class="mb-3">
             <label for="workout_name" class="form-label">Workout Name</label>
-            <input type="text" class="form-control" id="workout_name" name="workout_name" value="{{ routine.name }}" required>
+            <input type="text" class="form-control" id="workout_name" name="workout_name" value="{{ prefilled_workout_name|default:routine.name }}" required>
         </div>
 
         {% if routine_exercises_with_sets %}
@@ -92,11 +92,11 @@
             <label for="workout_notes" class="form-label">General Workout Notes</label>
             <textarea class="form-control" id="workout_notes" name="workout_notes" rows="3"></textarea>
         </div>
-        
+
         <div class="mt-4 d-flex justify-content-between">
             <a href="{% url 'routine-detail' routine.id %}" class="btn btn-outline-secondary">Cancel</a>
             <button type="submit" class="btn btn-success">Finish & Save Workout</button>
         </div>
     </form>
 </div>
-{% endblock content %} 
+{% endblock content %}

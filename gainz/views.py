@@ -14,6 +14,10 @@ from django.template.loader import render_to_string
 from django.db.models import Q
 import datetime # Add datetime import
 from gainz.workouts.utils import get_prefill_data # Add get_prefill_data import
+from django.utils import timezone # Added for timezone.now()
+from django.urls import reverse # Add import for reverse
+from django.contrib import messages # Added for messages
+from django.core.cache import cache # Added for Redis cache
 
 # Exercise ViewSets
 class ExerciseCategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -246,6 +250,12 @@ def routine_create(request):
         {"pk": ex.pk, "name": ex.name, "default_type_display": ex.get_exercise_type_display()} for ex in all_exercises_qs
     ]
 
+    user_preferences = {
+        'show_rpe': cache.get(f'user:{request.user.id}:preferences:routineForm.showRPE', True), # Default to True if not found
+        'show_rest_time': cache.get(f'user:{request.user.id}:preferences:routineForm.showRestTime', True),
+        'show_notes': cache.get(f'user:{request.user.id}:preferences:routineForm.showNotes', False), # Default to False
+    }
+
     if request.method == 'POST':
         try:
             with transaction.atomic(): # Wrap in a transaction
@@ -258,7 +268,7 @@ def routine_create(request):
                 routine = Routine.objects.create(
                     user=request.user,
                     name=routine_name,
-                    description=routine_description
+                    description=routine_description,
                 )
 
                 # Process RoutineExercises and their PlannedSets
@@ -275,7 +285,7 @@ def routine_create(request):
                     if not exercise_pk: # Skip if no exercise selected for this card
                         exercise_idx += 1
                         continue
-                    
+
                     exercise_instance = get_object_or_404(Exercise, pk=exercise_pk)
 
                     routine_exercise = RoutineExercise.objects.create(
@@ -291,18 +301,18 @@ def routine_create(request):
                         set_reps_key = f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_target_reps'
                         # Check for a core field, e.g., target_reps or set_number hidden input
                         set_number_val = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_set_number')
-                        
+
                         if set_number_val is None: # No more sets for this exercise or placeholder was not submitted
                             # A more robust check might be for presence of any set field for this index
                             # For now, assuming if set_number is not there, the set is not intended to be saved.
-                            break 
+                            break
 
                         target_reps = request.POST.get(set_reps_key, '')
                         target_weight = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_target_weight')
                         target_rpe = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_target_rpe')
                         rest_seconds = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_rest_time_seconds')
                         notes = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_notes', '')
-                        
+
                         RoutineExerciseSet.objects.create(
                             routine_exercise=routine_exercise,
                             set_number=int(set_number_val),
@@ -314,7 +324,7 @@ def routine_create(request):
                         )
                         set_idx += 1
                     exercise_idx += 1
-                
+
                 return redirect('routine-detail', routine_id=routine.id)
         except Exception as e:
             # Handle error: (e.g., log it, show a generic error message)
@@ -322,15 +332,18 @@ def routine_create(request):
                 'title': 'Create New Routine',
                 'all_exercises': all_exercises_for_template,
                 'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES,
+                'user_preferences': user_preferences,
                 'error': str(e), # Display the error for debugging, refine for production
                 # Consider re-populating form with request.POST data here
+                'form_data': request.POST # Pass POST data back to re-fill form
             }
             return render(request, 'routine_form.html', context, status=400)
 
     context = {
         'title': 'Create New Routine',
         'all_exercises': all_exercises_for_template,
-        'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES
+        'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES,
+        'user_preferences': user_preferences,
     }
     return render(request, 'routine_form.html', context)
 
@@ -341,6 +354,11 @@ def routine_update(request, routine_id):
     all_exercises_for_template = [
         {"pk": ex.pk, "name": ex.name, "default_type_display": ex.get_exercise_type_display()} for ex in all_exercises_qs
     ]
+    user_preferences = {
+        'show_rpe': cache.get(f'user:{request.user.id}:preferences:routineForm.showRPE', True),
+        'show_rest_time': cache.get(f'user:{request.user.id}:preferences:routineForm.showRestTime', True),
+        'show_notes': cache.get(f'user:{request.user.id}:preferences:routineForm.showNotes', False),
+    }
 
     if request.method == 'POST':
         try:
@@ -357,7 +375,7 @@ def routine_update(request, routine_id):
                     exercise_pk_key = f'routine_exercise_{exercise_idx}_exercise_pk'
                     if exercise_pk_key not in request.POST:
                         break
-                    
+
                     routine_exercise_id = request.POST.get(f'routine_exercise_{exercise_idx}_id')
                     exercise_pk = request.POST.get(exercise_pk_key)
                     order = request.POST.get(f'routine_exercise_{exercise_idx}_order', exercise_idx)
@@ -376,7 +394,7 @@ def routine_update(request, routine_id):
                         continue
 
                     exercise_instance = get_object_or_404(Exercise, pk=exercise_pk)
-                    
+
                     current_re = None
                     if routine_exercise_id:
                         try:
@@ -388,7 +406,7 @@ def routine_update(request, routine_id):
                         except RoutineExercise.DoesNotExist:
                             # ID was present but not found, treat as new, or could be an error
                             current_re = None # Fall through to create
-                    
+
                     if not current_re: # Create new if no ID or ID not found
                         current_re = RoutineExercise.objects.create(
                             routine=routine,
@@ -404,7 +422,7 @@ def routine_update(request, routine_id):
                     while True:
                         set_id_key = f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_id'
                         set_number_val = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_set_number')
-                        
+
                         if set_number_val is None: # No more sets for this exercise
                             break
 
@@ -414,7 +432,7 @@ def routine_update(request, routine_id):
                         target_rpe = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_target_rpe')
                         rest_seconds = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_rest_time_seconds')
                         notes = request.POST.get(f'routine_exercise_{exercise_idx}_planned_sets_{set_idx}_notes', '')
-                        
+
                         current_set = None
                         if set_id:
                             try:
@@ -428,7 +446,7 @@ def routine_update(request, routine_id):
                                 current_set.save()
                             except RoutineExerciseSet.DoesNotExist:
                                 current_set = None # Fall through to create
-                        
+
                         if not current_set: # Create new set
                             current_set = RoutineExerciseSet.objects.create(
                                 routine_exercise=current_re,
@@ -441,12 +459,12 @@ def routine_update(request, routine_id):
                             )
                         processed_set_ids.add(current_set.id)
                         set_idx += 1
-                    
+
                     # Delete sets for this RE that were not in the submission
                     set_ids_to_delete = set(current_re.planned_sets.values_list('id', flat=True)) - processed_set_ids
                     if set_ids_to_delete:
                         RoutineExerciseSet.objects.filter(id__in=set_ids_to_delete, routine_exercise=current_re).delete()
-                    
+
                     exercise_idx += 1
 
                 # Delete RoutineExercises that were not in the submission
@@ -462,21 +480,24 @@ def routine_update(request, routine_id):
                 'routine_exercises': routine.exercises.prefetch_related('exercise', 'planned_sets').select_related('exercise').order_by('order'),
                 'all_exercises': all_exercises_for_template,
                 'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES,
+                'user_preferences': user_preferences,
                 'error': str(e), # Display the error for debugging
+                'form_data': request.POST # Pass POST data back
             }
             return render(request, 'routine_form.html', context, status=400)
 
     routine_exercises_qs = routine.exercises.prefetch_related(
-        'exercise', 
+        'exercise',
         'planned_sets'
     ).select_related('exercise').order_by('order')
-    
+
     context = {
         'title': f'Edit Routine: {routine.name}',
-        'object': routine, 
-        'routine_exercises': routine_exercises_qs, 
+        'object': routine,
+        'routine_exercises': routine_exercises_qs,
         'all_exercises': all_exercises_for_template,
-        'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES
+        'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES,
+        'user_preferences': user_preferences,
     }
     return render(request, 'routine_form.html', context)
 
@@ -495,78 +516,108 @@ def routine_delete(request, routine_id):
 def program_create(request):
     if request.method == 'POST':
         name = request.POST.get('name')
-        description = request.POST.get('description', '')
-        is_public_str = request.POST.get('is_public', 'off') # Checkbox value is 'on' or not present
-        is_public = True if is_public_str == 'on' else False
+        description = request.POST.get('description')
+        is_active = request.POST.get('is_active') == 'on' # Checkbox value
 
         if not name:
-            # Handle error
-            return render(request, 'program_form.html', {
+            # Handle error: name is required
+            context = {
                 'title': 'Create New Program',
-                'error': 'Name is required.',
+                'error': 'Program name is required.',
                 'name_value': name,
                 'description_value': description,
-                'is_public_value': is_public
-            })
+                'is_active_value': is_active
+            }
+            return render(request, 'program_form.html', context, status=400)
 
         program = Program.objects.create(
             user=request.user,
             name=name,
             description=description,
-            is_public=is_public
+            is_active=is_active # This will trigger the custom save method
         )
-        return redirect('routine-list')
+        # If creating the first program, or if is_active is checked, it handles activation.
+        # If no programs were active and this one isn't checked, it remains inactive.
+        # If it's the *only* program, we might want to auto-activate it.
+        if Program.objects.filter(user=request.user).count() == 1:
+            program.is_active = True # Ensure the first program is active
+            program.save() # Save again to trigger potential deactivation of others (though none here)
+
+        messages.success(request, f'Program "{program.name}" created successfully.')
+        return redirect('program-list') # Redirect to the program list
     else:
-        pass # No initial form data to pass for GET
-    return render(request, 'program_form.html', {'title': 'Create New Program'})
+        # Check if this will be the first program for the user to auto-check 'is_active'
+        is_first_program = not Program.objects.filter(user=request.user).exists()
+        context = {
+            'title': 'Create New Program',
+            'is_active_value': is_first_program # Pre-check if it's the first one
+        }
+    return render(request, 'program_form.html', context)
 
 @login_required
 def program_update(request, program_id):
     program = get_object_or_404(Program, id=program_id, user=request.user)
     if request.method == 'POST':
-        name = request.POST.get('name')
-        description = request.POST.get('description', '')
-        is_public_str = request.POST.get('is_public', 'off')
-        is_public = True if is_public_str == 'on' else False
+        program.name = request.POST.get('name', program.name)
+        program.description = request.POST.get('description', program.description)
+        program.is_active = request.POST.get('is_active') == 'on' # Checkbox value
 
-        if not name:
-            return render(request, 'program_form.html', {
+        if not program.name:
+            context = {
                 'title': f'Edit Program: {program.name}',
                 'object': program,
-                'error': 'Name is required.',
-                'name_value': name, # Pass current (erroneous) values back
-                'description_value': description,
-                'is_public_value': is_public
-            })
+                'error': 'Program name cannot be empty.',
+                 # Pass back current values for re-population
+                'name_value': request.POST.get('name'),
+                'description_value': request.POST.get('description'),
+                'is_active_value': request.POST.get('is_active') == 'on'
+            }
+            return render(request, 'program_form.html', context, status=400)
 
-        program.name = name
-        program.description = description
-        program.is_public = is_public
-        program.save()
-        return redirect('routine-list')
-    else:
-        pass # For GET, object is passed directly
-    return render(request, 'program_form.html', {
+        program.save() # The save method handles deactivating other programs
+        messages.success(request, f'Program "{program.name}" updated successfully.')
+        return redirect('program-list')
+
+    context = {
         'title': f'Edit Program: {program.name}',
-        'object': program
-    })
+        'object': program,
+        'is_active_value': program.is_active # Pass current status for checkbox
+    }
+    return render(request, 'program_form.html', context)
 
 @login_required
 def program_delete(request, program_id):
     program = get_object_or_404(Program, id=program_id, user=request.user)
     if request.method == 'POST':
         program.delete()
-        return redirect('routine-list')
-    return render(request, 'program_confirm_delete.html', {
+        messages.success(request, f'Program "{program.name}" deleted successfully.')
+        return redirect('program-list')
+    context = {
         'object': program,
         'title': f'Delete Program: {program.name}'
-    })
+    }
+    return render(request, 'program_confirm_delete.html', context)
+
+@login_required
+def program_list(request):
+    programs = Program.objects.filter(user=request.user).order_by('-is_active', 'name')
+    context = {
+        'programs': programs,
+        'title': 'Your Programs'
+    }
+    return render(request, 'program_list.html', context)
 
 @login_required
 def start_workout_from_routine(request, routine_id):
     routine = get_object_or_404(Routine, id=routine_id, user=request.user)
     routine_exercises_with_sets = []
     today = datetime.date.today()
+    prefilled_workout_name = None
+
+    if request.method == 'GET' and request.GET.get('source') == 'smart-start':
+        # Auto-generate workout name: "Routine Name #X"
+        completed_count = Workout.objects.filter(user=request.user, routine_source=routine).count()
+        prefilled_workout_name = f"{routine.name} #{completed_count + 1}"
 
     for re in routine.exercises.prefetch_related('planned_sets', 'exercise').order_by('order'):
         sets_data = []
@@ -588,7 +639,7 @@ def start_workout_from_routine(request, routine_id):
             with transaction.atomic():
                 workout_name = request.POST.get('workout_name', routine.name) # Default to routine name if not provided
                 workout_notes = request.POST.get('workout_notes', '')
-                
+
                 # Create the Workout instance
                 new_workout = Workout.objects.create(
                     user=request.user,
@@ -606,7 +657,7 @@ def start_workout_from_routine(request, routine_id):
                     routine_exercise_id_key = f'routine_exercise_id_{exercise_idx}'
                     if routine_exercise_id_key not in request.POST:
                         break # No more exercises submitted
-                    
+
                     routine_exercise_id = request.POST.get(routine_exercise_id_key)
                     exercise_notes = request.POST.get(f'exercise_notes_{exercise_idx}', '')
 
@@ -636,28 +687,28 @@ def start_workout_from_routine(request, routine_id):
                         set_template_id_key = f'set_template_id_{exercise_idx}_{set_idx}'
                         if set_template_id_key not in request.POST:
                             break # No more sets for this exercise
-                        
+
                         # We don't strictly need set_template_id for creating ExerciseSet,
                         # but it confirms the set was part of the form submission for this loop.
                         # set_template_id = request.POST.get(set_template_id_key)
-                        
+
                         reps_str = request.POST.get(f'reps_{exercise_idx}_{set_idx}')
                         weight_str = request.POST.get(f'weight_{exercise_idx}_{set_idx}')
                         is_warmup = request.POST.get(f'is_warmup_{exercise_idx}_{set_idx}') == 'true'
-                        
+
                         # Only save the set if reps and weight are provided
                         if reps_str and weight_str:
                             try:
                                 reps = int(reps_str)
                                 weight = float(weight_str)
-                                
+
                                 # Get the set number from the original template if possible, or just increment
                                 # For simplicity, we'll use the set_idx + 1 as set_number for the logged set.
                                 # The original template set_number is available via set_data.template.set_number in GET
                                 # but for POST, we need to be careful. We assume the order is maintained.
                                 # A more robust way would be to pass set_template.set_number in a hidden field for each set.
                                 # For now, using sequential set_number for logged sets.
-                                
+
                                 ExerciseSet.objects.create(
                                     workout_exercise=workout_exercise_instance,
                                     set_number=set_idx + 1, # Simple sequential set number for logged sets
@@ -670,7 +721,7 @@ def start_workout_from_routine(request, routine_id):
                                 pass # Silently skip malformed set data for now
                         set_idx += 1
                     exercise_idx += 1
-                
+
                 return redirect('workout-detail', workout_id=new_workout.id)
         except Exception as e:
             # Log the error e
@@ -688,14 +739,15 @@ def start_workout_from_routine(request, routine_id):
     context = {
         'routine': routine,
         'routine_exercises_with_sets': routine_exercises_with_sets,
-        'title': f'Start Workout: {routine.name}'
+        'title': f'Start Workout: {routine.name}',
+        'prefilled_workout_name': prefilled_workout_name
     }
     return render(request, 'start_workout_from_routine.html', context)
 
 @login_required
 def workout_update(request, workout_id):
     workout = get_object_or_404(Workout, id=workout_id, user=request.user)
-    
+
     if request.method == 'POST':
         # Basic update for Workout model fields for now
         workout.name = request.POST.get('name', workout.name)
@@ -710,7 +762,7 @@ def workout_update(request, workout_id):
             except ValueError:
                 # Handle invalid date format, perhaps add an error to the form
                 pass # For now, keep original date if parsing fails
-        
+
         duration_str = request.POST.get('duration')
         if duration_str: # Django's DurationField can parse various formats like "HH:MM:SS" or "X days, HH:MM:SS"
             try:
@@ -741,7 +793,7 @@ def workout_delete(request, workout_id):
         workout.delete()
         # Optionally, add a success message using Django's messages framework
         return redirect('workout-list')
-    
+
     context = {
         'object': workout, # Using 'object' for consistency with other delete views
         'title': f'Delete Workout: {workout.name}'
@@ -780,7 +832,7 @@ def ajax_update_workout_exercise_feedback(request):
 
         try:
             workout_exercise = WorkoutExercise.objects.select_related(
-                'workout_log__workout__user', 
+                'workout_log__workout__user',
                 'exercise'
             ).get(id=workout_exercise_id)
         except WorkoutExercise.DoesNotExist:
@@ -822,9 +874,9 @@ def ajax_update_workout_exercise_feedback(request):
         try:
             workout_exercise.performance_feedback = feedback_value
             workout_exercise.save(update_fields=['performance_feedback'])
-            
+
             new_feedback_display = workout_exercise.get_performance_feedback_display() or "Not set"
-            
+
             return JsonResponse({
                 'html': new_feedback_display,
                 'toast': {
@@ -847,3 +899,84 @@ def ajax_update_workout_exercise_feedback(request):
             }, status=500)
 
     return JsonResponse({'error': 'Invalid request method.', 'html': 'Error.'}, status=405)
+
+@login_required
+def start_next_workout(request):
+    today_weekday = timezone.now().weekday() # Monday is 0 and Sunday is 6
+    user = request.user
+    next_routine = None
+
+    # 1. Check for a routine scheduled for today
+    routines_today = Routine.objects.filter(user=user, day_of_week=today_weekday).order_by('name') # Simple order if multiple
+    if routines_today.exists():
+        next_routine = routines_today.first() # Take the first one found for today
+    else:
+        # 2. Check for the next routine in a sequence (more complex logic needed here)
+        # This is a simplified placeholder. A robust solution would look at the last workout
+        # that had a routine_source with a sequence_order, and find the next sequence_order.
+        last_sequenced_workout = Workout.objects.filter(
+            user=user,
+            routine_source__isnull=False,
+            routine_source__sequence_order__isnull=False
+        ).order_by('-date').first()
+
+        if last_sequenced_workout and last_sequenced_workout.routine_source.sequence_order is not None:
+            current_sequence = last_sequenced_workout.routine_source.sequence_order
+            next_sequence_routine = Routine.objects.filter(
+                user=user,
+                sequence_order__gt=current_sequence
+            ).order_by('sequence_order').first()
+            if not next_sequence_routine: # Wrap around
+                next_sequence_routine = Routine.objects.filter(
+                    user=user,
+                    sequence_order__isnull=False
+                ).order_by('sequence_order').first()
+            next_routine = next_sequence_routine
+        else: # Fallback: if no last sequenced workout, try the first in sequence
+            next_routine = Routine.objects.filter(user=user, sequence_order__isnull=False).order_by('sequence_order').first()
+
+    if next_routine:
+        # If a routine is found, redirect to the start_workout_from_routine page
+        # The name can be auto-generated within that view or when the workout is created from POST
+        redirect_url = reverse('start-workout-from-routine', args=[next_routine.id])
+        return redirect(f'{redirect_url}?source=smart-start')
+    else:
+        # 3. If no routine, create an ad-hoc workout
+        existing_workouts_count = Workout.objects.filter(user=user).count()
+        workout_name = f"Workout #{existing_workouts_count + 1}"
+
+        new_workout = Workout.objects.create(
+            user=user,
+            name=workout_name,
+            date=timezone.now() # Use timezone.now() for DateTimeField
+        )
+        # Redirect to the detail page of the newly created empty workout
+        return redirect('workout-detail', workout_id=new_workout.id)
+
+@login_required
+def update_user_preferences(request):
+    if request.method == 'POST':
+        user_id = request.user.id
+        # Expecting preference_key and preference_value in POST data
+        # These would come from the body of an httpRequestHelper POST call
+        try:
+            import json
+            data = json.loads(request.body.decode('utf-8'))
+            preference_key = data.get('preference_key')
+            preference_value = data.get('preference_value')
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON'}, status=400)
+
+        if preference_key and preference_value is not None:
+            # Construct a user-specific cache key
+            # Example key: user:123:preferences:routineForm.showRPE
+            cache_key = f"user:{user_id}:preferences:{preference_key}"
+
+            # Store in Redis. Django's cache.set will use the default cache (Redis)
+            # Timeout can be set if preferences should expire, e.g., timeout=None for persistent
+            cache.set(cache_key, preference_value, timeout=None)
+            return JsonResponse({'status': 'success', 'message': 'Preference saved.'})
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Missing key or value.'}, status=400)
+
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method.'}, status=405)

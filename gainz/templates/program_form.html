@@ -30,16 +30,17 @@
                 </div>
 
                 <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="is_public" name="is_public" 
-                        {% if object and object.is_public %}checked{% endif %}
-                        {% if not object and is_public_value %}checked{% endif %}>
-                    <label class="form-check-label" for="is_public">Publicly Visible</label>
+                    <input type="checkbox" class="form-check-input" id="is_active" name="is_active"
+                        {% if object and object.is_active %}checked{% endif %}
+                        {% if not object and is_active_value %}checked{% endif %}>
+                    <label class="form-check-label" for="is_active">Active Program</label>
+                    <small class="form-text text-muted d-block">If checked, this will become your active program. Any other active program will be deactivated.</small>
                 </div>
-                
+
                 <button type="submit" class="btn btn-success mt-3">Save Program</button>
                 <a href="{% url 'routine-list' %}" class="btn btn-secondary mt-3">Cancel</a>
             </form>
         </div>
     </div>
 </div>
-{% endblock content %} 
+{% endblock content %}

@@ -20,11 +20,14 @@ from gainz.views import (
     routine_delete, # Add routine_delete view
     program_update, # Add program_update view
     program_delete, # Add program_delete view
+    program_list, # Add program_list view
     start_workout_from_routine, # Add start_workout_from_routine view
     workout_update,
     workout_delete,
-    ajax_get_exercise_details,
+    start_next_workout, # Add new view
+    # ajax_get_exercise_details,
     ajax_update_workout_exercise_feedback,
+    update_user_preferences, # Add new view for user preferences
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -90,6 +93,9 @@ urlpatterns = [
     # Create Program
     path('programs/create/', program_create, name='program-create'),
 
+    # Program List
+    path('programs/', program_list, name='program-list'),
+
     # Update Program
     path('programs/<int:program_id>/edit/', program_update, name='program-update'),
 
@@ -102,6 +108,12 @@ urlpatterns = [
     # Delete Workout
     path('workouts/<int:workout_id>/delete/', workout_delete, name='workout-delete'),
 
-    path('ajax/get_exercise_details/', ajax_get_exercise_details, name='ajax_get_exercise_details'),
+    # Start Next Workout
+    path('workouts/start-next/', start_next_workout, name='start-next-workout'),
+
+    # path('ajax/get_exercise_details/', ajax_get_exercise_details, name='ajax_get_exercise_details'),
     path('ajax/update_workout_exercise_feedback/', ajax_update_workout_exercise_feedback, name='ajax_update_workout_exercise_feedback'),
+
+    # User Preferences
+    path('ajax/update_user_preferences/', update_user_preferences, name='update-user-preferences'),
 ]

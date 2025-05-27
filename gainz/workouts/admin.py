@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Program, Routine, RoutineExercise, RoutineExerciseSet,
-    Workout, WorkoutExercise, ExerciseSet
+    Workout, WorkoutExercise, ExerciseSet, ProgramRoutine
 )
 
 # --- Planning Model Admins ---
@@ -31,12 +31,29 @@ class RoutineInline(admin.TabularInline):
     readonly_fields = ('name', 'description') # Make them read-only in the program view
     show_change_link = True # Allow clicking to the full Routine admin page
 
+class ProgramRoutineInline(admin.TabularInline):
+    model = ProgramRoutine
+    extra = 1
+    autocomplete_fields = ['routine']
+    fields = ('routine', 'order', 'assigned_day')
+
 @admin.register(Program)
 class ProgramAdmin(admin.ModelAdmin):
-    list_display = ('name', 'user', 'is_public')
-    list_filter = ('user', 'is_public')
+    list_display = ('name', 'user', 'is_public', 'is_active')
+    list_filter = ('user', 'is_public', 'is_active')
     search_fields = ('name', 'description', 'user__username')
-    inlines = []
+    inlines = [ProgramRoutineInline]
+    actions = ['activate_programs', 'deactivate_programs']
+
+    def activate_programs(self, request, queryset):
+        for program in queryset:
+            program.is_active = True
+            program.save() # This will trigger the custom save logic
+    activate_programs.short_description = "Activate selected programs"
+
+    def deactivate_programs(self, request, queryset):
+        queryset.update(is_active=False)
+    deactivate_programs.short_description = "Deactivate selected programs"
 
 @admin.register(Routine)
 class RoutineAdmin(admin.ModelAdmin):
@@ -44,18 +61,23 @@ class RoutineAdmin(admin.ModelAdmin):
     list_filter = ('user',)
     search_fields = ('name', 'description', 'user__username')
     inlines = [RoutineExerciseInline]
-    # Autocomplete fields are good for ForeignKeys with many options
     autocomplete_fields = ['user']
 
 @admin.register(RoutineExercise)
 class RoutineExerciseAdmin(admin.ModelAdmin):
-    list_display = ('routine', 'exercise', 'order', 'routine_specific_exercise_type') # Removed target_sets, target_reps, added routine_specific_exercise_type
+    list_display = ('routine', 'exercise', 'order', 'routine_specific_exercise_type')
     list_filter = ('routine', 'exercise', 'routine_specific_exercise_type')
     search_fields = ('routine__name', 'exercise__name')
     list_editable = ('order', 'routine_specific_exercise_type')
-    # Autocomplete fields are good for ForeignKeys with many options
     autocomplete_fields = ['routine', 'exercise']
-    inlines = [RoutineExerciseSetInline] # Added inline for planned sets
+    inlines = [RoutineExerciseSetInline]
+
+@admin.register(ProgramRoutine)
+class ProgramRoutineAdmin(admin.ModelAdmin):
+    list_display = ('program', 'routine', 'order', 'assigned_day')
+    list_filter = ('program', 'routine', 'assigned_day')
+    search_fields = ('program__name', 'routine__name')
+    autocomplete_fields = ['program', 'routine']
 
 # --- Logging Model Admins ---
 
