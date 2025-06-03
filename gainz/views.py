@@ -18,6 +18,8 @@ from django.utils import timezone # Added for timezone.now()
 from django.urls import reverse # Add import for reverse
 from django.contrib import messages # Added for messages
 from django.core.cache import cache # Added for Redis cache
+from django_rq import get_queue # Added for direct Redis access via django-rq
+import json # Moved import json here
 
 # Exercise ViewSets
 class ExerciseCategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -249,12 +251,29 @@ def routine_create(request):
     all_exercises_for_template = [
         {"pk": ex.pk, "name": ex.name, "default_type_display": ex.get_exercise_type_display()} for ex in all_exercises_qs
     ]
+    exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
 
-    user_preferences = {
-        'show_rpe': cache.get(f'user:{request.user.id}:preferences:routineForm.showRPE', True), # Default to True if not found
-        'show_rest_time': cache.get(f'user:{request.user.id}:preferences:routineForm.showRestTime', True),
-        'show_notes': cache.get(f'user:{request.user.id}:preferences:routineForm.showNotes', False), # Default to False
+    user_id = request.user.id
+    redis_conn = get_queue().connection
+    user_preferences = {}
+    preference_definitions = {
+        'show_rpe': {'key_suffix': 'routineForm.showRPE', 'default': False},
+        'show_rest_time': {'key_suffix': 'routineForm.showRestTime', 'default': False},
+        'show_notes': {'key_suffix': 'routineForm.showNotes', 'default': False},
     }
+
+    for pref_name, pref_info in preference_definitions.items():
+        cache_key = f"user_prefs:{user_id}:{pref_info['key_suffix']}"
+        # REVERTED: No more hardcoded key for RPE loading
+        # if pref_name == 'show_rpe':
+        #     cache_key = f"test_rpe_preference_user_{user_id}"
+
+        retrieved_value_bytes = redis_conn.get(cache_key)
+        if retrieved_value_bytes is not None:
+            retrieved_value_str = retrieved_value_bytes.decode('utf-8')
+            user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+        else:
+            user_preferences[pref_name] = pref_info['default']
 
     if request.method == 'POST':
         try:
@@ -331,7 +350,7 @@ def routine_create(request):
             context = {
                 'title': 'Create New Routine',
                 'all_exercises': all_exercises_for_template,
-                'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES,
+                'exercise_type_choices': exercise_type_choices,
                 'user_preferences': user_preferences,
                 'error': str(e), # Display the error for debugging, refine for production
                 # Consider re-populating form with request.POST data here
@@ -342,7 +361,7 @@ def routine_create(request):
     context = {
         'title': 'Create New Routine',
         'all_exercises': all_exercises_for_template,
-        'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES,
+        'exercise_type_choices': exercise_type_choices,
         'user_preferences': user_preferences,
     }
     return render(request, 'routine_form.html', context)
@@ -350,14 +369,43 @@ def routine_create(request):
 @login_required
 def routine_update(request, routine_id):
     routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+    routine_exercises = routine.exercises.select_related('exercise').prefetch_related('planned_sets').order_by('order')
     all_exercises_qs = Exercise.objects.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user)).order_by('name')
     all_exercises_for_template = [
         {"pk": ex.pk, "name": ex.name, "default_type_display": ex.get_exercise_type_display()} for ex in all_exercises_qs
     ]
-    user_preferences = {
-        'show_rpe': cache.get(f'user:{request.user.id}:preferences:routineForm.showRPE', True),
-        'show_rest_time': cache.get(f'user:{request.user.id}:preferences:routineForm.showRestTime', True),
-        'show_notes': cache.get(f'user:{request.user.id}:preferences:routineForm.showNotes', False),
+    exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
+
+    user_id = request.user.id
+    redis_conn = get_queue().connection
+    user_preferences = {}
+    preference_definitions = {
+        'show_rpe': {'key_suffix': 'routineForm.showRPE', 'default': False},
+        'show_rest_time': {'key_suffix': 'routineForm.showRestTime', 'default': False},
+        'show_notes': {'key_suffix': 'routineForm.showNotes', 'default': False},
+    }
+
+    for pref_name, pref_info in preference_definitions.items():
+        cache_key = f"user_prefs:{user_id}:{pref_info['key_suffix']}"
+        # REVERTED: No more hardcoded key for RPE loading
+        # if pref_name == 'show_rpe':
+        #     cache_key = f"test_rpe_preference_user_{user_id}"
+
+        retrieved_value_bytes = redis_conn.get(cache_key)
+        if retrieved_value_bytes is not None:
+            retrieved_value_str = retrieved_value_bytes.decode('utf-8')
+            user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+        else:
+            user_preferences[pref_name] = pref_info['default']
+
+    print(f"[routine_update] User preferences: {user_preferences}") # Your existing debug print
+    context = {
+        'title': f'Edit Routine: {routine.name}',
+        'object': routine,
+        'routine_exercises': routine_exercises,
+        'all_exercises': all_exercises_for_template,
+        'exercise_type_choices': Exercise.EXERCISE_TYPE_CHOICES,
+        'user_preferences': user_preferences,
     }
 
     if request.method == 'POST':
@@ -957,25 +1005,30 @@ def start_next_workout(request):
 def update_user_preferences(request):
     if request.method == 'POST':
         user_id = request.user.id
-        # Expecting preference_key and preference_value in POST data
-        # These would come from the body of an httpRequestHelper POST call
         try:
-            import json
             data = json.loads(request.body.decode('utf-8'))
-            preference_key = data.get('preference_key')
+            preference_key_suffix = data.get('preference_key')
             preference_value = data.get('preference_value')
         except json.JSONDecodeError:
             return JsonResponse({'status': 'error', 'message': 'Invalid JSON'}, status=400)
 
-        if preference_key and preference_value is not None:
-            # Construct a user-specific cache key
-            # Example key: user:123:preferences:routineForm.showRPE
-            cache_key = f"user:{user_id}:preferences:{preference_key}"
+        if preference_key_suffix and preference_value is not None:
+            cache_key = f"user_prefs:{user_id}:{preference_key_suffix}"
+            # REVERTED: No more hardcoded key for RPE saving
+            # if preference_key_suffix == 'routineForm.showRPE':
+            #     cache_key = f"test_rpe_preference_user_{user_id}"
 
-            # Store in Redis. Django's cache.set will use the default cache (Redis)
-            # Timeout can be set if preferences should expire, e.g., timeout=None for persistent
-            cache.set(cache_key, preference_value, timeout=None)
-            return JsonResponse({'status': 'success', 'message': 'Preference saved.'})
+            redis_conn = get_queue().connection
+            if isinstance(preference_value, bool):
+                value_to_store = "true" if preference_value else "false"
+            else:
+                value_to_store = str(preference_value)
+
+            try:
+                redis_conn.set(cache_key, value_to_store)
+                return JsonResponse({'status': 'success', 'message': 'Preference saved via django-rq.'})
+            except Exception as e:
+                return JsonResponse({'status': 'error', 'message': f'Failed to save to Redis: {e}'}, status=500)
         else:
             return JsonResponse({'status': 'error', 'message': 'Missing key or value.'}, status=400)
 

@@ -1,0 +1,20 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+Use redis to cache values:
+
+Example usage:
+>>> from django_rq import get_queue
+>>> q = get_queue()
+>>> redis=q.connection
+>>> redis.get('firstkey')
+>>> redis.set('firstkey',1)
+True
+>>> redis.get('firstkey')
+b'1'
+
+Keep in mind that the values that you get from redis.get are byte so you need to decode before using.
+
+

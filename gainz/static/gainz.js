@@ -961,10 +961,17 @@ window.selectAndAddExerciseToRoutine = function(event) {
 }
 
 function initializeRoutineForm() {
+    const rpeToggleForDebug = document.getElementById('toggle-rpe-visibility');
+    if (rpeToggleForDebug) {
+        // This log confirmed the initial state was correct, so we can remove it or keep for future.
+        // console.log('[gainz.js] initializeRoutineForm: Initial state of RPE checkbox (id: toggle-rpe-visibility) IS CHECKED:', rpeToggleForDebug.checked);
+    }
+
+    // Parts of this block were causing the issue. We will reintroduce them carefully.
     const routineExercisesContainer = document.getElementById('routine-exercises-container');
     if (routineExercisesContainer) {
         // Initial setup for existing cards from server
-        routineExercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
+        /* routineExercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
             setupDragAndDropListeners(card);
             const exerciseSelect = card.querySelector('.exercise-select');
             if (exerciseSelect && exerciseSelect.value) {
@@ -973,21 +980,13 @@ function initializeRoutineForm() {
         });
         routineExercisesContainer.addEventListener('dragover', handleDragOver);
         routineExercisesContainer.addEventListener('drop', handleDrop);
+        */
     }
 
-    updateRoutineExerciseOrderNumbers();
+    updateRoutineExerciseOrderNumbers(); // Reintroducing this first
 
-    // Load and apply checkbox states from Redis
-    const rpeToggle = document.getElementById('toggle-rpe-visibility');
-    const restToggle = document.getElementById('toggle-rest-time-visibility');
-    const notesToggle = document.getElementById('toggle-notes-visibility');
-
-    if(rpeToggle) rpeToggle.checked = localStorage.getItem('gainz.routineForm.showRPE') === 'true';
-    if(restToggle) restToggle.checked = localStorage.getItem('gainz.routineForm.showRestTime') === 'true';
-    if(notesToggle) notesToggle.checked = localStorage.getItem('gainz.routineForm.showNotes') === 'true';
-    // localStorage logic removed, states are now set by Django template from Redis
-
-    window.updateSetRowFieldVisibility(); // Initial call based on server-provided states
+    // The main call to update visibility based on checkbox states
+    window.updateSetRowFieldVisibility();
 }
 
 // Initialization on DOMContentLoaded
@@ -1025,31 +1024,68 @@ window.updateSetRowFieldVisibility = updateSetRowFieldVisibility;
 
 // Helper function to update visibility of optional set fields based on checkboxes
 async function updateSetRowFieldVisibility(event) { // Made async
+    const isInitializationCall = !event;
+    if (isInitializationCall) {
+        console.log('[gainz.js] updateSetRowFieldVisibility: Called during page initialization.');
+    }
+
     const rpeToggle = document.getElementById('toggle-rpe-visibility');
     const restToggle = document.getElementById('toggle-rest-time-visibility');
     const notesToggle = document.getElementById('toggle-notes-visibility');
+
+    // Log the state of the checkbox as seen by THIS function, especially during initialization
+    if (rpeToggle && isInitializationCall) {
+        console.log('[gainz.js] updateSetRowFieldVisibility (init call): RPE checkbox (id: toggle-rpe-visibility) IS CHECKED:', rpeToggle.checked);
+    }
 
     const showRPE = rpeToggle?.checked;
     const showRestTime = restToggle?.checked;
     const showNotes = notesToggle?.checked;
 
-    // Save states to Redis via backend API call
-    // const preferencesToSave = []; // Not needed, send one by one or identify caller
+    if (isInitializationCall) {
+        console.log(`[gainz.js] updateSetRowFieldVisibility (init call): showRPE=${showRPE}, showRestTime=${showRestTime}, showNotes=${showNotes}`);
+    }
 
+    // Save states to Redis via backend API call
     if (event && event.target) { // Check if called by an event on a specific toggle
         const checkbox = event.target;
-        const preferenceKeySuffix = checkbox.id.replace('toggle-', '').replace('-visibility', '');
-        const preferenceKey = `routineForm.${preferenceKeySuffix}`;
-        const preferenceValue = checkbox.checked;
-        console.log(`[gainz.js] Attempting to save preference: Key='${preferenceKey}', Value=${preferenceValue}`);
-        await httpRequestHelper('/ajax/update_user_preferences/', 'POST', {
-            preference_key: preferenceKey,
-            preference_value: preferenceValue
-        }).then(response => {
-            console.log('[gainz.js] Save preference response:', response);
-        }).catch(error => {
-            console.error('[gainz.js] Save preference error:', error);
-        });
+        let preferenceKeyForBackend;
+        switch (checkbox.id) {
+            case 'toggle-rpe-visibility':
+                preferenceKeyForBackend = 'routineForm.showRPE';
+                break;
+            case 'toggle-rest-time-visibility':
+                preferenceKeyForBackend = 'routineForm.showRestTime';
+                break;
+            case 'toggle-notes-visibility':
+                preferenceKeyForBackend = 'routineForm.showNotes';
+                break;
+            default:
+                console.error(`[gainz.js] Unknown checkbox ID for preference saving: ${checkbox.id}`);
+                // Optionally, you might want to return or skip saving if the ID is unknown.
+                // For now, it will proceed and likely result in an unhandled preferenceKeyForBackend.
+                // Consider adding: return;
+        }
+
+        // Only proceed if preferenceKeyForBackend was successfully determined
+        if (preferenceKeyForBackend) {
+            const preferenceValue = checkbox.checked;
+            console.log(`[gainz.js] Attempting to save preference: Key='${preferenceKeyForBackend}', Value=${preferenceValue}`);
+            await httpRequestHelper('/ajax/update_user_preferences/', 'POST', {
+                preference_key: preferenceKeyForBackend, // This will now be correct
+                preference_value: preferenceValue
+            }).then(response => {
+                console.log('[gainz.js] Save preference response:', response);
+                if (!response.ok) {
+                    send_toast(response.data?.message || 'Failed to save preference.', 'danger', 'Preference Error');
+                }
+            }).catch(error => {
+                console.error('[gainz.js] Save preference error:', error);
+                send_toast('Error communicating with server to save preference.', 'danger', 'Network Error');
+            });
+        } else if (checkbox.id) { // Log if key was not determined but it was an attempt to save
+             console.warn(`[gainz.js] Did not save preference for unknown checkbox ID: ${checkbox.id}`);
+        }
     }
     // Removed localStorage saving logic
     // if(rpeToggle) localStorage.setItem('gainz.routineForm.showRPE', showRPE);
@@ -1061,7 +1097,13 @@ async function updateSetRowFieldVisibility(event) { // Made async
         const restTimeField = setRow.querySelector('.rest-time-field');
         const notesField = setRow.querySelector('.notes-field');
 
-        if (rpeField) rpeField.style.display = showRPE ? 'block' : 'none';
+        if (rpeField) {
+            const newRpeDisplay = showRPE ? 'block' : 'none';
+            if (isInitializationCall) {
+                console.log(`[gainz.js] updateSetRowFieldVisibility (init call): Setting .rpe-field display to: ${newRpeDisplay}`);
+            }
+            rpeField.style.display = newRpeDisplay;
+        }
         if (restTimeField) restTimeField.style.display = showRestTime ? 'block' : 'none';
         if (notesField) notesField.style.display = showNotes ? 'block' : 'none';
     });

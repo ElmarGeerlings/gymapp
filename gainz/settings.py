@@ -11,10 +11,23 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+REDIS_HOST = os.environ.get("REDIS_HOST", 'localhost')
+try:
+    from django_redis import get_redis_connection
+
+    REDIS_CACHE_TYPE = 'django-redis'
+except ImportError:
+    try:
+        import redis_cache
+
+        REDIS_CACHE_TYPE = 'django-redis-cache'
+    except ImportError:
+        REDIS_CACHE_TYPE = 'none'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -105,17 +118,28 @@ DATABASES = {
     }
 }
 
-# Cache configuration for Redis
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",  # Using DB 1 for user preferences
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SERIALIZER": "django_redis.serializers.json.JSONSerializer", # Using JSON serializer
+if REDIS_CACHE_TYPE == 'django-redis':
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': "redis://127.0.0.1:6379/0",
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
         },
     }
-}
+elif REDIS_CACHE_TYPE == 'django-redis-cache':
+    CACHES = {
+        'default': {
+            'BACKEND': 'redis_cache.cache.RedisCache',
+            'LOCATION': '%s:6379' % REDIS_HOST,
+            'KEY_PREFIX': 'django-rq-tests',
+            'OPTIONS': {
+                'DB': 2,
+                'MAX_ENTRIES': 5000,
+            },
+        },
+    }
 
 
 # Password validation
@@ -166,3 +190,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Authentication Settings
 LOGIN_REDIRECT_URL = '/'  # Redirect to homepage after login
 LOGIN_URL = 'login'       # URL name of the login view
+
+RQ_QUEUES = {
+    'default': {
+        'HOST': REDIS_HOST,
+        'PORT': 6379,
+        'DB': 0,
+        # 'PASSWORD': 'your-redis-password', # Uncomment if your Redis has a password
+        'DEFAULT_TIMEOUT': 500,
+        'DEFAULT_RESULT_TTL': 500,
+    },
+    'django-redis': {
+        'USE_REDIS_CACHE': 'default',
+    },
+}
+
+if REDIS_CACHE_TYPE == 'django-redis-cache':
+    RQ_QUEUES['django-redis-cache'] = {'USE_REDIS_CACHE': 'django-redis-cache'}

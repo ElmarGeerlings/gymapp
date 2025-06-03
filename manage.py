@@ -20,3 +20,11 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+from django_rq import get_queue
+
+q = get_queue('default')
+
+q.enqueue(print, 'Hello, world!')
+
+
