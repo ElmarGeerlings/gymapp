@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
-from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet
+from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet, ProgramRoutine
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
 from django.template.loader import render_to_string
@@ -950,55 +950,62 @@ def ajax_update_workout_exercise_feedback(request):
 
 @login_required
 def start_next_workout(request):
-    today_weekday = timezone.now().weekday() # Monday is 0 and Sunday is 6
+    today_weekday = timezone.now().weekday()  # Monday is 0 and Sunday is 6
     user = request.user
     next_routine = None
+    active_program = Program.objects.filter(user=user, is_active=True).first()
 
-    # 1. Check for a routine scheduled for today
-    routines_today = Routine.objects.filter(user=user, day_of_week=today_weekday).order_by('name') # Simple order if multiple
-    if routines_today.exists():
-        next_routine = routines_today.first() # Take the first one found for today
-    else:
-        # 2. Check for the next routine in a sequence (more complex logic needed here)
-        # This is a simplified placeholder. A robust solution would look at the last workout
-        # that had a routine_source with a sequence_order, and find the next sequence_order.
-        last_sequenced_workout = Workout.objects.filter(
-            user=user,
-            routine_source__isnull=False,
-            routine_source__sequence_order__isnull=False
-        ).order_by('-date').first()
+    if active_program:
+        # 1. Check for a routine scheduled for today in the active program
+        program_routine_today = ProgramRoutine.objects.filter(
+            program=active_program,
+            assigned_day=today_weekday
+        ).select_related('routine').first()
 
-        if last_sequenced_workout and last_sequenced_workout.routine_source.sequence_order is not None:
-            current_sequence = last_sequenced_workout.routine_source.sequence_order
-            next_sequence_routine = Routine.objects.filter(
+        if program_routine_today:
+            next_routine = program_routine_today.routine
+        else:
+            # 2. Find the next routine in sequence from the active program
+            last_workout = Workout.objects.filter(
                 user=user,
-                sequence_order__gt=current_sequence
-            ).order_by('sequence_order').first()
-            if not next_sequence_routine: # Wrap around
-                next_sequence_routine = Routine.objects.filter(
-                    user=user,
-                    sequence_order__isnull=False
-                ).order_by('sequence_order').first()
-            next_routine = next_sequence_routine
-        else: # Fallback: if no last sequenced workout, try the first in sequence
-            next_routine = Routine.objects.filter(user=user, sequence_order__isnull=False).order_by('sequence_order').first()
+                routine_source__program_associations__program=active_program
+            ).order_by('-date').first()
+
+            next_order = 1
+            if last_workout and last_workout.routine_source:
+                last_program_routine = ProgramRoutine.objects.filter(
+                    program=active_program,
+                    routine=last_workout.routine_source
+                ).first()
+                if last_program_routine:
+                    next_order = last_program_routine.order + 1
+
+            next_program_routine = ProgramRoutine.objects.filter(
+                program=active_program,
+                order__gte=next_order
+            ).order_by('order').select_related('routine').first()
+
+            if not next_program_routine:  # Wrap around
+                next_program_routine = ProgramRoutine.objects.filter(
+                    program=active_program
+                ).order_by('order').select_related('routine').first()
+
+            if next_program_routine:
+                next_routine = next_program_routine.routine
 
     if next_routine:
-        # If a routine is found, redirect to the start_workout_from_routine page
-        # The name can be auto-generated within that view or when the workout is created from POST
         redirect_url = reverse('start-workout-from-routine', args=[next_routine.id])
         return redirect(f'{redirect_url}?source=smart-start')
     else:
-        # 3. If no routine, create an ad-hoc workout
+        # 3. If no routine found (no active program or program has no routines), create an ad-hoc workout
         existing_workouts_count = Workout.objects.filter(user=user).count()
         workout_name = f"Workout #{existing_workouts_count + 1}"
 
         new_workout = Workout.objects.create(
             user=user,
             name=workout_name,
-            date=timezone.now() # Use timezone.now() for DateTimeField
+            date=timezone.now()
         )
-        # Redirect to the detail page of the newly created empty workout
         return redirect('workout-detail', workout_id=new_workout.id)
 
 @login_required
