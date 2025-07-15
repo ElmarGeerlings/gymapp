@@ -37,10 +37,141 @@
                     <small class="form-text text-muted d-block">If checked, this will become your active program. Any other active program will be deactivated.</small>
                 </div>
 
-                <button type="submit" class="btn btn-success mt-3">Save Program</button>
-                <a href="{% url 'routine-list' %}" class="btn btn-secondary mt-3">Cancel</a>
+                <hr class="my-4">
+
+                <h4 class="mb-3">Scheduling Type</h4>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="scheduling_type" id="scheduling-weekly" value="weekly" {% if object.scheduling_type == 'weekly' or not object %}checked{% endif %}>
+                        <label class="form-check-label" for="scheduling-weekly">
+                            Weekly (Assign routines to specific days)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="scheduling_type" id="scheduling-sequential" value="sequential" {% if object.scheduling_type == 'sequential' %}checked{% endif %}>
+                        <label class="form-check-label" for="scheduling-sequential">
+                            Sequential (Rotate through routines in order)
+                        </label>
+                    </div>
+                </div>
+
+                <div id="weekly-schedule-container" style="display: none;">
+                    <h4 class="mb-3">Weekly Schedule</h4>
+                    <div class="weekly-planner">
+                        {% for day_val, day_name in day_choices %}
+                            <div class="day-column" data-day-value="{{ day_val }}">
+                                <div class="day-header">{{ day_name }}</div>
+                                <div class="routines-for-day-container">
+                                    <!-- Routines for this day will be added here -->
+                                     {% for pr in program_routines %}
+                                        {% if pr.assigned_day == day_val %}
+                                            <div class="routine-chip" data-routine-id="{{ pr.routine.id }}">
+                                                <span>{{ pr.routine.name }}</span>
+                                                <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                                                <input type="hidden" name="weekly_day_{{ day_val }}_routines" value="{{ pr.routine.id }}">
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                                <div class="add-routine-to-day-wrapper mt-2">
+                                    <select class="form-select form-select-sm add-routine-to-day-select">
+                                        <option value="" selected>Add routine...</option>
+                                        {% for r in available_routines %}
+                                             <option value="{{ r.id }}">{{ r.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div id="sequential-schedule-container" style="display: none;">
+                    <h4 class="mb-3">Sequential Routine Order</h4>
+                    <div id="program-routines-container">
+                        {% for pr in program_routines %}
+                            <div class="row g-3 align-items-center mb-2 program-routine-row" data-index="{{ forloop.counter0 }}">
+                                <input type="hidden" name="program_routine_{{ forloop.counter0 }}_id" value="{{ pr.id }}">
+                                <input type="hidden" name="program_routine_{{ forloop.counter0 }}_routine_id" value="{{ pr.routine.id }}">
+                                <div class="col-md-5">
+                                    <label class="form-label visually-hidden">Routine</label>
+                                    <input type="text" class="form-control" value="{{ pr.routine.name }}" readonly>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="order_{{ forloop.counter0 }}" class="form-label visually-hidden">Order</label>
+                                    <input type="number" id="order_{{ forloop.counter0 }}" name="program_routine_{{ forloop.counter0 }}_order" class="form-control" value="{{ pr.order }}" placeholder="Order" required>
+                                </div>
+                                <div class="col-md-4 day-selector-col" style="display:none;">
+                                    <label for="day_{{ forloop.counter0 }}" class="form-label visually-hidden">Day</label>
+                                    <select id="day_{{ forloop.counter0 }}" name="program_routine_{{ forloop.counter0 }}_day" class="form-select">
+                                        <option value="">Any Day</option>
+                                        {% for day_val, day_name in day_choices %}
+                                            <option value="{{ day_val }}" {% if pr.assigned_day == day_val %}selected{% endif %}>{{ day_name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-1">
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-pr-btn" data-function="click->handleRemoveProgramRoutine">&times;</button>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div id="sequential-routine-adder">
+                    <div class="d-flex justify-content-between mt-3">
+                        <div class="row g-2">
+                            <div class="col-auto">
+                                <select id="add-routine-select" class="form-select">
+                                    <option value="" selected disabled>Add a routine...</option>
+                                    {% for routine in available_routines %}
+                                        <option value="{{ routine.id }}" data-name="{{ routine.name }}">{{ routine.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-auto">
+                                <button type="button" id="add-routine-to-program-btn" class="btn btn-info" data-function="click->handleAddRoutineToProgram">Add Routine</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <hr class="my-4">
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'program-list' %}" class="btn btn-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-success">Save Program</button>
+                </div>
             </form>
         </div>
     </div>
 </div>
+
+<template id="program-routine-template">
+    <div class="row g-3 align-items-center mb-2 program-routine-row" data-index="__INDEX__">
+        <input type="hidden" name="program_routine___INDEX___id" value="">
+        <input type="hidden" name="program_routine___INDEX___routine_id" value="__ROUTINE_ID__">
+        <div class="col-md-5">
+            <label class="form-label visually-hidden">Routine</label>
+            <input type="text" class="form-control" value="__ROUTINE_NAME__" readonly>
+        </div>
+        <div class="col-md-2">
+            <label for="order___INDEX__" class="form-label visually-hidden">Order</label>
+            <input type="number" id="order___INDEX__" name="program_routine___INDEX___order" class="form-control" value="__ORDER__" placeholder="Order" required>
+        </div>
+        <div class="col-md-4 day-selector-col" style="display:none;">
+            <label for="day___INDEX__" class="form-label visually-hidden">Day</label>
+            <select id="day___INDEX__" name="program_routine___INDEX___day" class="form-select">
+                <option value="" selected>Any Day</option>
+                {% for day_val, day_name in day_choices %}
+                    <option value="{{ day_val }}">{{ day_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-1">
+            <button type="button" class="btn btn-sm btn-outline-danger remove-pr-btn" data-function="click->handleRemoveProgramRoutine">&times;</button>
+        </div>
+    </div>
+</template>
+
 {% endblock content %}

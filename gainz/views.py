@@ -435,7 +435,7 @@ def routine_update(request, routine_id):
                         if routine_exercise_id:
                             try:
                                 old_re = RoutineExercise.objects.get(id=routine_exercise_id, routine=routine)
-                                old_re.delete() # Delete it as it\'s no longer valid (no exercise selected)
+                                old_re.delete() # Delete it as it's no longer valid (no exercise selected)
                             except RoutineExercise.DoesNotExist:
                                 pass # Was never saved or already deleted
                         exercise_idx += 1
@@ -591,7 +591,6 @@ def program_create(request):
             program.is_active = True # Ensure the first program is active
             program.save() # Save again to trigger potential deactivation of others (though none here)
 
-        messages.success(request, f'Program "{program.name}" created successfully.')
         return redirect('program-list') # Redirect to the program list
     else:
         # Check if this will be the first program for the user to auto-check 'is_active'
@@ -605,31 +604,61 @@ def program_create(request):
 @login_required
 def program_update(request, program_id):
     program = get_object_or_404(Program, id=program_id, user=request.user)
+
     if request.method == 'POST':
-        program.name = request.POST.get('name', program.name)
-        program.description = request.POST.get('description', program.description)
-        program.is_active = request.POST.get('is_active') == 'on' # Checkbox value
+        with transaction.atomic():
+            program.name = request.POST.get('name', program.name)
+            program.description = request.POST.get('description', program.description)
+            program.is_active = request.POST.get('is_active') == 'on'
+            program.scheduling_type = request.POST.get('scheduling_type', 'weekly')
+            program.save()
 
-        if not program.name:
-            context = {
-                'title': f'Edit Program: {program.name}',
-                'object': program,
-                'error': 'Program name cannot be empty.',
-                 # Pass back current values for re-population
-                'name_value': request.POST.get('name'),
-                'description_value': request.POST.get('description'),
-                'is_active_value': request.POST.get('is_active') == 'on'
-            }
-            return render(request, 'program_form.html', context, status=400)
+            # Clear existing routines for this program
+            program.program_routines.all().delete()
 
-        program.save() # The save method handles deactivating other programs
-        messages.success(request, f'Program "{program.name}" updated successfully.')
-        return redirect('program-list')
+            if program.scheduling_type == 'weekly':
+                # Process weekly schedule
+                for day_val, day_name in ProgramRoutine._meta.get_field('assigned_day').choices:
+                    routine_ids = request.POST.getlist(f'weekly_day_{day_val}_routines')
+                    for i, r_id in enumerate(routine_ids):
+                        routine = get_object_or_404(Routine, id=r_id, user=request.user)
+                        ProgramRoutine.objects.create(
+                            program=program,
+                            routine=routine,
+                            assigned_day=day_val,
+                            order=i + 1 # Order within the day
+                        )
+            else: # Sequential
+                # Process sequential schedule
+                i = 0
+                while f'program_routine_{i}_routine_id' in request.POST:
+                    routine_id = request.POST.get(f'program_routine_{i}_routine_id')
+                    order = request.POST.get(f'program_routine_{i}_order')
+                    if routine_id and order:
+                        routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+                        ProgramRoutine.objects.create(
+                            program=program,
+                            routine=routine,
+                            order=int(order),
+                            assigned_day=None
+                        )
+                    i += 1
+
+            return redirect('program-list')
+
+    # GET request logic remains the same
+    all_user_routines = Routine.objects.filter(user=request.user)
+    # Exclude routines already in the program from the "add" dropdown
+    assigned_routine_pks = program.program_routines.values_list('routine__pk', flat=True)
+    available_routines = all_user_routines.exclude(pk__in=assigned_routine_pks)
 
     context = {
         'title': f'Edit Program: {program.name}',
         'object': program,
-        'is_active_value': program.is_active # Pass current status for checkbox
+        'is_active_value': program.is_active,
+        'program_routines': program.program_routines.select_related('routine').order_by('order', 'assigned_day'),
+        'available_routines': available_routines,
+        'day_choices': ProgramRoutine._meta.get_field('assigned_day').choices
     }
     return render(request, 'program_form.html', context)
 
@@ -638,7 +667,6 @@ def program_delete(request, program_id):
     program = get_object_or_404(Program, id=program_id, user=request.user)
     if request.method == 'POST':
         program.delete()
-        messages.success(request, f'Program "{program.name}" deleted successfully.')
         return redirect('program-list')
     context = {
         'object': program,
@@ -653,7 +681,11 @@ def program_list(request):
         'programs': programs,
         'title': 'Your Programs'
     }
-    return render(request, 'program_list.html', context)
+    response = render(request, 'program_list.html', context)
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response['Pragma'] = 'no-cache'
+    response['Expires'] = '0'
+    return response
 
 @login_required
 def start_workout_from_routine(request, routine_id):
@@ -950,22 +982,22 @@ def ajax_update_workout_exercise_feedback(request):
 
 @login_required
 def start_next_workout(request):
-    today_weekday = timezone.now().weekday()  # Monday is 0 and Sunday is 6
     user = request.user
     next_routine = None
     active_program = Program.objects.filter(user=user, is_active=True).first()
 
     if active_program:
-        # 1. Check for a routine scheduled for today in the active program
-        program_routine_today = ProgramRoutine.objects.filter(
-            program=active_program,
-            assigned_day=today_weekday
-        ).select_related('routine').first()
+        if active_program.scheduling_type == 'weekly':
+            # Weekly schedule logic
+            today_weekday = timezone.now().weekday()
+            program_routine_today = ProgramRoutine.objects.filter(
+                program=active_program,
+                assigned_day=today_weekday
+            ).select_related('routine').order_by('order').first()
+            if program_routine_today:
+                next_routine = program_routine_today.routine
 
-        if program_routine_today:
-            next_routine = program_routine_today.routine
-        else:
-            # 2. Find the next routine in sequence from the active program
+        else: # Sequential schedule logic
             last_workout = Workout.objects.filter(
                 user=user,
                 routine_source__program_associations__program=active_program
@@ -985,7 +1017,7 @@ def start_next_workout(request):
                 order__gte=next_order
             ).order_by('order').select_related('routine').first()
 
-            if not next_program_routine:  # Wrap around
+            if not next_program_routine:  # Wrap around to the start
                 next_program_routine = ProgramRoutine.objects.filter(
                     program=active_program
                 ).order_by('order').select_related('routine').first()
@@ -997,10 +1029,9 @@ def start_next_workout(request):
         redirect_url = reverse('start-workout-from-routine', args=[next_routine.id])
         return redirect(f'{redirect_url}?source=smart-start')
     else:
-        # 3. If no routine found (no active program or program has no routines), create an ad-hoc workout
+        # Fallback: No routine found, create an ad-hoc workout
         existing_workouts_count = Workout.objects.filter(user=user).count()
         workout_name = f"Workout #{existing_workouts_count + 1}"
-
         new_workout = Workout.objects.create(
             user=user,
             name=workout_name,

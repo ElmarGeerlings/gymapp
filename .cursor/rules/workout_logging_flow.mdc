@@ -1,11 +1,6 @@
----
-description:
-globs:
-alwaysApply: false
----
 # Gainz App: Workout Logging and Progression Flow
 
-This document outlines the intended structure and flow for workout logging, planning, and progression within the Gainz application. The core idea is to separate the *plan* (Programs and Routines) from the *execution* (Workout logs) while providing mechanisms for feedback-driven progression.
+This document outlines the intended structure and flow for workout logging, planning, and progression within the Gainz application. The core idea is to separate the *plan* (Programs and Routines) from the *execution* (Workout logs) while providing mechanisms for feedback-driven progression and flexible scheduling.
 
 ## Core Models Involved
 
@@ -14,61 +9,39 @@ The primary models reside in `gainz.workouts.models` and `gainz.exercises.models
 ### 1. Planning & Template Models (`gainz.workouts.models`)
 
 *   **`Program`**:
-    *   Represents a high-level collection of routines (e.g., "My Weekly Split", "Beginner Strength Cycle").
-    *   Fields: `user`, `name`, `description`, `is_public` (for future sharing).
-    *   A `Program` can contain multiple `Routine` objects.
+    *   Represents a high-level collection of routines (e.g., \"My Weekly Split\", \"Beginner Strength Cycle\").
+    *   Fields: `user`, `name`, `description`, `is_public`.
+    *   **`scheduling_type`**: Crucial CharField with choices 'weekly' or 'sequential'.
+        *   **'weekly'**: The program follows a fixed 7-day schedule. `ProgramRoutine` entries are tied to specific days of the week.
+        *   **'sequential'**: The program is a rotating sequence of routines, independent of the calendar day.
+    *   A `Program` can contain multiple `Routine` objects, linked via `ProgramRoutine`.
 
 *   **`Routine`**:
-    *   Represents a specific, reusable workout structure or template (e.g., "Monday - Chest & Triceps", "Heavy Squat Day").
-    *   Fields: `user`, `program` (Optional ForeignKey to `Program`), `name`, `description`.
-    *   A `Routine` can be standalone or part of a `Program`.
+    *   Represents a specific, reusable workout structure or template (e.g., \"Monday - Chest & Triceps\", \"Heavy Squat Day\").
+    *   Fields: `user`, `name`, `description`.
     *   A `Routine` consists of multiple `RoutineExercise` entries.
 
-*   **`RoutineExercise`**:
-    *   Defines a specific exercise within a `Routine`. This is where the *plan* for an exercise is detailed.
-    *   Fields: `routine` (ForeignKey to `Routine`), `exercise` (ForeignKey to `gainz.exercises.models.Exercise`), `order`, `target_sets` (e.g., 3), `target_reps` (e.g., "5", "8-12", "AMRAP"), `target_rest_seconds` (optional), `progression_strategy_notes` (user's textual notes on how they intend to progress this exercise), `notes` (optional notes for this exercise within the routine plan).
+*   **`ProgramRoutine`**:
+    *   The link between a `Program` and a `Routine`.
+    *   Fields: `program`, `routine`.
+    *   **`assigned_day`**: Used for 'weekly' programs to assign a routine to a specific day (e.g., Monday=0).
+    *   **`order`**: Used for 'sequential' programs to define the order of rotation (1, 2, 3...). For weekly programs, it defines the order of routines *within* the same day.
+
+*   **`RoutineExercise`** & **`RoutineExerciseSet`**: These define the specific exercises and set/rep/weight plans within a `Routine`. Their structure remains unchanged.
 
 ### 2. Workout Logging (Execution) Models (`gainz.workouts.models`)
 
-*   **`Workout`**:
-    *   Represents a single, completed workout session by a user on a specific date.
-    *   Fields: `user`, `date`, `name`, `notes` (general workout notes), `duration`.
-    *   **`routine_source`**: Crucial ForeignKey (nullable) to `Routine`. Links this logged workout back to the `Routine` it was based on, if any.
-
-*   **`WorkoutExercise`**:
-    *   Represents a specific exercise *as performed* during a logged `Workout`.
-    *   Fields: `workout` (ForeignKey to `Workout`), `exercise` (ForeignKey to `gainz.exercises.models.Exercise`), `order`, `notes` (notes specific to *this performance*), `exercise_type` (primary/secondary/accessory, can override `Exercise` default).
-    *   **`routine_exercise_source`**: Crucial ForeignKey (nullable) to `RoutineExercise`. Links this performed instance back to its definition in the plan.
-    *   **`performance_feedback`**: CharField (nullable, choices: 'increase', 'stay', 'decrease'). Captures user feedback *after* performing the exercise, used for future progression suggestions.
-
-*   **`ExerciseSet`**:
-    *   Represents a single set performed for a `WorkoutExercise`. Stores the actual performance details.
-    *   Fields: `workout_exercise` (ForeignKey to `WorkoutExercise`), `set_number`, `reps` (actual reps performed), `weight` (actual weight used), `is_warmup`.
+The structure of `Workout`, `WorkoutExercise`, and `ExerciseSet` remains the same. They capture the *actual* performance of a workout session. The `routine_source` and `routine_exercise_source` foreign keys are essential for linking a logged workout back to its plan.
 
 ## Intended Workflow & Progression
 
-### A. Logging a Routine-Based Workout:
-1.  **Selection:** User selects a `Routine` to perform.
-2.  **Workout Creation:** A new `Workout` log is created. `Workout.routine_source` is set to the selected `Routine`.
-3.  **Exercise Population (Suggestion Logic - *Future Implementation*):**
-    *   For each `RoutineExercise` in the chosen `Routine`:
-        *   The system finds previous `WorkoutExercise` logs linked via `routine_exercise_source`.
-        *   It reads the `performance_feedback` from the most recent of these logs.
-        *   It consults `RoutineExercise.progression_strategy_notes`.
-        *   It calculates and pre-fills *suggested* reps/weight for a new `WorkoutExercise` instance.
-        *   This new `WorkoutExercise` has its `routine_exercise_source` set to the parent `RoutineExercise`.
-4.  **Performance & Recording:** User performs sets, and actual reps/weight are recorded as `ExerciseSet` entries linked to the current `WorkoutExercise`.
-5.  **Feedback:** User provides `performance_feedback` on the `WorkoutExercise` (e.g., 'increase' if it felt easy). This feedback will inform suggestions for the *next* time this `RoutineExercise` is performed.
+### A. Starting the Next Workout (`start_next_workout` view)
+1.  **Identify Active Program:** The system looks for the user's `Program` where `is_active=True`.
+2.  **Determine Scheduling Type:** It checks the `scheduling_type` of the active program.
+3.  **Find Next Routine:**
+    *   **If 'weekly'**: The system checks the current day of the week (e.g., it's Tuesday). It finds the `ProgramRoutine` entry assigned to Tuesday and suggests the corresponding `Routine`. If multiple routines are on that day, it could suggest the first one. A day with no assigned routine is a rest day.
+    *   **If 'sequential'**: The system finds the user's *last* completed workout that was sourced from this program. It determines the `order` of that workout's routine and finds the `ProgramRoutine` with the next `order`. If it reaches the end of the sequence, it wraps around to the beginning.
+4.  **Initiate Workout:** The user is redirected to the `start_workout_from_routine` page, pre-filled with the suggested routine.
 
-### B. Handling Different Contexts (e.g., Heavy vs. Light Days):
-*   The same exercise (e.g., Bench Press) performed with different goals (strength vs. volume) during a week should be defined as separate `RoutineExercise` entries within distinct `Routine` objects.
-    *   Example: "Monday - Heavy Bench" `Routine` has a `RoutineExercise` for Bench Press targeting 3x5. "Friday - Volume Bench" `Routine` has a *different* `RoutineExercise` for Bench Press targeting 4x10.
-*   Progression for each context is tracked independently due to the distinct `RoutineExercise` linkage.
-
-### C. Ad-Hoc Workout Logging (Not Based on a Routine):
-*   Users can log workouts without selecting a `Routine`.
-*   **Progression:** The detailed feedback-driven progression (A.3) doesn't apply directly as there's no `RoutineExercise` context.
-*   **Future Suggestion Idea:** For ad-hoc exercises, a simpler suggestion based on the *absolute last time* that specific `Exercise` was logged in *any* workout might be offered (e.g., "Last time you did Squat: 3 sets of 5 at 100kg. Repeat or adjust?"). This would be a non-intrusive UI option.
-
-This structure provides a robust foundation for detailed workout tracking, template-based training, and a feedback loop for guided progression.
-
+### B. Logging and Progression
+The rest of the flow remains the same. The user performs the workout, logs their sets, and provides `performance_feedback` on each `WorkoutExercise`. This feedback is crucial for future progression suggestions, which will be implemented later.

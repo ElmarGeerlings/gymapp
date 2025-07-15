@@ -536,3 +536,70 @@ footer {
     margin: 10px 0;
     height: 50px;
 }
+
+/* Program Form - Weekly Planner */
+.weekly-planner {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+    background-color: #f0f3f5;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #d8e1e8;
+}
+
+.day-column {
+    background-color: #ffffff;
+    border-radius: 6px;
+    padding: 10px;
+    min-height: 150px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.day-header {
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9rem;
+    color: #333;
+}
+
+.routines-for-day-container {
+    min-height: 100px; /* Ensure drop area is available even when empty */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.routine-chip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #007bff;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 15px; /* Pill shape */
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: grab;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.routine-chip:active {
+    cursor: grabbing;
+}
+
+.routine-chip .btn-close {
+    filter: brightness(0) invert(1); /* Make it white */
+    margin-left: 8px;
+    opacity: 0.7;
+}
+.routine-chip .btn-close:hover {
+    opacity: 1;
+}
+
+.add-routine-to-day-select {
+    width: 100%;
+}

@@ -109,6 +109,25 @@ function handle_attribute(element, attr) {
     });
 }
 
+function toggleScheduleType() {
+    const weeklyContainer = document.getElementById('weekly-schedule-container');
+    const sequentialContainer = document.getElementById('sequential-schedule-container');
+    const sequentialAdder = document.getElementById('sequential-routine-adder');
+    const weeklyRadio = document.getElementById('scheduling-weekly');
+
+    if (!weeklyContainer || !sequentialContainer || !sequentialAdder || !weeklyRadio) return;
+
+    if (weeklyRadio.checked) {
+        weeklyContainer.style.display = 'block';
+        sequentialContainer.style.display = 'none';
+        sequentialAdder.style.display = 'none';
+    } else {
+        weeklyContainer.style.display = 'none';
+        sequentialContainer.style.display = 'block';
+        sequentialAdder.style.display = 'block';
+    }
+}
+
 // ======================================
 //      HTTP REQUEST HELPER (Optional)
 // ======================================
@@ -993,12 +1012,40 @@ function initializeRoutineForm() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded event fired from gainz.js');
 
-    // Explicitly scan for and handle data-function attributes on existing elements
-    console.log('Scanning for initial data-function attributes...');
+    // This block correctly wires up the program form buttons.
+    if (document.getElementById('program-routines-container')) {
+        // initializeProgramForm(); // Removed as per edit hint
+    }
+
+    // New logic for program form scheduling type
+    const weeklyRadio = document.getElementById('scheduling-weekly');
+    const sequentialRadio = document.getElementById('scheduling-sequential');
+    if (weeklyRadio && sequentialRadio) {
+        toggleScheduleType(); // Call on load
+        weeklyRadio.addEventListener('change', toggleScheduleType);
+        sequentialRadio.addEventListener('change', toggleScheduleType);
+    }
+
+    const weeklyPlanner = document.querySelector('.weekly-planner');
+    if (weeklyPlanner) {
+        weeklyPlanner.addEventListener('change', function(event) {
+            if (event.target.classList.contains('add-routine-to-day-select')) {
+                handleAddRoutineToDay(event);
+            }
+        });
+        weeklyPlanner.addEventListener('click', function(event) {
+            if (event.target.classList.contains('btn-close')) {
+                const chip = event.target.closest('.routine-chip');
+                if (chip) {
+                    handleRemoveRoutineFromDay(chip);
+                }
+            }
+        });
+    }
+
     document.querySelectorAll('[data-function]').forEach(element => {
-        console.log('Initial scan processing element:', element); // Log the element itself
         const attrNode = element.getAttributeNode('data-function');
-        if (attrNode) { // Ensure the attribute node exists
+        if (attrNode) {
             handle_attribute(element, attrNode);
         } else {
             console.warn('Element found by querySelectorAll but getAttributeNode("data-function") is null for:', element);
@@ -1130,7 +1177,7 @@ function updateSetNumbers(exerciseCardElement) {
             // This is more for newly added cards from template than for re-ordering existing ones
             const routineExerciseIdInput = exerciseCardElement.querySelector('input[name^="routine_exercise_id_"]');
             if (routineExerciseIdInput && !routineExerciseIdInput.value) {
-                newName = newName.replace(/routine_exercise\[\d+\]/, `routine_exercise[${exerciseIndex}]`);
+                newName = newName.replace(/routine_exercise\[(?:\|__EXERCISE_INDEX__\|)\]/g, `routine_exercise[${exerciseIndex}]`);
             }
             input.setAttribute('name', newName);
 
@@ -1299,4 +1346,116 @@ window.duplicateSetRow = function(event) {
     // Update numbers for all subsequent sets (including the one just added if it wasn't last)
     updateSetNumbers(exerciseCard);
     updateSetRowFieldVisibility(); // Apply visibility to the new row
+}
+
+// ======================================
+//      PROGRAM FORM FUNCTIONS
+// ======================================
+
+window.handleAddRoutineToProgram = function() { // This function is now globally accessible
+    const select = document.getElementById('add-routine-select');
+    const selectedOption = select.options[select.selectedIndex];
+    if (!selectedOption || !selectedOption.value) {
+        send_toast('Please select a routine to add.', 'warning');
+        return;
+    }
+
+    const routineId = selectedOption.value;
+    const routineName = selectedOption.dataset.name;
+
+    // Remove the option from the select to prevent adding it again
+    selectedOption.remove();
+    select.value = ''; // Reset select
+
+    // Get the template
+    const template = document.getElementById('program-routine-template');
+    if (!template) {
+        console.error('Program routine template not found!');
+        return;
+    }
+
+    // Get the container and create a new row from the template
+    const container = document.getElementById('program-routines-container');
+    const newIndex = container.querySelectorAll('.program-routine-row').length;
+    const newOrder = newIndex + 1; // Default order
+
+    let newRowHTML = template.innerHTML;
+    newRowHTML = newRowHTML.replace(/__INDEX__/g, newIndex)
+                           .replace(/__ROUTINE_ID__/g, routineId)
+                           .replace(/__ROUTINE_NAME__/g, routineName)
+                           .replace(/__ORDER__/g, newOrder);
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = newRowHTML;
+    const newRow = tempDiv.firstElementChild; // The new .program-routine-row div
+
+    container.appendChild(newRow);
+}
+
+window.handleRemoveProgramRoutine = function(event) { // This function is now globally accessible
+    const row = event.target.closest('.program-routine-row');
+    if (!row) return;
+
+    const routineId = row.querySelector('input[name*="_routine_id"]').value;
+    const routineName = row.querySelector('input[readonly]').value;
+
+    // Add the routine back to the select dropdown
+    const select = document.getElementById('add-routine-select');
+    if (select && routineId && routineName) {
+        const option = document.createElement('option');
+        option.value = routineId;
+        option.textContent = routineName;
+        option.dataset.name = routineName;
+        select.appendChild(option);
+    }
+
+    row.remove();
+
+    // After removing, we might want to re-index the remaining rows
+    // to ensure form submission works correctly if the backend expects
+    // a continuous sequence of indices.
+    const container = document.getElementById('program-routines-container');
+    const rows = container.querySelectorAll('.program-routine-row');
+    rows.forEach((r, index) => {
+        r.dataset.index = index;
+        r.querySelectorAll('input, select').forEach(input => {
+            if (input.name) {
+                input.name = input.name.replace(/program_routine_\d+/, `program_routine_${index}_`);
+            }
+            if (input.id) {
+                input.id = input.id.replace(/_\d+$/, `_${index}`);
+            }
+        });
+    });
+}
+
+function handleAddRoutineToDay(event) {
+    const select = event.target;
+    const selectedOption = select.options[select.selectedIndex];
+    if (!selectedOption || !selectedOption.value) return;
+
+    const routineId = selectedOption.value;
+    const routineName = selectedOption.textContent;
+    const dayColumn = select.closest('.day-column');
+    const dayValue = dayColumn.dataset.dayValue;
+    const container = dayColumn.querySelector('.routines-for-day-container');
+
+    // Create the chip
+    const chip = document.createElement('div');
+    chip.className = 'routine-chip';
+    chip.dataset.routineId = routineId;
+    chip.innerHTML = `
+        <span>${routineName}</span>
+        <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+        <input type="hidden" name="weekly_day_${dayValue}_routines" value="${routineId}">
+    `;
+
+    container.appendChild(chip);
+
+    // Reset the select
+    select.value = '';
+}
+
+function handleRemoveRoutineFromDay(chipElement) {
+    chipElement.remove();
 }

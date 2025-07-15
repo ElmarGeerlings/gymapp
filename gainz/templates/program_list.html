@@ -25,15 +25,15 @@
     {% else %}
         <div class="list-group">
             {% for program in programs %}
-                <a href="{% url 'program-update' program.id %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {% if program.is_active %}active{% endif %}">
-                    <div>
+                <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {% if program.is_active %}active{% endif %}">
+                    <a href="{% url 'program-update' program.id %}" class="text-decoration-none d-block flex-grow-1 {% if program.is_active %}text-white{% else %}text-dark{% endif %}">
                         <h5 class="mb-1">{{ program.name }}</h5>
-                        <p class="mb-1 text-muted"><small>{{ program.description|truncatewords:20 }}</small></p>
+                        <p class="mb-1 {% if program.is_active %}text-white-50{% else %}text-muted{% endif %}"><small>{{ program.description|truncatewords:20 }}</small></p>
+                    </a>
+                    <div class="ms-3">
+                        <a href="{% url 'program-delete' program.id %}" class="btn btn-sm btn-outline-danger">Delete</a>
                     </div>
-                    <span class="badge {% if program.is_active %}bg-light text-primary{% else %}bg-secondary{% endif %} rounded-pill">
-                        {% if program.is_active %}Active{% else %}Inactive{% endif %}
-                    </span>
-                </a>
+                </div>
             {% endfor %}
         </div>
     {% endif %}

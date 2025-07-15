@@ -6,11 +6,21 @@ from gainz.exercises.models import Exercise
 
 class Program(models.Model):
     """ Represents a collection of routines, forming a structured training program. """
+    SCHEDULING_CHOICES = [
+        ('weekly', 'Weekly'),       # Routines are assigned to specific days of the week.
+        ('sequential', 'Sequential'), # Routines are performed in a specific order, regardless of day.
+    ]
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     is_public = models.BooleanField(default=False) # For future sharing
     is_active = models.BooleanField(default=False)
+    scheduling_type = models.CharField(
+        max_length=10,
+        choices=SCHEDULING_CHOICES,
+        default='weekly'
+    )
 
     def __str__(self):
         return self.name
@@ -36,7 +46,7 @@ class ProgramRoutine(models.Model):
 
     class Meta:
         ordering = ['program', 'order', 'assigned_day']
-        unique_together = ('program', 'routine') # A routine can only be in a program once
+        # unique_together = ('program', 'routine') # Removed this constraint
         # A program can't have two routines on the same day, if day is assigned
         # constraints = [
         #     models.UniqueConstraint(fields=['program', 'assigned_day'], condition=models.Q(assigned_day__isnull=False), name='unique_program_assigned_day')
