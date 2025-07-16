@@ -681,11 +681,7 @@ def program_list(request):
         'programs': programs,
         'title': 'Your Programs'
     }
-    response = render(request, 'program_list.html', context)
-    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response['Pragma'] = 'no-cache'
-    response['Expires'] = '0'
-    return response
+    return render(request, 'program_list.html', context)
 
 @login_required
 def start_workout_from_routine(request, routine_id):
