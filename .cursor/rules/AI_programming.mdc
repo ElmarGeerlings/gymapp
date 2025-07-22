@@ -1,0 +1,29 @@
+# AI Programming Rules for Gainz Project
+
+## AI Service Integration
+Rule Name: ai_service_usage.mdc
+Description: When integrating AI services (OpenAI, Gemini, Claude), always use free tier options when available. Store API keys in environment variables or Django settings. Create reusable AI service classes in a dedicated `ai/` module within the project structure.
+
+## AI Response Handling
+Rule Name: ai_response_structure.mdc
+Description: AI responses should be structured and parsed consistently. Use JSON format for structured data exchange between AI and application. Always validate AI responses before using them to create database objects. Create dedicated serializers for AI-generated data.
+
+## AI Conversation Management
+Rule Name: ai_conversation_flow.mdc
+Description: Implement AI conversations using a state-based approach. Store conversation context in Redis for session management. Each AI interaction should be atomic and recoverable. Use WebSocket connections for real-time AI conversations when possible.
+
+## AI Prompt Engineering
+Rule Name: ai_prompt_structure.mdc
+Description: Create structured prompts with clear instructions, context, and expected output format. Store system prompts as constants or in database for easy modification. Always include relevant user data and workout history in prompts for personalized responses.
+
+## AI Data Privacy
+Rule Name: ai_data_handling.mdc
+Description: Never send sensitive user data (passwords, email addresses) to AI services. Anonymize or pseudonymize user data when sending to external AI APIs. Log AI interactions for debugging but respect user privacy.
+
+## AI Error Handling
+Rule Name: ai_error_management.mdc
+Description: AI services can be unreliable - implement graceful degradation. Provide fallback responses when AI services are unavailable. Set reasonable timeouts for AI API calls. Cache AI responses when appropriate to reduce API usage.
+
+## AI Integration Testing
+Rule Name: ai_testing_approach.mdc
+Description: Mock AI responses in tests using fixtures. Test AI integration points separately from AI logic. Create test scenarios for AI service failures and edge cases.

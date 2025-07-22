@@ -207,3 +207,12 @@ RQ_QUEUES = {
 
 if REDIS_CACHE_TYPE == 'django-redis-cache':
     RQ_QUEUES['django-redis-cache'] = {'USE_REDIS_CACHE': 'django-redis-cache'}
+
+# AI Configuration
+# Get your free API key from: https://aistudio.google.com/app/apikey
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', None)
+
+try:
+    from .local import *
+except ImportError:
+    pass

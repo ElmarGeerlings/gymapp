@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4><i class="fas fa-robot"></i> {{ title }}</h4>
+                    <a href="{% url 'program-list' %}" class="btn btn-outline-secondary btn-sm">Back to Programs</a>
+                </div>
+                <div class="card-body">
+                    <!-- Chat Messages -->
+                    <div id="chat-messages" class="mb-3" style="height: 450px; overflow-y: auto; background: #F0F0F0; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px;">
+                        <div class="message ai-message" style="margin-bottom: 15px;">
+                            <div class="d-flex justify-content-start">
+                                <div style="max-width: 70%; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 18px; padding: 8px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                                    <div style="color: #000; line-height: 1.4; font-size: 14px;">
+                                        Hi! I'm here to help you create a personalized workout program. What kind of workout program are you looking for?
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Input Area -->
+                    <div style="display: flex; align-items: center; gap: 8px; width: 100%; background: #fff; padding: 8px; border-radius: 25px; border: 1px solid #ddd;">
+                        <input type="text" id="user-input" placeholder="Type your message..." maxlength="500" style="flex: 1; border: none; outline: none; padding: 8px 12px; background: transparent; font-size: 14px;">
+                        <button type="button" id="send-button" title="Send message" style="width: 38px; height: 38px; background: #007bff; color: white; border: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; font-weight: bold;">
+                            ➤
+                        </button>
+                    </div>
+
+                    <!-- Quick Action Buttons -->
+                    <div class="mt-3">
+                        <small class="text-muted d-block mb-2">Quick starts:</small>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            <button class="btn btn-outline-primary btn-sm quick-response" data-message="I want a strength training program" style="border-radius: 15px;">Strength Training</button>
+                            <button class="btn btn-outline-success btn-sm quick-response" data-message="I want to build muscle and size" style="border-radius: 15px;">Muscle Building</button>
+                            <button class="btn btn-outline-info btn-sm quick-response" data-message="I'm a beginner" style="border-radius: 15px;">Beginner Program</button>
+                            <button class="btn btn-outline-secondary btn-sm" id="generate-now" style="border-radius: 15px;">Generate Now</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Program Preview (hidden initially) -->
+            <div id="program-preview" class="card mt-3" style="display: none;">
+                <div class="card-header">
+                    <h5><i class="fas fa-eye"></i> Program Preview</h5>
+                </div>
+                <div class="card-body" id="program-content">
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-success me-2" id="accept-program">
+                        <i class="fas fa-check"></i> Accept Program
+                    </button>
+                    <button class="btn btn-outline-secondary me-2" id="modify-program">
+                        <i class="fas fa-edit"></i> Ask for Changes
+                    </button>
+                    <button class="btn btn-outline-danger" id="reject-program">
+                        <i class="fas fa-times"></i> Reject & Start Over
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const sessionId = '{{ session_id }}';
+    let currentProgramData = null;
+
+    // DOM elements
+    const chatMessages = document.getElementById('chat-messages');
+    const userInput = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+    const programPreview = document.getElementById('program-preview');
+    const programContent = document.getElementById('program-content');
+
+    // Event listeners
+    sendButton.addEventListener('click', sendMessage);
+    userInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+
+
+    // Quick response buttons
+    document.querySelectorAll('.quick-response').forEach(button => {
+        button.addEventListener('click', function() {
+            const message = this.getAttribute('data-message');
+            sendMessageWithText(message);
+        });
+    });
+
+    // Generate now button
+    document.getElementById('generate-now').addEventListener('click', function() {
+        sendMessageWithText('Please generate a workout program with the information we have so far');
+    });
+
+    // Program action buttons
+    document.getElementById('accept-program').addEventListener('click', acceptProgram);
+    document.getElementById('modify-program').addEventListener('click', function() {
+        programPreview.style.display = 'none';
+        userInput.focus();
+    });
+    document.getElementById('reject-program').addEventListener('click', function() {
+        programPreview.style.display = 'none';
+        sendMessageWithText('I want to start over with a different program');
+    });
+
+    function sendMessage() {
+        const message = userInput.value.trim();
+        if (!message) return;
+
+        sendMessageWithText(message);
+        userInput.value = '';
+    }
+
+        function sendMessageWithText(message) {
+        // Add user message to chat
+        addMessageToChat('user', message);
+
+        // Show typing indicator
+        showTypingIndicator();
+
+        // Send to AI
+        fetch('/ai/conversation/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                message: message,
+                session_id: sessionId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideTypingIndicator();
+            handleAIResponse(data);
+        })
+        .catch(error => {
+            hideTypingIndicator();
+            console.error('Error:', error);
+            addMessageToChat('ai', 'Sorry, there was an error. Please try again.');
+        });
+    }
+
+    function handleAIResponse(data) {
+        if (data.type === 'question') {
+            addMessageToChat('ai', data.question);
+
+            // Add suggestion buttons if provided
+            if (data.suggestions && data.suggestions.length > 0) {
+                addSuggestionsToChat(data.suggestions);
+            }
+        } else if (data.type === 'program_generated') {
+            addMessageToChat('ai', 'Great! I\'ve created a workout program for you. Please review it below:');
+            showProgramPreview(data.program);
+            currentProgramData = data.program;
+        } else if (data.type === 'error') {
+            addMessageToChat('ai', data.message);
+        }
+    }
+
+                function addMessageToChat(sender, message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}-message`;
+        messageDiv.style.marginBottom = '8px';
+        messageDiv.style.width = '100%';
+
+        const isUser = sender === 'user';
+        const bgColor = isUser ? '#DCF8C6' : '#FFFFFF';
+        const borderColor = isUser ? '#DCF8C6' : '#E5E5EA';
+
+        if (isUser) {
+            messageDiv.innerHTML = `
+                <div style="display: flex; justify-content: flex-end; width: 100%;">
+                    <div style="max-width: 70%; background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 18px; padding: 8px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                        <div style="color: #000; line-height: 1.4; font-size: 14px;">
+                            ${message}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            messageDiv.innerHTML = `
+                <div style="display: flex; justify-content: flex-start; width: 100%;">
+                    <div style="max-width: 70%; background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 18px; padding: 8px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                        <div style="color: #000; line-height: 1.4; font-size: 14px;">
+                            ${message}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+                function addSuggestionsToChat(suggestions) {
+        const suggestionsDiv = document.createElement('div');
+        suggestionsDiv.style.marginBottom = '8px';
+        suggestionsDiv.style.display = 'flex';
+        suggestionsDiv.style.justifyContent = 'flex-start';
+        suggestionsDiv.style.flexWrap = 'wrap';
+        suggestionsDiv.style.gap = '8px';
+
+        suggestions.forEach(suggestion => {
+            const button = document.createElement('button');
+            button.className = 'btn btn-outline-primary btn-sm';
+            button.style.borderRadius = '15px';
+            button.style.fontSize = '12px';
+            button.textContent = suggestion;
+            button.addEventListener('click', () => sendMessageWithText(suggestion));
+            suggestionsDiv.appendChild(button);
+        });
+
+        chatMessages.appendChild(suggestionsDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function showProgramPreview(program) {
+        let html = `
+            <h5>${program.name}</h5>
+            <p class="text-muted">${program.description}</p>
+            <p><strong>Schedule:</strong> ${program.scheduling_type}</p>
+            <div class="row">
+        `;
+
+        program.routines.forEach((routine, index) => {
+            html += `
+                <div class="col-md-6 mb-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>${routine.name}</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small">${routine.description}</p>
+                            <ul class="list-unstyled">
+            `;
+
+            routine.exercises.forEach(exercise => {
+                html += `<li><strong>${exercise.exercise_name}</strong>`;
+                exercise.sets.forEach((set, setIndex) => {
+                    html += `<br><small>Set ${setIndex + 1}: ${set.reps} reps @ RPE ${set.rpe}</small>`;
+                });
+                html += `</li>`;
+            });
+
+            html += `
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `</div>`;
+
+        programContent.innerHTML = html;
+        programPreview.style.display = 'block';
+    }
+
+    function acceptProgram() {
+        if (!currentProgramData) return;
+
+        fetch('/ai/finalize/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                program_data: currentProgramData,
+                session_id: sessionId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = data.redirect_url;
+            } else {
+                alert('Error creating program: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error creating program. Please try again.');
+        });
+    }
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+                function showTypingIndicator() {
+        const typingDiv = document.createElement('div');
+        typingDiv.id = 'typing-indicator';
+        typingDiv.className = 'message ai-message';
+        typingDiv.style.marginBottom = '8px';
+        typingDiv.style.width = '100%';
+
+        typingDiv.innerHTML = `
+            <div style="display: flex; justify-content: flex-start; width: 100%;">
+                <div style="max-width: 70%; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 18px; padding: 8px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                    <div style="color: #666; font-size: 14px;">AI is thinking...</div>
+                </div>
+            </div>
+        `;
+
+        chatMessages.appendChild(typingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function hideTypingIndicator() {
+        const typingIndicator = document.getElementById('typing-indicator');
+        if (typingIndicator) {
+            typingIndicator.remove();
+        }
+    }
+</script>
+{% endblock %}

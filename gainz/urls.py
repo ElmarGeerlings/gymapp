@@ -1,6 +1,7 @@
 from django.urls import reverse_lazy
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from gainz.ai.views import ai_program_create, ai_conversation, ai_program_finalize
 from gainz.views import (
     home,  # your homepage view
     WorkoutViewSet,
@@ -92,6 +93,11 @@ urlpatterns = [
 
     # Create Program
     path('programs/create/', program_create, name='program-create'),
+
+    # AI Program Creation
+    path('programs/ai-create/', ai_program_create, name='ai-program-create'),
+    path('ai/conversation/', ai_conversation, name='ai-conversation'),
+    path('ai/finalize/', ai_program_finalize, name='ai-program-finalize'),
 
     # Program List
     path('programs/', program_list, name='program-list'),
