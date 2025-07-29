@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     # Local apps
     'gainz.exercises',  # Full path to the app
     'gainz.workouts',   # Full path to the app
+    'gainz.ai',         # AI conversation app
 ]
 
 MIDDLEWARE = [

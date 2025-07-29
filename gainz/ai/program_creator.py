@@ -49,7 +49,7 @@ class AIProgramCreator:
             ProgramRoutine.objects.create(
                 program=program,
                 routine=routine,
-                sequence_order=routine_order
+                order=routine_order
             )
 
         return program

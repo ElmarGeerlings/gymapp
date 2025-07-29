@@ -18,7 +18,7 @@
                             <div class="d-flex justify-content-start">
                                 <div style="max-width: 70%; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 18px; padding: 8px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
                                     <div style="color: #000; line-height: 1.4; font-size: 14px;">
-                                        Hi! I'm here to help you create a personalized workout program. What kind of workout program are you looking for?
+                                        Hey there! I'm excited to help you create the perfect workout program. Tell me, what brought you here today? Are you looking to get stronger, build muscle, lose weight, or something else entirely?
                                     </div>
                                 </div>
                             </div>
@@ -35,11 +35,12 @@
 
                     <!-- Quick Action Buttons -->
                     <div class="mt-3">
-                        <small class="text-muted d-block mb-2">Quick starts:</small>
+                        <small class="text-muted d-block mb-2">Quick responses:</small>
                         <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                            <button class="btn btn-outline-primary btn-sm quick-response" data-message="I want a strength training program" style="border-radius: 15px;">Strength Training</button>
-                            <button class="btn btn-outline-success btn-sm quick-response" data-message="I want to build muscle and size" style="border-radius: 15px;">Muscle Building</button>
-                            <button class="btn btn-outline-info btn-sm quick-response" data-message="I'm a beginner" style="border-radius: 15px;">Beginner Program</button>
+                            <button class="btn btn-outline-primary btn-sm quick-response" data-message="I want to get stronger" style="border-radius: 15px;">Get Stronger</button>
+                            <button class="btn btn-outline-success btn-sm quick-response" data-message="I want to build muscle" style="border-radius: 15px;">Build Muscle</button>
+                            <button class="btn btn-outline-info btn-sm quick-response" data-message="I want to lose weight" style="border-radius: 15px;">Lose Weight</button>
+                            <button class="btn btn-outline-warning btn-sm quick-response" data-message="I'm new to working out" style="border-radius: 15px;">New to Fitness</button>
                             <button class="btn btn-outline-secondary btn-sm" id="generate-now" style="border-radius: 15px;">Generate Now</button>
                         </div>
                     </div>
@@ -160,9 +161,21 @@
                 addSuggestionsToChat(data.suggestions);
             }
         } else if (data.type === 'program_generated') {
-            addMessageToChat('ai', 'Great! I\'ve created a workout program for you. Please review it below:');
+            // Add a nice chat message with program summary
+            const programSummary = `Great! I've created "${data.program.name}" for you:\n\n• ${data.program.routines.length} workout days\n• ${data.program.description}\n\nPlease review the full program below:`;
+            addMessageToChat('ai', programSummary);
+
+            // Add quick response buttons for the program
+            addSuggestionsToChat(['Accept this program', 'Make some changes', 'Start over with different program']);
+
             showProgramPreview(data.program);
             currentProgramData = data.program;
+        } else if (data.type === 'accept_program') {
+            addMessageToChat('ai', data.message);
+            // Automatically accept the current program
+            if (currentProgramData) {
+                acceptProgram();
+            }
         } else if (data.type === 'error') {
             addMessageToChat('ai', data.message);
         }

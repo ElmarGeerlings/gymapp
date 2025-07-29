@@ -47,8 +47,24 @@ def ai_conversation(request):
         'content': user_input
     })
 
-    # Get AI response
-    ai_response = ai_service.process_conversation(user_input, conversation_history)
+        # Check if this is a program generation request
+    if user_input.lower() in ['generate now', 'please generate a workout program with the information we have so far', 'generate program now', 'create program']:
+        # Use the specialized force generation method
+        ai_response = ai_service.force_program_generation(conversation_history)
+        print(f"[DEBUG] Force Generate Response: {ai_response}")  # Debug logging
+
+        # Log program generation attempt
+        if ai_response.get('type') == 'program_generated':
+            conversation_manager.log_outcome(request.user.id, session_id, program_generated=True)
+    elif user_input.lower() in ['accept this program', 'accept program']:
+        # User wants to accept the program - trigger the finalize flow
+        ai_response = {
+            "type": "accept_program",
+            "message": "Perfect! Let me create this program for you in the app."
+        }
+    else:
+        # Normal conversation
+        ai_response = ai_service.process_conversation(user_input, conversation_history)
 
     # Add AI response to history
     conversation_history.append({
@@ -80,8 +96,9 @@ def ai_program_finalize(request):
     program = creator.create_program_from_ai_data(request.user, program_data)
 
     if program:
-        # Clear the conversation
+        # Log successful program acceptance
         conversation_manager = ConversationManager()
+        conversation_manager.log_outcome(request.user.id, session_id, program_accepted=True)
         conversation_manager.clear_conversation(request.user.id, session_id)
 
         messages.success(request, f'AI-generated program "{program.name}" created successfully!')
@@ -90,6 +107,9 @@ def ai_program_finalize(request):
             'redirect_url': f'/programs/'
         })
     else:
+        # Log program creation failure
+        conversation_manager = ConversationManager()
+        conversation_manager.log_outcome(request.user.id, session_id, error_message="Failed to create program from AI data")
         return JsonResponse({
             'error': 'Failed to create program. Please try again.'
         }, status=500)
