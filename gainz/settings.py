@@ -16,7 +16,11 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Environment variables
 REDIS_HOST = os.environ.get("REDIS_HOST", 'localhost')
+REDIS_PORT = os.environ.get("REDIS_PORT", '6379')
+REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", None)
+
 try:
     from django_redis import get_redis_connection
 
@@ -33,13 +37,12 @@ except ImportError:
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-w!r=&r-lul9aiu8pq!nh(tr9($++4xpt=un0nm&1=o#t^krf#g'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-w!r=&r-lul9aiu8pq!nh(tr9($++4xpt=un0nm&1=o#t^krf#g')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.railway.app').split(',')
 
 # Application definition
 
@@ -65,7 +68,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'debug_toolbar.middleware.DebugToolbarMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # For static files in production
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # CORS middleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -97,33 +102,25 @@ WSGI_APPLICATION = 'gainz.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'gainz_db',  # This will be our database name
-#         'USER': 'postgres',  # Default PostgreSQL user
-#         'PASSWORD': 'elmar',  # The password you're setting during installation
-#         'HOST': '127.0.0.1',  # localhost
-#         'PORT': '5432',      # Default PostgreSQL port
-#     }
-# }
-
+# Use DATABASE_URL from environment (Railway provides this)
+import dj_database_url
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "gainz_db",
-        "USER": "gainz",
-        "PASSWORD": "elmar",
-        "HOST": "127.0.0.1",
-        "PORT": "5432",
-    }
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL', 'postgresql://gainz:elmar@127.0.0.1:5432/gainz_db'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
+# Redis configuration for production
 if REDIS_CACHE_TYPE == 'django-redis':
+    redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
+    redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
+
     CACHES = {
         'default': {
             'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': "redis://127.0.0.1:6379/0",
+            'LOCATION': redis_url,
             'OPTIONS': {
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             },
@@ -133,7 +130,7 @@ elif REDIS_CACHE_TYPE == 'django-redis-cache':
     CACHES = {
         'default': {
             'BACKEND': 'redis_cache.cache.RedisCache',
-            'LOCATION': '%s:6379' % REDIS_HOST,
+            'LOCATION': f'{REDIS_HOST}:{REDIS_PORT}',
             'KEY_PREFIX': 'django-rq-tests',
             'OPTIONS': {
                 'DB': 2,
@@ -142,6 +139,14 @@ elif REDIS_CACHE_TYPE == 'django-redis-cache':
         },
     }
 
+# Security settings for production
+if not DEBUG:
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    X_FRAME_OPTIONS = 'DENY'
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -177,11 +182,15 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 STATICFILES_DIRS = [
     BASE_DIR / 'gainz' / 'static',
 ]
+
+# WhiteNoise configuration for static files
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -192,12 +201,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_REDIRECT_URL = '/'  # Redirect to homepage after login
 LOGIN_URL = 'login'       # URL name of the login view
 
+# RQ Queue configuration
+redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
+redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
+
 RQ_QUEUES = {
     'default': {
-        'HOST': REDIS_HOST,
-        'PORT': 6379,
-        'DB': 0,
-        # 'PASSWORD': 'your-redis-password', # Uncomment if your Redis has a password
+        'URL': redis_url,
         'DEFAULT_TIMEOUT': 500,
         'DEFAULT_RESULT_TTL': 500,
     },
@@ -212,6 +222,20 @@ if REDIS_CACHE_TYPE == 'django-redis-cache':
 # AI Configuration
 # Get your free API key from: https://aistudio.google.com/app/apikey
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', None)
+
+# CORS settings for mobile access
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+# Allow all origins in development, restrict in production
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS.extend([
+        "https://your-app-name.railway.app",  # Replace with your actual Railway domain
+    ])
 
 try:
     from .local import *
