@@ -29,6 +29,7 @@ from gainz.views import (
     # ajax_get_exercise_details,
     ajax_update_workout_exercise_feedback,
     update_user_preferences, # Add new view for user preferences
+    health_check, # Add health check view
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -43,6 +44,9 @@ router.register(r'workouts/sets', ExerciseSetViewSet, basename='exercise-set')
 
 # Define urlpatterns as a list
 urlpatterns = [
+    # Health check for Railway
+    path('health/', health_check, name='health-check'),
+
     # Homepage
     path('', home, name='home'),
 

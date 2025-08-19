@@ -1070,3 +1070,8 @@ def update_user_preferences(request):
             return JsonResponse({'status': 'error', 'message': 'Missing key or value.'}, status=400)
 
     return JsonResponse({'status': 'error', 'message': 'Invalid request method.'}, status=405)
+
+# Health check view for Railway deployment
+def health_check(request):
+    """Simple health check endpoint for Railway"""
+    return HttpResponse("OK", content_type="text/plain")
