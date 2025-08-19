@@ -98,22 +98,45 @@ If you want to access the Django admin:
 
 ## Troubleshooting
 
+### Migration Errors
+If you get migration errors during deployment:
+
+1. **Check Database Connection**
+   - Ensure PostgreSQL service is added to your Railway project
+   - Verify `DATABASE_URL` is automatically set by Railway
+   - Check that the database service is running
+
+2. **Run Deployment Helper**
+   ```bash
+   python railway_deploy.py
+   ```
+   This will test your environment and database connection
+
+3. **Manual Migration**
+   - Go to Railway dashboard → Your app → Deployments
+   - Click on latest deployment → Terminal
+   - Run: `python manage.py migrate --noinput`
+
 ### App Won't Start
 - Check the deployment logs in Railway dashboard
 - Ensure all environment variables are set
 - Verify your `requirements.txt` is up to date
+- Make sure `SECRET_KEY` is set in environment variables
 
 ### Database Issues
 - Make sure PostgreSQL service is added and connected
 - Check that `DATABASE_URL` is properly set
+- Verify database service is running in Railway dashboard
 
 ### Static Files Not Loading
 - Railway automatically runs `collectstatic` during deployment
 - Check that `STATIC_ROOT` is set correctly in settings
+- Verify static files are being collected in deployment logs
 
 ### Mobile Access Issues
 - Ensure `ALLOWED_HOSTS` includes your Railway domain
 - Check CORS settings if you're using API endpoints
+- Update `ALLOWED_HOSTS` with your actual Railway domain
 
 ## Free Tier Limits
 

@@ -104,13 +104,27 @@ WSGI_APPLICATION = 'gainz.wsgi.application'
 
 # Use DATABASE_URL from environment (Railway provides this)
 import dj_database_url
-DATABASES = {
-    'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL', 'postgresql://gainz:elmar@127.0.0.1:5432/gainz_db'),
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
-}
+
+# Get database URL from environment
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+if DATABASE_URL:
+    # Production database (Railway)
+    DATABASES = {
+        'default': dj_database_url.parse(DATABASE_URL)
+    }
+else:
+    # Development database
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'gainz_db',
+            'USER': 'gainz',
+            'PASSWORD': 'elmar',
+            'HOST': '127.0.0.1',
+            'PORT': '5432',
+        }
+    }
 
 # Redis configuration for production
 if REDIS_CACHE_TYPE == 'django-redis':
