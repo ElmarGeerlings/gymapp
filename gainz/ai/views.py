@@ -78,22 +78,37 @@ def ai_conversation(request):
     return JsonResponse(ai_response)
 
 
+@csrf_exempt
 @login_required
 def ai_program_finalize(request):
     """Finalize and create the AI-generated program"""
+    print(f"[DEBUG] Finalize called with method: {request.method}")
+
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
-    data = json.loads(request.body)
-    program_data = data.get('program_data')
-    session_id = data.get('session_id')
+    try:
+        data = json.loads(request.body)
+        print(f"[DEBUG] Finalize data received: {data.keys()}")
 
-    if not program_data:
-        return JsonResponse({'error': 'Program data required'}, status=400)
+        program_data = data.get('program_data')
+        session_id = data.get('session_id')
+
+        print(f"[DEBUG] Program data type: {type(program_data)}")
+        print(f"[DEBUG] Session ID: {session_id}")
+
+        if not program_data:
+            print("[DEBUG] No program data received")
+            return JsonResponse({'error': 'Program data required'}, status=400)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] JSON decode error: {e}")
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
 
     # Create the program using the AI data
+    print(f"[DEBUG] Creating program with data: {program_data.get('name', 'Unknown')}")
     creator = AIProgramCreator()
     program = creator.create_program_from_ai_data(request.user, program_data)
+    print(f"[DEBUG] Program created: {program}")
 
     if program:
         # Log successful program acceptance

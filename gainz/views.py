@@ -676,7 +676,10 @@ def program_delete(request, program_id):
 
 @login_required
 def program_list(request):
-    programs = Program.objects.filter(user=request.user).order_by('-is_active', 'name')
+    programs = Program.objects.filter(user=request.user).prefetch_related(
+        'program_routines__routine__exercises__exercise',
+        'program_routines__routine__exercises__planned_sets'
+    ).order_by('-is_active', 'name')
     context = {
         'programs': programs,
         'title': 'Your Programs'

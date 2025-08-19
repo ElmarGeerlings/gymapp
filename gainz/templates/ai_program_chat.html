@@ -282,7 +282,22 @@
     }
 
     function acceptProgram() {
-        if (!currentProgramData) return;
+        console.log('[DEBUG] acceptProgram called');
+        console.log('[DEBUG] currentProgramData:', currentProgramData);
+        console.log('[DEBUG] sessionId:', sessionId);
+
+        if (!currentProgramData) {
+            console.error('[DEBUG] No currentProgramData available');
+            alert('No program data available. Please try generating a program first.');
+            return;
+        }
+
+        const requestData = {
+            program_data: currentProgramData,
+            session_id: sessionId
+        };
+
+        console.log('[DEBUG] Sending request data:', requestData);
 
         fetch('/ai/finalize/', {
             method: 'POST',
@@ -290,21 +305,23 @@
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCookie('csrftoken')
             },
-            body: JSON.stringify({
-                program_data: currentProgramData,
-                session_id: sessionId
-            })
+            body: JSON.stringify(requestData)
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('[DEBUG] Response status:', response.status);
+            return response.json();
+        })
         .then(data => {
+            console.log('[DEBUG] Response data:', data);
             if (data.success) {
                 window.location.href = data.redirect_url;
             } else {
+                console.error('[DEBUG] Server error:', data.error);
                 alert('Error creating program: ' + data.error);
             }
         })
         .catch(error => {
-            console.error('Error:', error);
+            console.error('[DEBUG] Fetch error:', error);
             alert('Error creating program. Please try again.');
         });
     }

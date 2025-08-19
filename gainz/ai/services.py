@@ -73,21 +73,24 @@ You: {"type": "question", "question": "What does your current routine look like?
 User: "I do my own thing"
 You: {"type": "question", "question": "How many days per week do you train?", "suggestions": ["3 days", "4 days", "5-6 days"]}
 
+User: "4 days"
+You: {"type": "question", "question": "Which days work best for you?", "suggestions": ["Mon/Wed/Fri/Sat", "Tue/Thu/Sat/Sun", "Any 4 days"]}
+
 EXAMPLES OF WRONG RESPONSES (NEVER DO THIS):
 ❌ "What's your experience? How many days do you train? What equipment do you have?"
 ❌ "To help you, I need to know your goals, experience level, and training frequency."
 ❌ Any response longer than 20 words
 
 CONVERSATION FLOW:
-1. Goal → 2. Experience → 3. Training days → 4. Equipment → 5. Generate program
+1. Goal → 2. Experience → 3. Training days → 4. Preferred days → 5. Equipment → 6. Generate program
 
 WHEN TO GENERATE PROGRAM:
-- After asking 4-5 questions about goal, experience, training days, equipment
+- After asking 5-6 questions about goal, experience, training days, preferred days, equipment
 - When user asks for program generation
-- When you have basic info: fitness goal + training experience + days per week
+- When you have basic info: fitness goal + training experience + days per week + preferred days
 
 EXAMPLE PROGRAM GENERATION TRIGGER:
-User: "I train 4 days a week"
+User: "Mon/Wed/Fri/Sat"
 You: {"type": "program_generated", "program": {"name": "4-Day Muscle Building Program", "description": "Upper/lower split for intermediate lifters", "scheduling_type": "weekly", "routines": [...]}}
 
 JSON FORMATS:
@@ -96,7 +99,7 @@ For questions:
 {"type": "question", "question": "Short question only", "suggestions": ["Option 1", "Option 2", "Option 3"]}
 
 For program generation:
-{"type": "program_generated", "program": {"name": "Program Name", "description": "Brief description", "scheduling_type": "weekly", "routines": [{"name": "Day 1: Push", "description": "Chest, shoulders, triceps", "exercises": [{"exercise_name": "Bench Press", "order": 1, "sets": [{"reps": 8, "rpe": 7, "notes": "Warm up"}, {"reps": 6, "rpe": 8, "notes": "Working set"}]}]}]}}
+{"type": "program_generated", "program": {"name": "Program Name", "description": "Brief description", "scheduling_type": "weekly", "routines": [{"name": "Monday: Push", "description": "Chest, shoulders, triceps", "exercises": [{"exercise_name": "Bench Press", "order": 1, "sets": [{"reps": 8, "rpe": 7, "notes": "Warm up"}, {"reps": 6, "rpe": 8, "notes": "Working set"}]}]}]}}
 
 CRITICAL: When user asks "generate program" or "create program" or similar, ALWAYS return program_generated type, NOT text explanation.
 
@@ -110,8 +113,14 @@ ONE QUESTION. UNDER 20 WORDS. NO EXCEPTIONS."""
         if conversation_history is None:
             conversation_history = []
 
+        # Check what information we already have to avoid repeating questions
+        gathered_info = self._analyze_conversation(conversation_history)
+
+        # Add context about what we already know
+        context_info = self._build_context_info(gathered_info)
+
         # ALWAYS include system prompt - this was the main issue!
-        full_prompt = f"{self.SYSTEM_PROMPT}\n\nUser says: {user_input}"
+        full_prompt = f"{self.SYSTEM_PROMPT}\n\n{context_info}\n\nUser says: {user_input}"
 
         response = self.ai_service.generate_content(full_prompt, conversation_history)
 
@@ -161,6 +170,85 @@ ONE QUESTION. UNDER 20 WORDS. NO EXCEPTIONS."""
             "type": "error",
             "message": "Sorry, I'm having trouble connecting to the AI service. Please try again."
         }
+
+    def _analyze_conversation(self, conversation_history):
+        """Analyze conversation to determine what information has been gathered"""
+        gathered_info = {
+            'goal': None,
+            'experience': None,
+            'training_days': None,
+            'preferred_days': None,
+            'equipment': None
+        }
+
+        # Look for key information in user messages
+        for msg in conversation_history:
+            if msg.get('role') == 'user':
+                content = msg.get('content', '').lower()
+
+                # Check for fitness goals
+                if any(word in content for word in ['build muscle', 'muscle', 'strength', 'get stronger', 'lose fat', 'weight loss', 'fitness', 'general']):
+                    if 'muscle' in content or 'build' in content:
+                        gathered_info['goal'] = 'muscle'
+                    elif 'strength' in content or 'stronger' in content:
+                        gathered_info['goal'] = 'strength'
+                    elif 'fat' in content or 'weight' in content:
+                        gathered_info['goal'] = 'weight_loss'
+                    else:
+                        gathered_info['goal'] = 'general'
+
+                # Check for experience level
+                if any(word in content for word in ['new', 'beginner', 'started', 'year', 'years', 'experience']):
+                    if 'new' in content or 'beginner' in content:
+                        gathered_info['experience'] = 'beginner'
+                    elif 'year' in content:
+                        gathered_info['experience'] = 'intermediate'
+                    else:
+                        gathered_info['experience'] = 'intermediate'
+
+                # Check for training days
+                if any(word in content for word in ['3 days', '4 days', '5 days', '6 days', 'daily']):
+                    if '3 days' in content:
+                        gathered_info['training_days'] = 3
+                    elif '4 days' in content:
+                        gathered_info['training_days'] = 4
+                    elif '5 days' in content or '6 days' in content:
+                        gathered_info['training_days'] = 5
+
+                # Check for preferred days
+                if any(word in content for word in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']):
+                    gathered_info['preferred_days'] = content
+
+                # Check for equipment
+                if any(word in content for word in ['gym', 'home', 'equipment', 'barbell', 'dumbbell', 'machine']):
+                    if 'gym' in content:
+                        gathered_info['equipment'] = 'gym'
+                    elif 'home' in content:
+                        gathered_info['equipment'] = 'home'
+                    else:
+                        gathered_info['equipment'] = 'basic'
+
+        return gathered_info
+
+    def _build_context_info(self, gathered_info):
+        """Build context information for the AI about what we already know"""
+        context_parts = []
+
+        if gathered_info['goal']:
+            context_parts.append(f"Goal: {gathered_info['goal']}")
+        if gathered_info['experience']:
+            context_parts.append(f"Experience: {gathered_info['experience']}")
+        if gathered_info['training_days']:
+            context_parts.append(f"Training days: {gathered_info['training_days']}")
+        if gathered_info['preferred_days']:
+            context_parts.append(f"Preferred days: {gathered_info['preferred_days']}")
+        if gathered_info['equipment']:
+            context_parts.append(f"Equipment: {gathered_info['equipment']}")
+
+        if context_parts:
+            return f"Information already gathered: {', '.join(context_parts)}. Don't ask about these again."
+        else:
+            return "No information gathered yet. Start with basic questions."
 
     def _is_response_too_complex(self, response):
         """Simplified validation - just catch extreme cases"""
@@ -225,7 +313,7 @@ ONE QUESTION. UNDER 20 WORDS. NO EXCEPTIONS."""
         if len(words) > 10:
             simplified = ' '.join(words[:10])
             return {
-                "type": "question",
+    "type": "question",
                 "question": simplified + '?',
                 "suggestions": response.get('suggestions', [])
             }
@@ -267,6 +355,8 @@ Return ONLY this JSON structure with real exercises:
 {self._get_routine_template(program_type, days)}
 ]}}}}
 
+IMPORTANT: Include day names in routine names like "Monday: Push", "Tuesday: Pull", etc.
+
 Use real exercise names like: Bench Press, Squat, Deadlift, Pull-ups, Overhead Press, Barbell Row, etc.
 Each routine should have 4-6 exercises with 3-4 sets each."""
 
@@ -292,18 +382,18 @@ Each routine should have 4-6 exercises with 3-4 sets each."""
     def _get_routine_template(self, program_type, days):
         """Get routine template based on program type"""
         if program_type == "strength" and days >= 3:
-            return '''{"name": "Day 1: Squat Focus", "description": "Lower body strength", "exercises": [{"exercise_name": "Squat", "order": 1, "sets": [{"reps": 5, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Day 2: Bench Focus", "description": "Upper body strength", "exercises": [{"exercise_name": "Bench Press", "order": 1, "sets": [{"reps": 5, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Day 3: Deadlift Focus", "description": "Posterior chain", "exercises": [{"exercise_name": "Deadlift", "order": 1, "sets": [{"reps": 5, "rpe": 8, "notes": "Working set"}]}]}'''
+            return '''{"name": "Monday: Squat Focus", "description": "Lower body strength", "exercises": [{"exercise_name": "Squat", "order": 1, "sets": [{"reps": 5, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Wednesday: Bench Focus", "description": "Upper body strength", "exercises": [{"exercise_name": "Bench Press", "order": 1, "sets": [{"reps": 5, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Friday: Deadlift Focus", "description": "Posterior chain", "exercises": [{"exercise_name": "Deadlift", "order": 1, "sets": [{"reps": 5, "rpe": 8, "notes": "Working set"}]}]}'''
         elif program_type == "muscle" and days >= 4:
-            return '''{"name": "Day 1: Push", "description": "Chest, shoulders, triceps", "exercises": [{"exercise_name": "Bench Press", "order": 1, "sets": [{"reps": 8, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Day 2: Pull", "description": "Back, biceps", "exercises": [{"exercise_name": "Pull-ups", "order": 1, "sets": [{"reps": 8, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Day 3: Legs", "description": "Quads, glutes, hamstrings", "exercises": [{"exercise_name": "Squat", "order": 1, "sets": [{"reps": 10, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Day 4: Push", "description": "Chest, shoulders, triceps", "exercises": [{"exercise_name": "Overhead Press", "order": 1, "sets": [{"reps": 8, "rpe": 8, "notes": "Working set"}]}]}'''
+            return '''{"name": "Monday: Push", "description": "Chest, shoulders, triceps", "exercises": [{"exercise_name": "Bench Press", "order": 1, "sets": [{"reps": 8, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Tuesday: Pull", "description": "Back, biceps", "exercises": [{"exercise_name": "Pull-ups", "order": 1, "sets": [{"reps": 8, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Thursday: Legs", "description": "Quads, glutes, hamstrings", "exercises": [{"exercise_name": "Squat", "order": 1, "sets": [{"reps": 10, "rpe": 8, "notes": "Working set"}]}]}, {"name": "Saturday: Push", "description": "Chest, shoulders, triceps", "exercises": [{"exercise_name": "Overhead Press", "order": 1, "sets": [{"reps": 8, "rpe": 8, "notes": "Working set"}]}]}'''
         else:
-            return '''{"name": "Day 1: Full Body", "description": "Complete workout", "exercises": [{"exercise_name": "Squat", "order": 1, "sets": [{"reps": 10, "rpe": 7, "notes": "Working set"}]}]}'''
+            return '''{"name": "Monday: Full Body", "description": "Complete workout", "exercises": [{"exercise_name": "Squat", "order": 1, "sets": [{"reps": 10, "rpe": 7, "notes": "Working set"}]}]}'''
 
     def _create_fallback_program(self, program_type, days):
         """Create a proper fallback program structure"""
         if program_type == "strength":
             routines = [
                 {
-                    "name": "Day 1: Squat Focus",
+                    "name": "Monday: Squat Focus",
                     "description": "Lower body strength development",
                     "exercises": [
                         {
@@ -326,7 +416,7 @@ Each routine should have 4-6 exercises with 3-4 sets each."""
                     ]
                 },
                 {
-                    "name": "Day 2: Bench Focus",
+                    "name": "Wednesday: Bench Focus",
                     "description": "Upper body pressing strength",
                     "exercises": [
                         {
@@ -349,7 +439,7 @@ Each routine should have 4-6 exercises with 3-4 sets each."""
                     ]
                 },
                 {
-                    "name": "Day 3: Deadlift Focus",
+                    "name": "Friday: Deadlift Focus",
                     "description": "Posterior chain strength",
                     "exercises": [
                         {
@@ -374,92 +464,92 @@ Each routine should have 4-6 exercises with 3-4 sets each."""
             ]
         elif program_type == "muscle":
             routines = [
-                {
-                    "name": "Day 1: Push (Chest, Shoulders, Triceps)",
-                    "description": "Upper body pushing muscles",
-                    "exercises": [
-                        {
-                            "exercise_name": "Bench Press",
-                            "order": 1,
-                            "sets": [
+            {
+                "name": "Monday: Push (Chest, Shoulders, Triceps)",
+                "description": "Upper body pushing muscles",
+                "exercises": [
+                    {
+                        "exercise_name": "Bench Press",
+                        "order": 1,
+                        "sets": [
                                 {"reps": 8, "rpe": 7, "notes": "Warm up set"},
                                 {"reps": 8, "rpe": 8, "notes": "Working set"},
-                                {"reps": 6, "rpe": 9, "notes": "Top set"}
-                            ]
-                        },
-                        {
-                            "exercise_name": "Overhead Press",
-                            "order": 2,
-                            "sets": [
+                            {"reps": 6, "rpe": 9, "notes": "Top set"}
+                        ]
+                    },
+                    {
+                        "exercise_name": "Overhead Press",
+                        "order": 2,
+                        "sets": [
                                 {"reps": 10, "rpe": 8, "notes": "Working set"},
                                 {"reps": 10, "rpe": 8, "notes": "Working set"}
-                            ]
-                        },
-                        {
-                            "exercise_name": "Dips",
-                            "order": 3,
-                            "sets": [
+                        ]
+                    },
+                    {
+                        "exercise_name": "Dips",
+                        "order": 3,
+                        "sets": [
                                 {"reps": 12, "rpe": 7, "notes": "Working set"},
                                 {"reps": 12, "rpe": 8, "notes": "Working set"}
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "name": "Day 2: Pull (Back, Biceps)",
-                    "description": "Upper body pulling muscles",
-                    "exercises": [
-                        {
-                            "exercise_name": "Pull-ups",
-                            "order": 1,
-                            "sets": [
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Tuesday: Pull (Back, Biceps)",
+                "description": "Upper body pulling muscles",
+                "exercises": [
+                    {
+                        "exercise_name": "Pull-ups",
+                        "order": 1,
+                        "sets": [
                                 {"reps": 6, "rpe": 7, "notes": "Working set"},
                                 {"reps": 6, "rpe": 8, "notes": "Working set"},
-                                {"reps": 4, "rpe": 9, "notes": "Top set"}
-                            ]
-                        },
-                        {
-                            "exercise_name": "Barbell Row",
-                            "order": 2,
-                            "sets": [
+                            {"reps": 4, "rpe": 9, "notes": "Top set"}
+                        ]
+                    },
+                    {
+                        "exercise_name": "Barbell Row",
+                        "order": 2,
+                        "sets": [
                                 {"reps": 10, "rpe": 8, "notes": "Working set"},
                                 {"reps": 10, "rpe": 8, "notes": "Working set"}
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "name": "Day 3: Legs (Quads, Glutes, Hamstrings)",
-                    "description": "Lower body muscles",
-                    "exercises": [
-                        {
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Thursday: Legs (Quads, Glutes, Hamstrings)",
+                "description": "Lower body muscles",
+                "exercises": [
+                    {
                             "exercise_name": "Back Squat",
-                            "order": 1,
-                            "sets": [
+                        "order": 1,
+                        "sets": [
                                 {"reps": 10, "rpe": 7, "notes": "Warm up set"},
                                 {"reps": 10, "rpe": 8, "notes": "Working set"},
                                 {"reps": 8, "rpe": 9, "notes": "Top set"}
-                            ]
-                        },
-                        {
-                            "exercise_name": "Romanian Deadlift",
-                            "order": 2,
-                            "sets": [
+                        ]
+                    },
+                    {
+                        "exercise_name": "Romanian Deadlift",
+                        "order": 2,
+                        "sets": [
                                 {"reps": 12, "rpe": 8, "notes": "Working set"},
                                 {"reps": 12, "rpe": 8, "notes": "Working set"}
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "name": "Day 4: Push (Chest, Shoulders, Triceps)",
-                    "description": "Upper body pushing muscles - variation",
-                    "exercises": [
-                        {
-                            "exercise_name": "Incline Bench Press",
-                            "order": 1,
-                            "sets": [
-                                {"reps": 8, "rpe": 8, "notes": "Working set"},
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "Saturday: Push (Chest, Shoulders, Triceps)",
+                "description": "Upper body pushing muscles - variation",
+                "exercises": [
+                    {
+                        "exercise_name": "Incline Bench Press",
+                        "order": 1,
+                        "sets": [
+                            {"reps": 8, "rpe": 8, "notes": "Working set"},
                                 {"reps": 8, "rpe": 8, "notes": "Working set"}
                             ]
                         }
@@ -468,9 +558,9 @@ Each routine should have 4-6 exercises with 3-4 sets each."""
             ]
         else:  # general
             routines = [
-                {
-                    "name": "Day 1: Full Body",
-                    "description": "Complete body workout",
+                            {
+                "name": "Monday: Full Body",
+                "description": "Complete body workout",
                     "exercises": [
                         {
                             "exercise_name": "Squat",

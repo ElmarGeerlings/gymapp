@@ -1,20 +1,32 @@
 from django.contrib import admin
-from .models import Exercise, ExerciseCategory
+from .models import Exercise, ExerciseCategory, ExerciseAlternativeName
 
+
+class ExerciseAlternativeNameInline(admin.TabularInline):
+    model = ExerciseAlternativeName
+    extra = 1
+
+
+@admin.register(Exercise)
 class ExerciseAdmin(admin.ModelAdmin):
-    list_display = ('name', 'exercise_type', 'is_custom', 'display_categories')
-    list_filter = ('exercise_type', 'is_custom', 'categories')
-    search_fields = ('name', 'description')
-    filter_horizontal = ('categories',) # Use filter_horizontal for M2M
+    list_display = ['name', 'exercise_type', 'is_custom', 'user', 'get_categories']
+    list_filter = ['exercise_type', 'is_custom', 'categories']
+    search_fields = ['name', 'description']
+    inlines = [ExerciseAlternativeNameInline]
 
-    @admin.display(description='Categories')
-    def display_categories(self, obj):
-        # Display categories in the list view
+    def get_categories(self, obj):
         return ", ".join([cat.name for cat in obj.categories.all()])
+    get_categories.short_description = 'Categories'
 
+
+@admin.register(ExerciseCategory)
 class ExerciseCategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'description')
-    search_fields = ('name',)
+    list_display = ['name', 'description']
+    search_fields = ['name']
 
-admin.site.register(Exercise, ExerciseAdmin)
-admin.site.register(ExerciseCategory, ExerciseCategoryAdmin)
+
+@admin.register(ExerciseAlternativeName)
+class ExerciseAlternativeNameAdmin(admin.ModelAdmin):
+    list_display = ['exercise', 'name', 'is_primary']
+    list_filter = ['is_primary', 'exercise__categories']
+    search_fields = ['exercise__name', 'name']
