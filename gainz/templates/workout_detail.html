@@ -7,11 +7,15 @@
 {% block content %}
 <div class="container mt-4">
     <div class="workout-header mb-4 pb-3 border-bottom">
-        <div class="d-flex justify-content-between align-items-center">
-            <h1 class="mb-0">{{ workout.name }}</h1>
-            <div>
-                <a href="{% url 'workout-update' workout.id %}" class="btn btn-sm btn-outline-primary me-2">Edit Workout</a>
-                <a href="{% url 'workout-delete' workout.id %}" class="btn btn-sm btn-outline-danger">Delete Workout</a>
+        <div class="mobile-stack justify-content-between align-items-center">
+            <h1 class="mb-0 responsive-text">{{ workout.name }}</h1>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'workout-update' workout.id %}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-edit me-1"></i><span class="d-none d-sm-inline">Edit</span>
+                </a>
+                <a href="{% url 'workout-delete' workout.id %}" class="btn btn-sm btn-outline-danger">
+                    <i class="fas fa-trash me-1"></i><span class="d-none d-sm-inline">Delete</span>
+                </a>
             </div>
         </div>
         <p class="workout-date text-muted mt-1">{{ workout.date|date:"l, F j, Y, P" }}</p>

@@ -7,11 +7,25 @@ body {
     line-height: 1.6;
 }
 
-.container {
-    max-width: 1100px; /* Slightly adjusted max-width */
-    margin: 0 auto;
-    padding: 20px;
+/* Ensure main content doesn't hide behind fixed navbar */
+main {
+    padding-top: 20px;
 }
+
+/* Mobile-first responsive container */
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 15px;
+}
+
+@media (min-width: 768px) {
+    .container {
+        padding: 20px;
+    }
+}
+
+
 
 .workout-header {
     margin-bottom: 30px;
@@ -233,51 +247,7 @@ select, input {
     box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
 
-/* Navigation Bar Styles */
-nav {
-    background-color: #ffffff; /* White background for nav */
-    padding: 10px 0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Subtle shadow */
-    border-bottom: 1px solid #e0e0e0;
-}
-
-nav .container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-nav h1 {
-    color: #007bff; /* Primary accent blue for app title */
-    font-size: 1.8rem;
-    margin: 0;
-    font-weight: 600;
-}
-
-nav ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    gap: 10px; /* Spacing between nav items */
-}
-
-nav ul li a {
-    display: inline-block;
-    padding: 8px 15px;
-    border-radius: 6px;
-    text-decoration: none;
-    font-weight: 500;
-    font-size: 0.95rem;
-    transition: background-color 0.2s ease, color 0.2s ease;
-    color: #333333; /* Dark text for nav links */
-    background-color: transparent; /* Default transparent background */
-}
-
-nav ul li a:hover, nav ul li a.active {
-    background-color: #e7f3ff; /* Light blue background on hover/active */
-    color: #0056b3; /* Darker blue text on hover/active */
-}
+/* Legacy nav styles removed - now using Bootstrap navbar */
 
 /* Footer Styles */
 footer {
@@ -602,4 +572,403 @@ footer {
 
 .add-routine-to-day-select {
     width: 100%;
+}
+
+/* ============================================
+   MOBILE RESPONSIVE STYLES
+   ============================================ */
+
+/* Mobile-first approach - styles for mobile and up */
+
+/* Touch-friendly buttons and form elements */
+button, .btn, input[type="submit"], input[type="button"], .btn-close {
+    min-height: 44px; /* Apple's recommended touch target size */
+    min-width: 44px;
+    touch-action: manipulation; /* Disable double-tap zoom */
+    -webkit-tap-highlight-color: rgba(0,0,0,0.1); /* Subtle tap feedback */
+}
+
+/* Larger touch targets for small buttons on mobile */
+@media (max-width: 767px) {
+    .btn-sm {
+        min-height: 40px;
+        padding: 10px 15px;
+    }
+
+    .btn-close {
+        min-height: 40px;
+        min-width: 40px;
+    }
+}
+
+/* Mobile-friendly form elements */
+input, select, textarea {
+    font-size: 16px; /* Prevent zoom on iOS */
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Responsive tables */
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px;
+}
+
+.sets-table {
+    min-width: 600px; /* Ensure table doesn't get too cramped */
+}
+
+/* Smooth scrolling for mobile */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Better scroll bars on mobile */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Mobile navigation adjustments */
+.navbar-brand {
+    font-size: 1.5rem;
+}
+
+.navbar-nav .nav-link {
+    padding: 0.75rem 1rem;
+}
+
+/* Responsive workout cards */
+.workout-card, .exercise-card {
+    margin-bottom: 15px;
+    padding: 15px;
+}
+
+/* Responsive home page */
+.home-header h1 {
+    font-size: 2.5rem;
+}
+
+.features {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 0 15px;
+}
+
+/* Responsive buttons groups */
+.btn-group-vertical .btn {
+    margin-bottom: 0.5rem;
+}
+
+/* Modal improvements for mobile */
+.siu-modal-content {
+    width: 95%;
+    max-width: 500px;
+    margin: 10px auto;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+/* Form improvements */
+.form-row {
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Responsive grid layouts */
+.exercise-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+}
+
+/* ============================================
+   TABLET STYLES (768px and up)
+   ============================================ */
+@media (min-width: 768px) {
+    /* Container adjustments */
+    main {
+        padding-top: 30px;
+    }
+
+    /* Home page improvements */
+    .home-header h1 {
+        font-size: 3rem;
+    }
+
+    .features {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 25px;
+        padding: 0 20px;
+    }
+
+    /* Exercise grid for tablets */
+    .exercise-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+    }
+
+    /* Form improvements */
+    .form-row {
+        flex-direction: row;
+        gap: 15px;
+        align-items: center;
+    }
+
+    /* Modal improvements */
+    .siu-modal-content {
+        width: 80%;
+        margin: 50px auto;
+    }
+
+    /* Weekly planner for tablets */
+    .weekly-planner {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Button groups back to horizontal on tablets */
+    .btn-group {
+        flex-direction: row;
+        width: auto;
+    }
+
+    .btn-group .btn {
+        margin-bottom: 0;
+    }
+}
+
+/* ============================================
+   DESKTOP STYLES (992px and up)
+   ============================================ */
+@media (min-width: 992px) {
+    /* Home page desktop styles */
+    .home-header h1 {
+        font-size: 3.2rem;
+    }
+
+    .features {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+    }
+
+    /* Exercise grid for desktop */
+    .exercise-grid {
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    }
+
+    /* Form improvements */
+    .form-row {
+        gap: 20px;
+    }
+
+    /* Weekly planner for desktop - full 7-day grid */
+    .weekly-planner {
+        grid-template-columns: repeat(7, 1fr);
+    }
+}
+
+/* ============================================
+   SPECIFIC MOBILE FIXES
+   ============================================ */
+
+/* Fix for workout detail buttons on mobile */
+@media (max-width: 767px) {
+    .workout-header .d-flex {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .workout-header .d-flex > div {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    /* Program list mobile improvements */
+    .program-list .d-flex {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    /* Routine form mobile improvements */
+    .exercise-routine-card {
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
+    .set-row {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 15px;
+    }
+
+    .set-row .form-control {
+        margin-bottom: 10px;
+    }
+
+    /* AI Chat mobile improvements */
+    #chat-messages {
+        height: 300px !important;
+        padding: 15px !important;
+    }
+
+    /* Make chat responsive to screen height */
+    #chat-messages {
+        max-height: 50vh;
+        min-height: 250px;
+    }
+
+    .message {
+        margin-bottom: 10px !important;
+    }
+
+    /* Weekly planner mobile adjustments */
+    .weekly-planner {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+
+    .day-column {
+        min-height: auto;
+        padding: 15px;
+    }
+
+    /* Make weekly planner more touch-friendly */
+    .routine-chip {
+        padding: 10px 15px;
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+    }
+
+    .add-routine-to-day-select {
+        padding: 10px;
+        font-size: 16px;
+    }
+
+    /* Table responsive improvements */
+    .table-responsive table {
+        font-size: 0.875rem;
+    }
+
+    .table-responsive th,
+    .table-responsive td {
+        padding: 8px;
+        white-space: nowrap;
+    }
+
+    /* Button improvements for mobile */
+    .btn-sm {
+        padding: 8px 12px;
+        font-size: 0.875rem;
+    }
+
+    /* Performance feedback buttons */
+    .btn-group-sm .btn {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        min-height: 40px;
+    }
+
+    /* Stack performance feedback buttons vertically on very small screens */
+    .btn-group {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .btn-group .btn {
+        border-radius: 0.375rem !important;
+        margin-bottom: 5px;
+    }
+
+    .btn-group .btn:last-child {
+        margin-bottom: 0;
+    }
+
+    /* Hide some text on mobile to save space */
+    .d-none.d-sm-inline {
+        display: none !important;
+    }
+}
+
+/* ============================================
+   UTILITY CLASSES FOR MOBILE
+   ============================================ */
+
+/* Mobile-only display utilities */
+.mobile-only {
+    display: block;
+}
+
+@media (min-width: 768px) {
+    .mobile-only {
+        display: none;
+    }
+}
+
+/* Desktop-only display utilities */
+.desktop-only {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .desktop-only {
+        display: block;
+    }
+}
+
+/* Mobile stacking utility */
+.mobile-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+@media (min-width: 768px) {
+    .mobile-stack {
+        flex-direction: row;
+        align-items: center;
+    }
+}
+
+/* Touch-friendly spacing */
+.touch-friendly {
+    padding: 15px;
+    margin: 10px 0;
+}
+
+/* Responsive text sizes */
+.responsive-text {
+    font-size: 1rem;
+}
+
+@media (min-width: 768px) {
+    .responsive-text {
+        font-size: 1.125rem;
+    }
+}
+
+@media (min-width: 992px) {
+    .responsive-text {
+        font-size: 1.25rem;
+    }
 }

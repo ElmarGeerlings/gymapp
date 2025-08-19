@@ -71,11 +71,17 @@
         </div>
     {% endif %}
 
-    <div class="mt-4 d-flex justify-content-between">
-        <a href="{% url 'routine-list' %}" class="btn btn-outline-secondary">Back to Routines</a>
-        <div>
-            <a href="{% url 'routine-update' routine.id %}" class="btn btn-primary me-2">Edit Routine</a>
-            <a href="{% url 'routine-delete' routine.id %}" class="btn btn-danger">Delete Routine</a>
+    <div class="mt-4 mobile-stack justify-content-between">
+        <a href="{% url 'routine-list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Routines
+        </a>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{% url 'routine-update' routine.id %}" class="btn btn-primary">
+                <i class="fas fa-edit me-1"></i><span class="d-none d-sm-inline">Edit Routine</span><span class="d-sm-none">Edit</span>
+            </a>
+            <a href="{% url 'routine-delete' routine.id %}" class="btn btn-danger">
+                <i class="fas fa-trash me-1"></i><span class="d-none d-sm-inline">Delete Routine</span><span class="d-sm-none">Delete</span>
+            </a>
         </div>
     </div>
 </div>

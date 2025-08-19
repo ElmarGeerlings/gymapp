@@ -11,26 +11,28 @@
         {% endif %}
 
         {% if workout_exercise.sets.all %}
-            <table class="table table-sm table-striped">
-                <thead>
-                    <tr>
-                        <th>Set</th>
-                        <th>Reps</th>
-                        <th>Weight</th>
-                        <th>Type</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for set in workout_exercise.sets.all %}
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead>
                         <tr>
-                            <td>{{ set.set_number }}</td>
-                            <td>{{ set.reps }}</td>
-                            <td>{{ set.weight }} kg</td> {# Assuming kg, adjust unit if needed #}
-                            <td>{% if set.is_warmup %}Warmup{% else %}Working{% endif %}</td>
+                            <th>Set</th>
+                            <th>Reps</th>
+                            <th>Weight</th>
+                            <th>Type</th>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {% for set in workout_exercise.sets.all %}
+                            <tr>
+                                <td>{{ set.set_number }}</td>
+                                <td>{{ set.reps }}</td>
+                                <td>{{ set.weight }} kg</td> {# Assuming kg, adjust unit if needed #}
+                                <td>{% if set.is_warmup %}Warmup{% else %}Working{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% else %}
             <p class="text-muted">No sets recorded for this exercise.</p>
         {% endif %}
