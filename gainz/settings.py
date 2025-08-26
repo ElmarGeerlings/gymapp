@@ -42,7 +42,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-w!r=&r-lul9aiu8pq!nh(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.railway.app').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com,gymapp-r7bx.onrender.com').split(',')
 
 # Application definition
 
@@ -108,10 +108,21 @@ import dj_database_url
 # Get database URL from environment
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
+# Check if we're on Render (they set RENDER environment variable)
+IS_RENDER = os.environ.get('RENDER')
+
 if DATABASE_URL:
-    # Production database (Railway)
+    # Production database (Railway/Render)
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL)
+    }
+elif IS_RENDER:
+    # Use SQLite on Render if no DATABASE_URL (temporary for testing)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': '/tmp/db.sqlite3',
+        }
     }
 else:
     # Development database
