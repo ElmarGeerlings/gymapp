@@ -30,6 +30,7 @@ from gainz.views import (
     ajax_update_workout_exercise_feedback,
     update_user_preferences, # Add new view for user preferences
     health_check, # Add health check view
+    register, # Add register view
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -54,6 +55,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     # Authentication views
+    path('accounts/register/', register, name='register'),  # Added register view
     path('accounts/login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),  # Added login view
     path('accounts/logout/', auth_views.LogoutView.as_view(next_page='home'), name='logout'), # Added logout view
 

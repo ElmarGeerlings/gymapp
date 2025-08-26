@@ -19,6 +19,8 @@ from django.urls import reverse # Add import for reverse
 from django.contrib import messages # Added for messages
 from django.core.cache import cache # Added for Redis cache
 import json # Moved import json here
+from django.contrib.auth.models import User
+from django.contrib.auth import login
 
 # Make Redis optional for deployments without Redis
 def get_redis_connection():
@@ -1091,3 +1093,48 @@ def update_user_preferences(request):
 def health_check(request):
     """Simple health check endpoint for Railway"""
     return HttpResponse("OK", content_type="text/plain")
+
+# User registration view
+def register(request):
+    """Simple user registration with username and password"""
+    if request.method == 'POST':
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '')
+        
+        errors = []
+        
+        # Basic validation
+        if not username:
+            errors.append('Username is required.')
+        if not password:
+            errors.append('Password is required.')
+        
+        # Check if username already exists
+        if username and User.objects.filter(username=username).exists():
+            errors.append('Username already taken.')
+        
+        if not errors:
+            try:
+                # Create user
+                user = User.objects.create_user(
+                    username=username,
+                    password=password
+                )
+                # Log the user in
+                login(request, user)
+                messages.success(request, f'Welcome {username}! Your account has been created.')
+                return redirect('home')
+            except Exception as e:
+                errors.append('An error occurred creating your account. Please try again.')
+        
+        context = {
+            'errors': errors,
+            'username': username,
+            'title': 'Sign Up'
+        }
+        return render(request, 'register.html', context)
+    
+    context = {
+        'title': 'Sign Up'
+    }
+    return render(request, 'register.html', context)

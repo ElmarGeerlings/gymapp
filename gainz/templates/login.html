@@ -3,31 +3,45 @@
 {% block title %}Login{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h2>Login</h2>
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="card-title text-center mb-4">Login</h2>
 
-    {% if form.errors %}
-        <p style="color: red;">Your username and password didn't match. Please try again.</p>
-    {% endif %}
+                    {% if form.errors %}
+                        <div class="alert alert-danger">
+                            Your username and password didn't match. Please try again.
+                        </div>
+                    {% endif %}
 
-    <form method="post" action="{% url 'login' %}">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ request.GET.next }}">
+                    <form method="post" action="{% url 'login' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.GET.next }}">
 
-        <div>
-            <label for="id_username">Username:</label>
-            {{ form.username }}
+                        <div class="mb-3">
+                            <label for="id_username" class="form-label">Username</label>
+                            {{ form.username }}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="id_password" class="form-label">Password</label>
+                            {{ form.password }}
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mb-3">Login</button>
+                    </form>
+
+                    <div class="text-center">
+                        <p class="mb-0">Don't have an account? <a href="{% url 'register' %}">Sign Up</a></p>
+                    </div>
+
+                    {# Optional: Add a link to password reset page if you have one #}
+                    {# <p class="text-center mt-2"><a href="{% url 'password_reset' %}">Lost password?</a></p> #}
+                </div>
+            </div>
         </div>
-        <div>
-            <label for="id_password">Password:</label>
-            {{ form.password }}
-        </div>
-
-        <button type="submit">Login</button>
-    </form>
-
-    {# Optional: Add a link to password reset page if you have one #}
-    {# <p><a href="{% url 'password_reset' %}">Lost password?</a></p> #}
-
+    </div>
 </div>
 {% endblock %}
