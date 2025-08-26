@@ -12,20 +12,32 @@ User = get_user_model()
 class Command(BaseCommand):
     help = 'Populates the database with sample data for the Gainz application'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--user',
+            type=str,
+            help='Username to create sample data for',
+        )
+
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Starting data population...'))
 
-        # 0. Get or create a user
-        user, created = User.objects.get_or_create(
-            username='testuser',
-            defaults={'email': 'testuser@example.com'}
-        )
-        if created:
-            user.set_password('testpassword123')
-            user.save()
-            self.stdout.write(self.style.SUCCESS(f'User "testuser" created with password "testpassword123"'))
+        # 0. Get the user
+        username = options.get('user')
+        if username:
+            try:
+                user = User.objects.get(username=username)
+                self.stdout.write(self.style.SUCCESS(f'Creating sample data for user: {user.username}'))
+            except User.DoesNotExist:
+                self.stdout.write(self.style.ERROR(f'User "{username}" does not exist.'))
+                return
         else:
-            self.stdout.write(self.style.WARNING(f'User "testuser" already exists.'))
+            # If no user specified, get the first superuser or first user
+            user = User.objects.filter(is_superuser=True).first() or User.objects.first()
+            if not user:
+                self.stdout.write(self.style.ERROR('No users exist. Please create a user first.'))
+                return
+            self.stdout.write(self.style.WARNING(f'No user specified, using: {user.username}'))
 
         # 1. Create Exercise Categories
         categories_data = [
@@ -57,7 +69,7 @@ class Command(BaseCommand):
             {"name": "Leg Press", "exercise_type": "secondary", "categories": [categories["Legs"]], "description": "Machine-based leg exercise."},
             {"name": "Lateral Raise", "exercise_type": "accessory", "categories": [categories["Shoulders"]], "description": "Isolation exercise for lateral deltoids."},
             {"name": "Plank", "exercise_type": "accessory", "categories": [categories["Core"]], "description": "Core stability exercise."},
-            {"name": "Leg Extension", "exercise_type": "accessory", "categories": [categories["Legs"]], "description": "Isolation for quads.", "user": user, "is_custom": True},
+            {"name": "Leg Extension", "exercise_type": "accessory", "categories": [categories["Legs"]], "description": "Isolation for quads."},
         ]
 
         created_exercises = {}

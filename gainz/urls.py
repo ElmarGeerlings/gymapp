@@ -31,6 +31,7 @@ from gainz.views import (
     update_user_preferences, # Add new view for user preferences
     health_check, # Add health check view
     register, # Add register view
+    generate_sample_data, # Add sample data generation view
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -128,4 +129,7 @@ urlpatterns = [
 
     # User Preferences
     path('ajax/update_user_preferences/', update_user_preferences, name='update-user-preferences'),
+    
+    # Development Tools (REMOVE IN PRODUCTION!)
+    path('dev/generate-sample-data/', generate_sample_data, name='generate-sample-data'),
 ]

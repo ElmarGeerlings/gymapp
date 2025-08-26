@@ -21,6 +21,8 @@ from django.core.cache import cache # Added for Redis cache
 import json # Moved import json here
 from django.contrib.auth.models import User
 from django.contrib.auth import login
+from django.core.management import call_command
+from io import StringIO
 
 # Make Redis optional for deployments without Redis
 def get_redis_connection():
@@ -1093,6 +1095,49 @@ def update_user_preferences(request):
 def health_check(request):
     """Simple health check endpoint for Railway"""
     return HttpResponse("OK", content_type="text/plain")
+
+# Development data generation view (REMOVE IN PRODUCTION!)
+@login_required
+def generate_sample_data(request):
+    """Generate sample data for development purposes only"""
+    if request.method == 'POST':
+        try:
+            # Create a string buffer to capture command output
+            out = StringIO()
+            
+            # Run both populate commands
+            call_command('populate_exercises', stdout=out)
+            call_command('populate_data', user=request.user.username, stdout=out)
+            
+            # Get the output
+            output = out.getvalue()
+            
+            messages.success(request, 'Sample data generated successfully!')
+            
+            # Return JSON response for AJAX request
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'status': 'success',
+                    'message': 'Sample data generated successfully!',
+                    'output': output
+                })
+            
+            return redirect('home')
+            
+        except Exception as e:
+            error_msg = f'Error generating sample data: {str(e)}'
+            messages.error(request, error_msg)
+            
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'status': 'error',
+                    'message': error_msg
+                }, status=500)
+            
+            return redirect('home')
+    
+    # GET request not allowed for this view
+    return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
 # User registration view
 def register(request):
