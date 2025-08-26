@@ -126,8 +126,22 @@ else:
         }
     }
 
-# Redis configuration for production
-if REDIS_CACHE_TYPE == 'django-redis':
+# Redis configuration for production (optional)
+# Disable Redis if not available (for free deployments)
+REDIS_URL = os.environ.get('REDIS_URL')
+if REDIS_URL:
+    # Use the full REDIS_URL if provided (for Redis Cloud, Upstash, etc)
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+        },
+    }
+elif REDIS_CACHE_TYPE == 'django-redis':
+    # Fall back to individual Redis settings
     redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
     redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
 
@@ -216,19 +230,33 @@ LOGIN_REDIRECT_URL = '/'  # Redirect to homepage after login
 LOGIN_URL = 'login'       # URL name of the login view
 
 # RQ Queue configuration
-redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
-redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
-
-RQ_QUEUES = {
-    'default': {
-        'URL': redis_url,
-        'DEFAULT_TIMEOUT': 500,
-        'DEFAULT_RESULT_TTL': 500,
-    },
-    'django-redis': {
-        'USE_REDIS_CACHE': 'default',
-    },
-}
+if REDIS_URL:
+    # Use the full REDIS_URL if provided
+    RQ_QUEUES = {
+        'default': {
+            'URL': REDIS_URL,
+            'DEFAULT_TIMEOUT': 500,
+            'DEFAULT_RESULT_TTL': 500,
+        },
+        'django-redis': {
+            'USE_REDIS_CACHE': 'default',
+        },
+    }
+else:
+    # Fall back to individual settings
+    redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
+    redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
+    
+    RQ_QUEUES = {
+        'default': {
+            'URL': redis_url,
+            'DEFAULT_TIMEOUT': 500,
+            'DEFAULT_RESULT_TTL': 500,
+        },
+        'django-redis': {
+            'USE_REDIS_CACHE': 'default',
+        },
+    }
 
 if REDIS_CACHE_TYPE == 'django-redis-cache':
     RQ_QUEUES['django-redis-cache'] = {'USE_REDIS_CACHE': 'django-redis-cache'}

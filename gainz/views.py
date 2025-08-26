@@ -18,8 +18,15 @@ from django.utils import timezone # Added for timezone.now()
 from django.urls import reverse # Add import for reverse
 from django.contrib import messages # Added for messages
 from django.core.cache import cache # Added for Redis cache
-from django_rq import get_queue # Added for direct Redis access via django-rq
 import json # Moved import json here
+
+# Make Redis optional for deployments without Redis
+def get_redis_connection():
+    try:
+        from django_rq import get_queue
+        return get_queue().connection
+    except:
+        return None
 
 # Exercise ViewSets
 class ExerciseCategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -254,7 +261,7 @@ def routine_create(request):
     exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
 
     user_id = request.user.id
-    redis_conn = get_queue().connection
+    redis_conn = get_redis_connection()
     user_preferences = {}
     preference_definitions = {
         'show_rpe': {'key_suffix': 'routineForm.showRPE', 'default': False},
@@ -268,10 +275,13 @@ def routine_create(request):
         # if pref_name == 'show_rpe':
         #     cache_key = f"test_rpe_preference_user_{user_id}"
 
-        retrieved_value_bytes = redis_conn.get(cache_key)
-        if retrieved_value_bytes is not None:
-            retrieved_value_str = retrieved_value_bytes.decode('utf-8')
-            user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+        if redis_conn:
+            retrieved_value_bytes = redis_conn.get(cache_key)
+            if retrieved_value_bytes is not None:
+                retrieved_value_str = retrieved_value_bytes.decode('utf-8')
+                user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+            else:
+                user_preferences[pref_name] = pref_info['default']
         else:
             user_preferences[pref_name] = pref_info['default']
 
@@ -377,7 +387,7 @@ def routine_update(request, routine_id):
     exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
 
     user_id = request.user.id
-    redis_conn = get_queue().connection
+    redis_conn = get_redis_connection()
     user_preferences = {}
     preference_definitions = {
         'show_rpe': {'key_suffix': 'routineForm.showRPE', 'default': False},
@@ -391,10 +401,13 @@ def routine_update(request, routine_id):
         # if pref_name == 'show_rpe':
         #     cache_key = f"test_rpe_preference_user_{user_id}"
 
-        retrieved_value_bytes = redis_conn.get(cache_key)
-        if retrieved_value_bytes is not None:
-            retrieved_value_str = retrieved_value_bytes.decode('utf-8')
-            user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+        if redis_conn:
+            retrieved_value_bytes = redis_conn.get(cache_key)
+            if retrieved_value_bytes is not None:
+                retrieved_value_str = retrieved_value_bytes.decode('utf-8')
+                user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+            else:
+                user_preferences[pref_name] = pref_info['default']
         else:
             user_preferences[pref_name] = pref_info['default']
 
@@ -1055,15 +1068,18 @@ def update_user_preferences(request):
             # if preference_key_suffix == 'routineForm.showRPE':
             #     cache_key = f"test_rpe_preference_user_{user_id}"
 
-            redis_conn = get_queue().connection
+            redis_conn = get_redis_connection()
             if isinstance(preference_value, bool):
                 value_to_store = "true" if preference_value else "false"
             else:
                 value_to_store = str(preference_value)
 
             try:
-                redis_conn.set(cache_key, value_to_store)
-                return JsonResponse({'status': 'success', 'message': 'Preference saved via django-rq.'})
+                if redis_conn:
+                    redis_conn.set(cache_key, value_to_store)
+                    return JsonResponse({'status': 'success', 'message': 'Preference saved via django-rq.'})
+                else:
+                    return JsonResponse({'status': 'warning', 'message': 'Redis not available, preference not saved.'})
             except Exception as e:
                 return JsonResponse({'status': 'error', 'message': f'Failed to save to Redis: {e}'}, status=500)
         else:
