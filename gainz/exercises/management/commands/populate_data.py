@@ -5,7 +5,7 @@ import datetime
 import random
 
 from gainz.exercises.models import ExerciseCategory, Exercise
-from gainz.workouts.models import Program, Routine, RoutineExercise, Workout, WorkoutExercise, ExerciseSet
+from gainz.workouts.models import Program, Routine, RoutineExercise, RoutineExerciseSet, Workout, WorkoutExercise, ExerciseSet
 
 User = get_user_model()
 
@@ -117,21 +117,47 @@ class Command(BaseCommand):
 
         # 5. Add RoutineExercises
         routine_exercises_data = [
-            {"exercise": created_exercises["Squat"], "order": 0, "target_sets": 3, "target_reps": "5-8", "target_rest_seconds": 120},
-            {"exercise": created_exercises["Bench Press"], "order": 1, "target_sets": 3, "target_reps": "5-8", "target_rest_seconds": 120},
-            {"exercise": created_exercises["Overhead Press"], "order": 2, "target_sets": 3, "target_reps": "8-12", "target_rest_seconds": 90},
+            {"exercise": created_exercises["Squat"], "order": 0, "sets_data": [
+                {"set_number": 1, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 2, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 3, "target_reps": "5-8", "rest_time_seconds": 120},
+            ]},
+            {"exercise": created_exercises["Bench Press"], "order": 1, "sets_data": [
+                {"set_number": 1, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 2, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 3, "target_reps": "5-8", "rest_time_seconds": 120},
+            ]},
+            {"exercise": created_exercises["Overhead Press"], "order": 2, "sets_data": [
+                {"set_number": 1, "target_reps": "8-12", "rest_time_seconds": 90},
+                {"set_number": 2, "target_reps": "8-12", "rest_time_seconds": 90},
+                {"set_number": 3, "target_reps": "8-12", "rest_time_seconds": 90},
+            ]},
         ]
         for i, re_data in enumerate(routine_exercises_data):
              # Ensure exercise exists before trying to create RoutineExercise
             if re_data["exercise"]:
+                sets_data = re_data.pop("sets_data", [])
                 re, created = RoutineExercise.objects.get_or_create(
                     routine=routine,
                     exercise=re_data["exercise"],
-                    order=i, # Use enumerate index for order to ensure uniqueness if name isn't unique
-                    defaults=re_data
+                    order=re_data["order"],
+                    defaults={}
                 )
                 if created:
                     self.stdout.write(self.style.SUCCESS(f'Added {re_data["exercise"].name} to routine {routine.name}'))
+                    
+                    # Create RoutineExerciseSet objects for this RoutineExercise
+                    for set_data in sets_data:
+                        res, set_created = RoutineExerciseSet.objects.get_or_create(
+                            routine_exercise=re,
+                            set_number=set_data["set_number"],
+                            defaults={
+                                "target_reps": set_data["target_reps"],
+                                "rest_time_seconds": set_data.get("rest_time_seconds")
+                            }
+                        )
+                        if set_created:
+                            self.stdout.write(self.style.SUCCESS(f'  Added Set {set_data["set_number"]} to {re_data["exercise"].name}'))
             else:
                 self.stdout.write(self.style.ERROR(f'Could not add exercise to routine, exercise data missing.'))
 
