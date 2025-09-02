@@ -65,7 +65,7 @@
                                     <!-- Routines for this day will be added here -->
                                      {% for pr in program_routines %}
                                         {% if pr.assigned_day == day_val %}
-                                            <div class="routine-chip" data-routine-id="{{ pr.routine.id }}">
+                                            <div class="routine-chip" draggable="true" data-routine-id="{{ pr.routine.id }}" data-routine-name="{{ pr.routine.name }}">
                                                 <span>{{ pr.routine.name }}</span>
                                                 <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
                                                 <input type="hidden" name="weekly_day_{{ day_val }}_routines" value="{{ pr.routine.id }}">

@@ -23,6 +23,8 @@ from django.contrib.auth.models import User
 from django.contrib.auth import login
 from django.core.management import call_command
 from io import StringIO
+from gainz.workouts.utils import WorkoutParser
+from decimal import Decimal
 
 # Make Redis optional for deployments without Redis
 def get_redis_connection():
@@ -71,6 +73,29 @@ class WorkoutViewSet(viewsets.ModelViewSet):
             serializer.save(workout=workout)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'], url_path='reorder-exercises')
+    def reorder_exercises(self, request, pk=None):
+        workout = self.get_object()
+        exercises_data = request.data.get('exercises', [])
+        
+        if not exercises_data:
+            return Response({'error': 'No exercises data provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            for exercise_data in exercises_data:
+                exercise_id = exercise_data.get('id')
+                new_order = exercise_data.get('order')
+                
+                if exercise_id and new_order is not None:
+                    WorkoutExercise.objects.filter(
+                        id=exercise_id,
+                        workout=workout
+                    ).update(order=new_order)
+            
+            return Response({'success': True, 'message': 'Exercise order updated successfully'})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class WorkoutExerciseViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutExerciseSerializer
@@ -112,7 +137,8 @@ def workout_detail(request, workout_id):
     workout = get_object_or_404(Workout, id=workout_id, user=request.user)
 
     # Fetch WorkoutExercises related to this workout, prefetching related Exercise and Sets
-    workout_exercises = workout.exercises.prefetch_related('exercise', 'sets').all()
+    # Order by the order field to respect user's custom ordering
+    workout_exercises = workout.exercises.prefetch_related('exercise', 'sets').order_by('order')
 
     # Group exercises by type using the get_exercise_type method
     primary_exercises = []
@@ -128,11 +154,22 @@ def workout_detail(request, workout_id):
         else: # Default or accessory
             accessory_exercises.append(workout_exercise)
 
+    # Get all exercises for the add exercise dropdown
+    all_exercises_for_form = Exercise.objects.filter(
+        models.Q(is_custom=False) | 
+        models.Q(is_custom=True, user=request.user)
+    ).order_by('name')
+    
+    # Get exercise type choices for the dropdown
+    exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
+    
     context = {
         'workout': workout,
         'primary_exercises': primary_exercises,
         'secondary_exercises': secondary_exercises,
         'accessory_exercises': accessory_exercises,
+        'all_exercises_for_form': all_exercises_for_form,
+        'exercise_type_choices': exercise_type_choices,
         'title': f"Workout: {workout.name}" # Added a title for the page
     }
 
@@ -624,44 +661,83 @@ def program_update(request, program_id):
 
     if request.method == 'POST':
         with transaction.atomic():
+            old_scheduling_type = program.scheduling_type
+            new_scheduling_type = request.POST.get('scheduling_type', 'weekly')
+            
             program.name = request.POST.get('name', program.name)
             program.description = request.POST.get('description', program.description)
             program.is_active = request.POST.get('is_active') == 'on'
-            program.scheduling_type = request.POST.get('scheduling_type', 'weekly')
+            program.scheduling_type = new_scheduling_type
             program.save()
 
-            # Clear existing routines for this program
-            program.program_routines.all().delete()
-
-            if program.scheduling_type == 'weekly':
-                # Process weekly schedule
-                for day_val, day_name in ProgramRoutine._meta.get_field('assigned_day').choices:
-                    routine_ids = request.POST.getlist(f'weekly_day_{day_val}_routines')
-                    for i, r_id in enumerate(routine_ids):
-                        routine = get_object_or_404(Routine, id=r_id, user=request.user)
+            # If scheduling type changed, preserve routines but adjust their structure
+            if old_scheduling_type != new_scheduling_type:
+                existing_routines = list(program.program_routines.select_related('routine').order_by('order', 'assigned_day').all())
+                program.program_routines.all().delete()
+                
+                if new_scheduling_type == 'sequential':
+                    # Convert from weekly to sequential - preserve order
+                    for i, program_routine in enumerate(existing_routines):
                         ProgramRoutine.objects.create(
                             program=program,
-                            routine=routine,
-                            assigned_day=day_val,
-                            order=i + 1 # Order within the day
-                        )
-            else: # Sequential
-                # Process sequential schedule
-                i = 0
-                while f'program_routine_{i}_routine_id' in request.POST:
-                    routine_id = request.POST.get(f'program_routine_{i}_routine_id')
-                    order = request.POST.get(f'program_routine_{i}_order')
-                    if routine_id and order:
-                        routine = get_object_or_404(Routine, id=routine_id, user=request.user)
-                        ProgramRoutine.objects.create(
-                            program=program,
-                            routine=routine,
-                            order=int(order),
+                            routine=program_routine.routine,
+                            order=i + 1,
                             assigned_day=None
                         )
-                    i += 1
+                else:  # Converting to weekly
+                    # Convert from sequential to weekly - distribute across days
+                    days = [0, 1, 2, 3, 4, 5, 6]  # Monday to Sunday
+                    for i, program_routine in enumerate(existing_routines):
+                        assigned_day = days[i % len(days)]  # Cycle through days
+                        # Check if there's already a routine on this day and adjust order
+                        existing_on_day = ProgramRoutine.objects.filter(
+                            program=program, 
+                            assigned_day=assigned_day
+                        ).count()
+                        ProgramRoutine.objects.create(
+                            program=program,
+                            routine=program_routine.routine,
+                            order=existing_on_day + 1,  # Proper order within the day
+                            assigned_day=assigned_day
+                        )
+            else:
+                # Same scheduling type - process normal updates
+                program.program_routines.all().delete()
+                
+                if program.scheduling_type == 'weekly':
+                    # Process weekly schedule
+                    for day_val, day_name in ProgramRoutine._meta.get_field('assigned_day').choices:
+                        routine_ids = request.POST.getlist(f'weekly_day_{day_val}_routines')
+                        for i, r_id in enumerate(routine_ids):
+                            routine = get_object_or_404(Routine, id=r_id, user=request.user)
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                assigned_day=day_val,
+                                order=i + 1 # Order within the day
+                            )
+                else: # Sequential
+                    # Process sequential schedule
+                    i = 0
+                    while f'program_routine_{i}_routine_id' in request.POST:
+                        routine_id = request.POST.get(f'program_routine_{i}_routine_id')
+                        order = request.POST.get(f'program_routine_{i}_order')
+                        if routine_id and order:
+                            routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                order=int(order),
+                                assigned_day=None
+                            )
+                        i += 1
 
-            return redirect('program-list')
+            # If scheduling type changed, redirect back to edit page to show the converted routines
+            if old_scheduling_type != new_scheduling_type:
+                messages.success(request, f'Program converted from {old_scheduling_type} to {new_scheduling_type} scheduling. Routines have been automatically rearranged.')
+                return redirect('program-update', program_id=program.id)
+            else:
+                return redirect('program-list')
 
     # GET request logic remains the same
     all_user_routines = Routine.objects.filter(user=request.user)
@@ -896,6 +972,182 @@ def workout_delete(request, workout_id):
     }
     return render(request, 'workout_confirm_delete.html', context)
 
+@login_required
+def ajax_update_program_scheduling(request, program_id):
+    """
+    AJAX endpoint to update program scheduling type and convert routines between weekly and sequential
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    
+    try:
+        program = get_object_or_404(Program, id=program_id, user=request.user)
+        
+        # Parse JSON body
+        import json
+        data = json.loads(request.body)
+        new_scheduling_type = data.get('scheduling_type')
+        current_routines = data.get('routines', None)  # Get current state from frontend
+        
+        if new_scheduling_type not in ['weekly', 'sequential']:
+            return JsonResponse({'error': 'Invalid scheduling type'}, status=400)
+        
+        old_scheduling_type = program.scheduling_type
+        
+        if old_scheduling_type == new_scheduling_type:
+            return JsonResponse({'success': True, 'message': 'No change needed'})
+        
+        with transaction.atomic():
+            program.scheduling_type = new_scheduling_type
+            program.save()
+            
+            # If frontend provides current routines state, use that instead of auto-converting
+            if current_routines:
+                # Clear existing program routines
+                program.program_routines.all().delete()
+                
+                # Re-create based on frontend state
+                if new_scheduling_type == 'weekly':
+                    # current_routines should be a dict with day numbers as keys
+                    for day_str, routines in current_routines.items():
+                        day_num = int(day_str)
+                        for idx, routine_data in enumerate(routines):
+                            routine_id = routine_data.get('routine_id')
+                            if routine_id:
+                                try:
+                                    routine = Routine.objects.get(id=routine_id, user=request.user)
+                                    ProgramRoutine.objects.create(
+                                        program=program,
+                                        routine=routine,
+                                        assigned_day=day_num,
+                                        order=idx + 1
+                                    )
+                                except Routine.DoesNotExist:
+                                    continue
+                else:  # sequential
+                    # current_routines should be a list
+                    for idx, routine_data in enumerate(current_routines):
+                        routine_id = routine_data.get('routine_id')
+                        if routine_id:
+                            try:
+                                routine = Routine.objects.get(id=routine_id, user=request.user)
+                                ProgramRoutine.objects.create(
+                                    program=program,
+                                    routine=routine,
+                                    order=idx + 1,
+                                    assigned_day=None
+                                )
+                            except Routine.DoesNotExist:
+                                continue
+            else:
+                # Fallback to auto-conversion if no state provided
+                existing_routines = list(program.program_routines.select_related('routine').order_by('order', 'assigned_day').all())
+                
+                if new_scheduling_type == 'weekly' and old_scheduling_type == 'sequential':
+                    # Converting from sequential to weekly - distribute routines across days
+                    days = [0, 1, 2, 3, 4, 5, 6]  # Monday to Sunday
+                    for i, pr in enumerate(existing_routines):
+                        pr.assigned_day = days[i % 7]  # Distribute evenly across week
+                        pr.save()
+                        
+                elif new_scheduling_type == 'sequential' and old_scheduling_type == 'weekly':
+                    # Converting from weekly to sequential - set order based on day and preserve sequence
+                    ordered_prs = sorted(existing_routines, key=lambda x: (x.assigned_day or 0, x.order))
+                    for i, pr in enumerate(ordered_prs):
+                        pr.order = i + 1
+                        pr.assigned_day = None  # Clear day assignment
+                        pr.save()
+        
+        # Return the updated routine assignments
+        updated_routines = []
+        for pr in program.program_routines.select_related('routine').order_by('order', 'assigned_day'):
+            updated_routines.append({
+                'id': pr.id,
+                'routine_id': pr.routine.id,
+                'routine_name': pr.routine.name,
+                'order': pr.order,
+                'assigned_day': pr.assigned_day
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Successfully converted to {new_scheduling_type} scheduling',
+            'routines': updated_routines,
+            'scheduling_type': new_scheduling_type
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def ajax_restore_program_state(request, program_id):
+    """
+    AJAX endpoint to restore program to a previous state
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    
+    try:
+        program = get_object_or_404(Program, id=program_id, user=request.user)
+        
+        # Parse JSON body
+        import json
+        data = json.loads(request.body)
+        original_state = data.get('original_state')
+        
+        if not original_state:
+            return JsonResponse({'error': 'No original state provided'}, status=400)
+        
+        with transaction.atomic():
+            # Restore scheduling type
+            program.scheduling_type = original_state.get('scheduling_type', 'sequential')
+            program.save()
+            
+            # Clear existing program routines
+            program.program_routines.all().delete()
+            
+            # Restore routines based on scheduling type
+            if program.scheduling_type == 'weekly':
+                weekly_routines = original_state.get('weekly_routines', {})
+                for day, routines in weekly_routines.items():
+                    day_num = int(day)
+                    for routine_data in routines:
+                        routine_id = routine_data.get('routine_id')
+                        if routine_id:
+                            try:
+                                routine = Routine.objects.get(id=routine_id, user=request.user)
+                                ProgramRoutine.objects.create(
+                                    program=program,
+                                    routine=routine,
+                                    assigned_day=day_num,
+                                    order=routine_data.get('order', 0)
+                                )
+                            except Routine.DoesNotExist:
+                                continue
+            else:  # sequential
+                sequential_routines = original_state.get('sequential_routines', [])
+                for routine_data in sequential_routines:
+                    routine_id = routine_data.get('routine_id')
+                    if routine_id:
+                        try:
+                            routine = Routine.objects.get(id=routine_id, user=request.user)
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                order=routine_data.get('order', 0),
+                                assigned_day=None
+                            )
+                        except Routine.DoesNotExist:
+                            continue
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Program state restored successfully'
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 def simple_api_test(request):
     """
     A simple API test view that returns a JSON response with an HTML snippet.
@@ -1013,33 +1265,76 @@ def start_next_workout(request):
             if program_routine_today:
                 next_routine = program_routine_today.routine
 
-        else: # Sequential schedule logic
-            last_workout = Workout.objects.filter(
+        else: # Sequential schedule logic - Smart scheduling for Mon/Wed/Fri/Sun pattern
+            # Get the last few workouts to understand the pattern
+            recent_workouts = Workout.objects.filter(
                 user=user,
                 routine_source__program_associations__program=active_program
-            ).order_by('-date').first()
-
-            next_order = 1
-            if last_workout and last_workout.routine_source:
-                last_program_routine = ProgramRoutine.objects.filter(
-                    program=active_program,
-                    routine=last_workout.routine_source
-                ).first()
-                if last_program_routine:
-                    next_order = last_program_routine.order + 1
-
-            next_program_routine = ProgramRoutine.objects.filter(
-                program=active_program,
-                order__gte=next_order
-            ).order_by('order').select_related('routine').first()
-
-            if not next_program_routine:  # Wrap around to the start
-                next_program_routine = ProgramRoutine.objects.filter(
-                    program=active_program
-                ).order_by('order').select_related('routine').first()
-
-            if next_program_routine:
-                next_routine = next_program_routine.routine
+            ).order_by('-date')[:10]  # Look at last 10 workouts
+            
+            # Count how many times each routine has been done this week
+            from datetime import timedelta
+            week_start = timezone.now().date() - timedelta(days=timezone.now().weekday())
+            this_week_workouts = Workout.objects.filter(
+                user=user,
+                routine_source__program_associations__program=active_program,
+                date__gte=week_start
+            ).select_related('routine_source')
+            
+            # Get all program routines ordered
+            all_program_routines = list(ProgramRoutine.objects.filter(
+                program=active_program
+            ).order_by('order').select_related('routine'))
+            
+            if not all_program_routines:
+                next_routine = None
+            else:
+                # Determine expected workout based on day of week pattern (Mon=0, Wed=2, Fri=4, Sun=6)
+                today_weekday = timezone.now().weekday()
+                days_since_week_start = (timezone.now().date() - week_start).days
+                
+                # Map your workout pattern: Mon(0)->A, Wed(2)->B, Fri(4)->C, Sun(6)->D
+                expected_workout_map = {
+                    0: 0,  # Monday -> routine A (index 0)
+                    1: 0,  # Tuesday -> still routine A (in case shifted)
+                    2: 1,  # Wednesday -> routine B (index 1)
+                    3: 2,  # Thursday -> routine C (in case Friday shifted)
+                    4: 2,  # Friday -> routine C (index 2)
+                    5: 2,  # Saturday -> routine C (in case Friday shifted)
+                    6: 3,  # Sunday -> routine D (index 3)
+                }
+                
+                # Get expected routine index for today
+                expected_index = expected_workout_map.get(today_weekday, 0)
+                
+                # But also check what was actually done this week
+                completed_this_week = set()
+                for workout in this_week_workouts:
+                    for i, pr in enumerate(all_program_routines):
+                        if pr.routine == workout.routine_source:
+                            completed_this_week.add(i)
+                            break
+                
+                # Find the next routine that hasn't been done this week
+                next_routine = None
+                for i in range(expected_index, len(all_program_routines)):
+                    if i not in completed_this_week and i < len(all_program_routines):
+                        next_routine = all_program_routines[i].routine
+                        break
+                
+                # If nothing found from expected index onwards, or if we're past Sunday, 
+                # just follow the sequential pattern
+                if not next_routine:
+                    last_workout = recent_workouts.first() if recent_workouts else None
+                    if last_workout and last_workout.routine_source:
+                        for i, pr in enumerate(all_program_routines):
+                            if pr.routine == last_workout.routine_source:
+                                next_index = (i + 1) % len(all_program_routines)
+                                next_routine = all_program_routines[next_index].routine
+                                break
+                    else:
+                        # First workout ever
+                        next_routine = all_program_routines[0].routine
 
     if next_routine:
         redirect_url = reverse('start-workout-from-routine', args=[next_routine.id])
@@ -1183,3 +1478,149 @@ def register(request):
         'title': 'Sign Up'
     }
     return render(request, 'register.html', context)
+
+@login_required
+def import_routine(request):
+    """Import program from pasted workout text"""
+    parser = WorkoutParser()
+    
+    if request.method == 'POST':
+        program_name = request.POST.get('program_name', '').strip()
+        workout_text = request.POST.get('workout_text', '').strip()
+        create_missing = request.POST.get('create_missing') == 'on'
+        
+        errors = []
+        
+        if not program_name:
+            errors.append('Program name is required.')
+        if not workout_text:
+            errors.append('Workout text is required.')
+        
+        if not errors:
+            try:
+                with transaction.atomic():
+                    # Parse the workout text into separate days
+                    workout_days = parser.parse_workout_days(workout_text)
+                    
+                    if not workout_days:
+                        errors.append('No exercises could be parsed from the text. Please check the format.')
+                    else:
+                        # Create the program first
+                        program = Program.objects.create(
+                            user=request.user,
+                            name=program_name,
+                            description=f'Imported from text on {timezone.now().strftime("%Y-%m-%d %H:%M")}',
+                            is_active=not Program.objects.filter(user=request.user, is_active=True).exists(),  # Make active if no other active program
+                            scheduling_type='sequential'
+                        )
+                        
+                        total_exercises = 0
+                        created_exercises = []
+                        skipped_exercises = []
+                        routine_names = []
+                        
+                        # Day names for routines
+                        day_names = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+                        
+                        for day_index, day_exercises in enumerate(workout_days):
+                            if not day_exercises:
+                                continue
+                                
+                            # Create routine for this day
+                            day_name = day_names[day_index] if day_index < len(day_names) else f'Day {day_index + 1}'
+                            routine_name = f'{program_name} - {day_name}'
+                            routine_names.append(routine_name)
+                            
+                            routine = Routine.objects.create(
+                                user=request.user,
+                                name=routine_name,
+                                description=f'Day {day_index + 1} - Imported on {timezone.now().strftime("%Y-%m-%d %H:%M")}'
+                            )
+                            
+                            # Process each exercise for this day
+                            exercise_order = 0
+                            
+                            for parsed_ex in day_exercises:
+                                exercise_name = parsed_ex['exercise_name']
+                                
+                                # Find or create the exercise
+                                exercise = parser.find_or_create_exercise(exercise_name)
+                                
+                                if not exercise:
+                                    if create_missing:
+                                        # Create the exercise
+                                        exercise = Exercise.objects.create(
+                                            name=exercise_name,
+                                            description=f'Auto-created from import',
+                                            is_custom=True,
+                                            user=request.user,
+                                            exercise_type='accessory'
+                                        )
+                                        if exercise_name not in created_exercises:
+                                            created_exercises.append(exercise_name)
+                                    else:
+                                        if exercise_name not in skipped_exercises:
+                                            skipped_exercises.append(exercise_name)
+                                        continue
+                                
+                                # Create RoutineExercise
+                                routine_exercise = RoutineExercise.objects.create(
+                                    routine=routine,
+                                    exercise=exercise,
+                                    order=exercise_order
+                                )
+                                exercise_order += 1
+                                total_exercises += 1
+                                
+                                # Create RoutineExerciseSet entries
+                                sets = parsed_ex['sets']
+                                reps = parsed_ex['reps']
+                                weight = parsed_ex['weight']
+                                
+                                for set_num in range(1, sets + 1):
+                                    RoutineExerciseSet.objects.create(
+                                        routine_exercise=routine_exercise,
+                                        set_number=set_num,
+                                        target_reps=reps,
+                                        target_weight=Decimal(str(weight)) if weight else None
+                                    )
+                            
+                            # Link routine to program
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                order=day_index + 1
+                            )
+                        
+                        # Success message
+                        messages.success(request, f'Program "{program_name}" created with {len(workout_days)} routines ({", ".join(routine_names)}) and {total_exercises} total exercises.')
+                        
+                        if created_exercises:
+                            messages.info(request, f'Created {len(created_exercises)} new exercises: {", ".join(created_exercises)}')
+                        
+                        if skipped_exercises:
+                            messages.warning(request, f'Skipped {len(skipped_exercises)} unknown exercises: {", ".join(skipped_exercises)}')
+                        
+                        return redirect('program-list')
+                        
+            except Exception as e:
+                errors.append(f'Error importing program: {str(e)}')
+        
+        context = {
+            'title': 'Import Program',
+            'program_name': program_name,
+            'workout_text': workout_text,
+            'create_missing': create_missing,
+            'errors': errors
+        }
+        return render(request, 'import_routine.html', context)
+    
+    # GET request
+    context = {
+        'title': 'Import Program',
+        'sample_format': """OHP 3x5 70
+Pull ups 3x10
+Triceps 4x10 40
+Laterals 4x10 14"""
+    }
+    return render(request, 'import_routine.html', context)

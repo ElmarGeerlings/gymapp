@@ -109,19 +109,340 @@ function handle_attribute(element, attr) {
     });
 }
 
-function toggleScheduleType() {
+// Store the original program state for cancel functionality
+let originalProgramState = null;
+
+function saveProgramState() {
+    const state = {
+        schedulingType: document.getElementById('scheduling-weekly').checked ? 'weekly' : 'sequential',
+        weeklyRoutines: {},
+        sequentialRoutines: []
+    };
+    
+    // Save weekly routines with order
+    document.querySelectorAll('.day-column').forEach(dayColumn => {
+        const dayValue = dayColumn.dataset.dayValue;
+        state.weeklyRoutines[dayValue] = [];
+        dayColumn.querySelectorAll('.routine-chip').forEach((chip, index) => {
+            state.weeklyRoutines[dayValue].push({
+                routine_id: chip.dataset.routineId,
+                name: chip.dataset.routineName || chip.querySelector('span').textContent,
+                order: index + 1
+            });
+        });
+    });
+    
+    // Save sequential routines
+    document.querySelectorAll('.program-routine-row').forEach(row => {
+        const routineIdInput = row.querySelector('input[name*="_routine_id"]');
+        const routineNameInput = row.querySelector('input[type="text"][readonly]');
+        const orderInput = row.querySelector('input[name*="_order"]');
+        
+        if (routineIdInput && routineNameInput) {
+            state.sequentialRoutines.push({
+                routine_id: routineIdInput.value,
+                name: routineNameInput.value,
+                order: orderInput ? orderInput.value : state.sequentialRoutines.length + 1
+            });
+        }
+    });
+    
+    return state;
+}
+
+function restoreProgramState(state) {
+    if (!state) return;
+    
+    // Restore scheduling type
+    if (state.schedulingType === 'weekly') {
+        document.getElementById('scheduling-weekly').checked = true;
+    } else {
+        document.getElementById('scheduling-sequential').checked = true;
+    }
+    
+    // Clear current routines
+    document.querySelectorAll('.routines-for-day-container').forEach(container => {
+        container.innerHTML = '';
+    });
+    document.getElementById('program-routines-container').innerHTML = '';
+    
+    // Restore weekly routines
+    Object.keys(state.weeklyRoutines).forEach(dayValue => {
+        const dayColumn = document.querySelector(`.day-column[data-day-value="${dayValue}"]`);
+        if (dayColumn) {
+            const container = dayColumn.querySelector('.routines-for-day-container');
+            state.weeklyRoutines[dayValue].forEach(routine => {
+                const chip = document.createElement('div');
+                chip.className = 'routine-chip';
+                chip.draggable = true;
+                chip.dataset.routineId = routine.routine_id || routine.id;
+                chip.dataset.routineName = routine.name;
+                chip.innerHTML = `
+                    <span>${routine.name}</span>
+                    <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                    <input type="hidden" name="weekly_day_${dayValue}_routines" value="${routine.routine_id || routine.id}">
+                `;
+                container.appendChild(chip);
+                setupProgramRoutineDragListeners(chip);
+            });
+        }
+    });
+    
+    // Restore sequential routines
+    const programRoutinesContainer = document.getElementById('program-routines-container');
+    const template = document.getElementById('program-routine-template');
+    
+    state.sequentialRoutines.forEach((routine, index) => {
+        if (template) {
+            let newRowHTML = template.innerHTML;
+            newRowHTML = newRowHTML.replace(/__INDEX__/g, index)
+                                   .replace(/__ROUTINE_ID__/g, routine.routine_id || routine.id)
+                                   .replace(/__ROUTINE_NAME__/g, routine.name)
+                                   .replace(/__ORDER__/g, routine.order);
+            
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = newRowHTML;
+            const newRow = tempDiv.firstElementChild;
+            
+            programRoutinesContainer.appendChild(newRow);
+        }
+    });
+    
+    // Update UI visibility
+    const weeklyContainer = document.getElementById('weekly-schedule-container');
+    const sequentialContainer = document.getElementById('sequential-schedule-container');
+    const sequentialAdder = document.getElementById('sequential-routine-adder');
+    
+    if (state.schedulingType === 'weekly') {
+        weeklyContainer.style.display = 'block';
+        sequentialContainer.style.display = 'none';
+        sequentialAdder.style.display = 'none';
+        initializeProgramRoutinesDragDrop();
+    } else {
+        weeklyContainer.style.display = 'none';
+        sequentialContainer.style.display = 'block';
+        sequentialAdder.style.display = 'block';
+    }
+}
+
+async function restoreProgramStateViaAPI(programId, originalState) {
+    try {
+        const response = await fetch(`/ajax/program/${programId}/restore-state/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                original_state: originalState
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to restore program state');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            console.log('Program state restored successfully');
+            return true;
+        } else {
+            console.error('Error restoring program state:', data.error);
+            return false;
+        }
+    } catch (error) {
+        console.error('Error restoring program state:', error);
+        return false;
+    }
+}
+
+async function toggleScheduleType() {
     const weeklyContainer = document.getElementById('weekly-schedule-container');
     const sequentialContainer = document.getElementById('sequential-schedule-container');
     const sequentialAdder = document.getElementById('sequential-routine-adder');
     const weeklyRadio = document.getElementById('scheduling-weekly');
+    const programRoutinesContainer = document.getElementById('program-routines-container');
 
     if (!weeklyContainer || !sequentialContainer || !sequentialAdder || !weeklyRadio) return;
 
+    // Get program ID first
+    const programForm = document.querySelector('form[action*="/programs/"]');
+    let programId = null;
+    if (programForm) {
+        const actionUrl = programForm.getAttribute('action');
+        const match = actionUrl.match(/\/programs\/(\d+)\//);  
+        if (match) {
+            programId = match[1];
+        }
+    }
+
+    // Prepare routine data to send to backend
+    let routineData = null;
+    const schedulingType = weeklyRadio.checked ? 'weekly' : 'sequential';
+
     if (weeklyRadio.checked) {
+        // Switching TO weekly - collect from sequential view first
+        const sequentialRoutines = [];
+        programRoutinesContainer?.querySelectorAll('.program-routine-row').forEach((row) => {
+            const routineIdInput = row.querySelector('input[name*="_routine_id"]');
+            const routineNameInput = row.querySelector('input[type="text"][readonly]');
+            
+            if (routineIdInput && routineNameInput && routineIdInput.value) {
+                sequentialRoutines.push({
+                    routine_id: routineIdInput.value,
+                    name: routineNameInput.value
+                });
+            }
+        });
+        
+        // Distribute sequential routines to weekly days
+        const days = [0, 1, 2, 3, 4, 5, 6];
+        routineData = {};
+        sequentialRoutines.forEach((routine, index) => {
+            const assignedDay = days[index % days.length];
+            if (!routineData[assignedDay]) {
+                routineData[assignedDay] = [];
+            }
+            routineData[assignedDay].push(routine);
+        });
+        
+        // Save to database first if we have a program ID
+        if (programId) {
+            try {
+                const response = await fetch(`/ajax/program/${programId}/update-scheduling/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        scheduling_type: 'weekly',
+                        routines: routineData
+                    })
+                });
+                
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('Error updating scheduling type:', data.error);
+                    return;
+                }
+            } catch (error) {
+                console.error('Error updating scheduling type:', error);
+                return;
+            }
+        }
+        
+        // Now update the DOM
+        // Clear sequential container
+        programRoutinesContainer.innerHTML = '';
+        
+        // Clear weekly containers first to avoid duplicates
+        weeklyContainer.querySelectorAll('.routines-for-day-container').forEach(container => {
+            container.innerHTML = '';
+        });
+        
+        // Add to weekly view
+        Object.entries(routineData).forEach(([day, routines]) => {
+            const dayColumn = weeklyContainer.querySelector(`.day-column[data-day-value="${day}"]`);
+            if (dayColumn) {
+                const routinesContainer = dayColumn.querySelector('.routines-for-day-container');
+                
+                routines.forEach(routine => {
+                    const chip = document.createElement('div');
+                    chip.className = 'routine-chip';
+                    chip.draggable = true;
+                    chip.dataset.routineId = routine.routine_id;
+                    chip.dataset.routineName = routine.name;
+                    chip.innerHTML = `
+                        <span>${routine.name}</span>
+                        <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                        <input type="hidden" name="weekly_day_${day}_routines" value="${routine.routine_id}">
+                    `;
+                    
+                    routinesContainer.appendChild(chip);
+                    setupProgramRoutineDragListeners(chip);
+                });
+            }
+        });
+        
         weeklyContainer.style.display = 'block';
         sequentialContainer.style.display = 'none';
         sequentialAdder.style.display = 'none';
+        initializeProgramRoutinesDragDrop();
+        
     } else {
+        // Switching TO sequential - collect from weekly view first
+        routineData = [];
+        
+        for (let day = 0; day < 7; day++) {
+            const dayColumn = weeklyContainer.querySelector(`.day-column[data-day-value="${day}"]`);
+            if (dayColumn) {
+                dayColumn.querySelectorAll('.routine-chip').forEach(chip => {
+                    const routineId = chip.dataset.routineId;
+                    const routineName = chip.dataset.routineName || chip.querySelector('span').textContent;
+                    if (routineId) {
+                        routineData.push({
+                            routine_id: routineId,
+                            name: routineName
+                        });
+                    }
+                });
+            }
+        }
+        
+        // Save to database first if we have a program ID
+        if (programId) {
+            try {
+                const response = await fetch(`/ajax/program/${programId}/update-scheduling/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        scheduling_type: 'sequential',
+                        routines: routineData
+                    })
+                });
+                
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('Error updating scheduling type:', data.error);
+                    return;
+                }
+            } catch (error) {
+                console.error('Error updating scheduling type:', error);
+                return;
+            }
+        }
+        
+        // Now update the DOM
+        // Clear weekly view
+        weeklyContainer.querySelectorAll('.routines-for-day-container').forEach(container => {
+            container.innerHTML = '';
+        });
+        
+        // Clear sequential first
+        programRoutinesContainer.innerHTML = '';
+        
+        // Add to sequential view
+        routineData.forEach((routine, index) => {
+            const template = document.getElementById('program-routine-template');
+            if (template) {
+                let newRowHTML = template.innerHTML;
+                newRowHTML = newRowHTML.replace(/__INDEX__/g, index)
+                                       .replace(/__ROUTINE_ID__/g, routine.routine_id)
+                                       .replace(/__ROUTINE_NAME__/g, routine.name)
+                                       .replace(/__ORDER__/g, index + 1);
+                
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = newRowHTML;
+                const newRow = tempDiv.firstElementChild;
+                
+                programRoutinesContainer.appendChild(newRow);
+            }
+        });
+        
         weeklyContainer.style.display = 'none';
         sequentialContainer.style.display = 'block';
         sequentialAdder.style.display = 'block';
@@ -471,72 +792,209 @@ async function saveExercise(event) {
     }
 }
 
-// --- Add Set to Workout Exercise ---
+
+// --- Update Set ---
+// Triggered by data-function="blur->updateSet" or data-function="change->updateSet"
+// Needs data-set-id, data-field on the input/select element
+async function updateSet(event) {
+    const element = event.target;
+    const setId = element.dataset.setId;
+    const field = element.dataset.field;
+    
+    if (!setId || !field) {
+        console.error('Missing data-set-id or data-field on element');
+        return;
+    }
+    
+    let value = element.value;
+    // Handle checkbox for is_warmup field
+    if (field === 'is_warmup') {
+        value = element.checked;
+    }
+    
+    const url = `/api/workouts/sets/${setId}/`;
+    const data = { [field]: value };
+    
+    const response = await httpRequestHelper(url, 'PATCH', data);
+    
+    if (response.ok) {
+        send_toast('Set updated', 'success');
+        // Update data attributes if reps or weight changed
+        if (field === 'reps' || field === 'weight') {
+            const row = element.closest('.set-row');
+            if (row) {
+                row.dataset[field] = value;
+            }
+        }
+    } else {
+        send_toast(response.data?.detail || 'Error updating set', 'danger');
+        // Optionally revert the value
+        // element.value = element.dataset.originalValue;
+    }
+}
+
+// --- Add Set to Exercise ---
 // Triggered by data-function="click->addSet"
-// Needs data-workout-exercise-id="{{ workout_exercise.id }}" on the button
+// Copies values from the last set or uses smart defaults
 async function addSet(event) {
-    const button = event.target;
-    const workoutExerciseId = button.dataset.workoutExerciseId;
-    if (!workoutExerciseId) {
-        console.error('Missing data-workout-exercise-id on add set button');
+    event.preventDefault();
+    const button = event.currentTarget;
+    const exerciseId = button.dataset.exerciseId;
+    
+    if (!exerciseId) {
+        console.error('Missing data-exercise-id on add set button');
         return;
     }
-
-    // Find inputs relative to the button/exercise container
-    const container = button.closest('.workout-exercise-controls'); // Adjust selector if needed
-    if (!container) {
-         console.error('Cannot find container for inputs relative to button');
-         return;
+    
+    // Find the parent card body and sets container
+    const cardBody = button.closest('.card-body');
+    const setsContainer = cardBody.querySelector('.sets-container');
+    const tbody = setsContainer.querySelector('.sets-tbody');
+    
+    // Get default values from last set and calculate set number
+    let reps = 0;
+    let weight = 0;
+    let isWarmup = false;
+    let setNumber = 1;
+    
+    if (tbody) {
+        // Count existing sets to determine next set number
+        const existingRows = tbody.querySelectorAll('.set-row');
+        setNumber = existingRows.length + 1;
+        
+        // Get the last set row
+        const lastRow = tbody.querySelector('.set-row:last-child');
+        if (lastRow) {
+            // Copy values from last set
+            reps = parseInt(lastRow.dataset.reps) || parseInt(lastRow.querySelector('.set-reps-input')?.value) || 0;
+            weight = parseFloat(lastRow.dataset.weight) || parseFloat(lastRow.querySelector('.set-weight-input')?.value) || 0;
+            // Last set is usually not a warmup
+            isWarmup = false;
+        }
     }
-    const weightInput = container.querySelector(`.weight-input`); // Use classes for inputs
-    const repsInput = container.querySelector(`.reps-input`);
-    const warmupInput = container.querySelector(`.warmup-input`);
-
-    const weight = parseFloat(weightInput?.value);
-    const reps = parseInt(repsInput?.value);
-    const isWarmup = warmupInput?.checked || false;
-
-    if (isNaN(weight) || isNaN(reps)) {
-        send_toast('Please enter valid weight and reps', 'warning');
-        return;
+    
+    // If still no values, try to get from previous workout with same exercise
+    // This would require an API call to get historical data - for now use defaults
+    if (reps === 0) {
+        reps = 10; // Default reps
+        weight = 0; // Default weight
     }
-
-    const url = `/api/workouts/exercises/${workoutExerciseId}/sets/`;
-    const data = { weight, reps, is_warmup: isWarmup };
-
+    
+    // Ensure reps is at least 1 (PositiveIntegerField in Django)
+    if (reps < 1) {
+        reps = 1;
+    }
+    
+    const url = `/api/workouts/exercises/${exerciseId}/sets/`;
+    const data = {
+        set_number: setNumber,
+        reps: Math.max(1, reps), // Ensure at least 1
+        weight: weight.toFixed(2), // Format as decimal string
+        is_warmup: isWarmup
+    };
+    
+    console.log('Adding set with data:', data, 'to URL:', url);
     const response = await httpRequestHelper(url, 'POST', data);
-
+    console.log('Add set response:', response);
+    
     if (response.ok) {
         send_toast('Set added', 'success');
-        // TODO: Update UI dynamically instead of relying on reload?
-        // Find table: document.getElementById(`sets-${workoutExerciseId}`)
-        // Append row with response.data info
-        // Clear inputs
-        if(weightInput) weightInput.value = '';
-        if(repsInput) repsInput.value = '';
-        if(warmupInput) warmupInput.checked = false;
-        // TEMP: Reload for simplicity
-        location.reload();
+        
+        // No inputs to clear since we're using a simple + button
+        
+        // Re-find tbody since we may have created the table structure
+        let tbody = setsContainer.querySelector('.sets-tbody');
+        
+        // If no table exists yet (first set), create the table structure
+        if (!tbody) {
+            const noSetsMessage = setsContainer.querySelector('.no-sets-message');
+            if (noSetsMessage) {
+                noSetsMessage.remove();
+            }
+            
+            const tableHtml = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th width="100">Reps</th>
+                                <th width="120">Weight (kg)</th>
+                                <th width="80">Warmup</th>
+                                <th width="40"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="sets-tbody"></tbody>
+                    </table>
+                </div>
+            `;
+            
+            // Insert the table before the add button (which is in a mt-2 div)
+            const addButton = setsContainer.querySelector('button[data-function*="addSet"]');
+            if (addButton && addButton.parentElement) {
+                addButton.parentElement.insertAdjacentHTML('beforebegin', tableHtml);
+            } else {
+                // Fallback: add at the end of the container
+                setsContainer.insertAdjacentHTML('beforeend', tableHtml);
+            }
+            tbody = setsContainer.querySelector('.sets-tbody');
+        }
+        
+        // Add the new row
+        const setData = response.data;
+        const newRow = `
+            <tr class="set-row" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${setData.weight}">
+                <td class="set-reps">
+                    <input type="number" class="form-control form-control-sm set-reps-input" 
+                           value="${setData.reps}" min="0" step="1"
+                           data-function="blur->updateSet"
+                           data-set-id="${setData.id}"
+                           data-field="reps">
+                </td>
+                <td class="set-weight">
+                    <input type="number" class="form-control form-control-sm set-weight-input" 
+                           value="${setData.weight}" min="0" step="0.5"
+                           data-function="blur->updateSet"
+                           data-set-id="${setData.id}"
+                           data-field="weight">
+                </td>
+                <td class="set-warmup text-center">
+                    <input type="checkbox" class="form-check-input"
+                           ${setData.is_warmup ? 'checked' : ''}
+                           data-function="change->updateSet"
+                           data-set-id="${setData.id}"
+                           data-field="is_warmup">
+                </td>
+                <td class="text-center">
+                    <a href="#" class="text-danger"
+                       data-function="click->deleteSet"
+                       data-set-id="${setData.id}"
+                       title="Delete set">
+                        <i class="fas fa-times"></i>
+                    </a>
+                </td>
+            </tr>
+        `;
+        tbody.insertAdjacentHTML('beforeend', newRow);
+        
+        // Re-register event handlers for the new elements
+        registerDataFunctionHandlers();
     } else {
-        displayFormErrors(container.id || 'add-set-form', response.data); // Need a way to target errors
-        send_toast(response.data?.detail || 'Error adding set', 'danger');
+        console.error('Error adding set:', response);
+        const errorMsg = response.data?.detail || response.data?.error || JSON.stringify(response.data) || 'Error adding set';
+        send_toast(errorMsg, 'danger');
     }
 }
 
 // --- Delete Set ---
 // Triggered by data-function="click->deleteSet"
-// Needs data-set-id="{{ set.id }}" and data-confirm="Are you sure?" on the button
+// Needs data-set-id on the delete link/button
 async function deleteSet(event) {
-    const button = event.target;
-    const setId = button.dataset.setId;
-    const confirmMsg = button.dataset.confirm;
+    event.preventDefault();
+    const element = event.currentTarget;
+    const setId = element.dataset.setId;
 
     if (!setId) {
-        console.error('Missing data-set-id on delete button');
-        return;
-    }
-
-    if (confirmMsg && !confirm(confirmMsg)) {
+        console.error('Missing data-set-id on delete element');
         return;
     }
 
@@ -545,9 +1003,90 @@ async function deleteSet(event) {
 
     if (response.ok) {
         send_toast('Set deleted', 'success');
-        button.closest('tr')?.remove(); // Remove the table row
+        const row = element.closest('tr');
+        const tbody = row.closest('tbody');
+        row.remove();
+        
+        // No need to update set numbers since we removed that column
+        
+        // Check if any rows are left
+        const remainingRows = tbody.querySelectorAll('.set-row');
+        if (remainingRows.length === 0) {
+            const table = tbody.closest('.table-responsive');
+            const setsContainer = table.closest('.sets-container');
+            table.remove();
+            const addButton = setsContainer.querySelector('.mt-2');
+            if (addButton) {
+                addButton.insertAdjacentHTML('beforebegin', '<p class="text-muted no-sets-message">No sets recorded for this exercise.</p>');
+            }
+        }
     } else {
          send_toast(response.data?.detail || 'Error deleting set', 'danger');
+    }
+}
+
+// --- Update Exercise Feedback ---
+// Triggered by data-function="click->updateExerciseFeedback"
+// Needs data-exercise-id and data-feedback on the button
+async function updateExerciseFeedback(event) {
+    const button = event.currentTarget;
+    const exerciseId = button.dataset.exerciseId;
+    const feedback = button.dataset.feedback;
+    
+    if (!exerciseId || !feedback) {
+        console.error('Missing data-exercise-id or data-feedback on button');
+        return;
+    }
+    
+    // Use PATCH to update just the feedback field
+    const url = `/api/workouts/exercises/${exerciseId}/`;
+    const data = { performance_feedback: feedback };
+    
+    const response = await httpRequestHelper(url, 'PATCH', data);
+    
+    if (response.ok) {
+        // Update button states
+        const btnGroup = button.closest('.btn-group');
+        const allButtons = btnGroup.querySelectorAll('button');
+        
+        // Remove active class from all buttons
+        allButtons.forEach(btn => btn.classList.remove('active'));
+        
+        // Add active class to clicked button
+        button.classList.add('active');
+        
+        send_toast(`Feedback saved: ${feedback}`, 'success');
+    } else {
+        console.error('Error updating feedback:', response);
+        send_toast(response.data?.detail || 'Error updating feedback', 'danger');
+    }
+}
+
+// --- Remove Exercise from Workout ---
+// Triggered by data-function="click->removeExercise"
+// Needs data-exercise-id on the button
+async function removeExercise(event) {
+    const button = event.currentTarget;
+    const exerciseId = button.dataset.exerciseId;
+    
+    if (!exerciseId) {
+        console.error('Missing data-exercise-id on remove button');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to remove this exercise and all its sets?')) {
+        return;
+    }
+    
+    const url = `/api/workouts/exercises/${exerciseId}/`;
+    const response = await httpRequestHelper(url, 'DELETE');
+    
+    if (response.ok) {
+        send_toast('Exercise removed', 'success');
+        const card = button.closest('.workout-exercise-card');
+        card.remove();
+    } else {
+        send_toast(response.data?.detail || 'Error removing exercise', 'danger');
     }
 }
 
@@ -569,8 +1108,8 @@ async function addExerciseToWorkout(event) {
          console.error('Cannot find container for add exercise controls');
          return;
     }
-    const exerciseSelect = container.querySelector('#exercise-select'); // Assuming IDs are stable
-    const typeSelect = container.querySelector('#exercise-type');
+    const exerciseSelect = container.querySelector('select[name="exercise"]'); // Use name selector instead of ID
+    const typeSelect = container.querySelector('select[name="exercise_type"]');
 
     const exerciseId = exerciseSelect?.value;
     const exerciseType = typeSelect?.value;
@@ -986,11 +1525,11 @@ function initializeRoutineForm() {
         // console.log('[gainz.js] initializeRoutineForm: Initial state of RPE checkbox (id: toggle-rpe-visibility) IS CHECKED:', rpeToggleForDebug.checked);
     }
 
-    // Parts of this block were causing the issue. We will reintroduce them carefully.
+    // Enable drag and drop functionality
     const routineExercisesContainer = document.getElementById('routine-exercises-container');
     if (routineExercisesContainer) {
         // Initial setup for existing cards from server
-        /* routineExercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
+        routineExercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
             setupDragAndDropListeners(card);
             const exerciseSelect = card.querySelector('.exercise-select');
             if (exerciseSelect && exerciseSelect.value) {
@@ -999,7 +1538,6 @@ function initializeRoutineForm() {
         });
         routineExercisesContainer.addEventListener('dragover', handleDragOver);
         routineExercisesContainer.addEventListener('drop', handleDrop);
-        */
     }
 
     updateRoutineExerciseOrderNumbers(); // Reintroducing this first
@@ -1021,9 +1559,69 @@ document.addEventListener('DOMContentLoaded', () => {
     const weeklyRadio = document.getElementById('scheduling-weekly');
     const sequentialRadio = document.getElementById('scheduling-sequential');
     if (weeklyRadio && sequentialRadio) {
-        toggleScheduleType(); // Call on load
+        // Save the initial state for cancel functionality
+        originalProgramState = saveProgramState();
+        
+        // Set initial visibility based on current selection
+        const weeklyContainer = document.getElementById('weekly-schedule-container');
+        const sequentialContainer = document.getElementById('sequential-schedule-container');
+        const sequentialAdder = document.getElementById('sequential-routine-adder');
+        
+        if (weeklyRadio.checked) {
+            weeklyContainer.style.display = 'block';
+            sequentialContainer.style.display = 'none';
+            sequentialAdder.style.display = 'none';
+            initializeProgramRoutinesDragDrop();
+        } else {
+            weeklyContainer.style.display = 'none';
+            sequentialContainer.style.display = 'block';
+            sequentialAdder.style.display = 'block';
+        }
+        
+        // Add event listeners for changes
         weeklyRadio.addEventListener('change', toggleScheduleType);
         sequentialRadio.addEventListener('change', toggleScheduleType);
+        
+        // Handle cancel button to restore original state
+        const cancelButton = document.querySelector('a.btn-secondary[href*="program"]');
+        if (cancelButton && cancelButton.textContent.includes('Cancel')) {
+            cancelButton.addEventListener('click', async function(e) {
+                e.preventDefault();
+                const href = this.href;
+                
+                if (originalProgramState) {
+                    // Get program ID from the form or URL
+                    const programForm = document.querySelector('form[action*="/programs/"]');
+                    let programId = null;
+                    
+                    if (programForm) {
+                        const actionUrl = programForm.getAttribute('action');
+                        const match = actionUrl.match(/\/programs\/(\d+)\//);
+                        if (match) {
+                            programId = match[1];
+                        }
+                    }
+                    
+                    if (programId) {
+                        // Restore state in database
+                        const restored = await restoreProgramStateViaAPI(programId, originalProgramState);
+                        if (restored) {
+                            window.location.href = href;
+                        } else {
+                            // If API restore fails, still navigate away but warn user
+                            if (confirm('Failed to restore original state. Continue anyway?')) {
+                                window.location.href = href;
+                            }
+                        }
+                    } else {
+                        // No program ID means this is a new program, just navigate away
+                        window.location.href = href;
+                    }
+                } else {
+                    window.location.href = href;
+                }
+            });
+        }
     }
 
     const weeklyPlanner = document.querySelector('.weekly-planner');
@@ -1054,6 +1652,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (document.getElementById('routineForm')) {
         initializeRoutineForm();
+    }
+
+    // Initialize workout exercises drag and drop
+    if (document.getElementById('workout-exercises-container')) {
+        initializeWorkoutExercisesDragDrop();
     }
 
     // Start observing the body for dynamically added/changed elements
@@ -1349,6 +1952,286 @@ window.duplicateSetRow = function(event) {
 }
 
 // ======================================
+//      WORKOUT EXERCISES DRAG & DROP
+// ======================================
+
+let workoutDraggedItem = null;
+let workoutFloatingClone = null;
+let workoutDragOffsetX = 0;
+let workoutDragOffsetY = 0;
+
+function handleWorkoutExerciseDragStart(event) {
+    workoutDraggedItem = event.target;
+    if (!workoutDraggedItem.classList.contains('workout-exercise-card')) return;
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', workoutDraggedItem.dataset.exerciseId);
+
+    // Create transparent image to hide default ghost
+    const img = new Image();
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    event.dataTransfer.setDragImage(img, 0, 0);
+
+    // Create visual clone
+    workoutFloatingClone = workoutDraggedItem.cloneNode(true);
+    workoutFloatingClone.classList.add('dragging-clone');
+
+    const rect = workoutDraggedItem.getBoundingClientRect();
+    workoutFloatingClone.style.width = `${rect.width}px`;
+    workoutFloatingClone.style.height = `${rect.height}px`;
+
+    document.body.appendChild(workoutFloatingClone);
+
+    workoutDragOffsetX = event.clientX - rect.left;
+    workoutDragOffsetY = event.clientY - rect.top;
+
+    workoutFloatingClone.style.left = `${event.clientX - workoutDragOffsetX}px`;
+    workoutFloatingClone.style.top = `${event.clientY - workoutDragOffsetY}px`;
+
+    setTimeout(() => {
+        if(workoutDraggedItem) workoutDraggedItem.classList.add('drag-source-hidden');
+    }, 0);
+
+    document.addEventListener('dragover', handleWorkoutExerciseDragMouseMove);
+}
+
+function handleWorkoutExerciseDragMouseMove(event) {
+    if (workoutFloatingClone) {
+        workoutFloatingClone.style.left = `${event.clientX - workoutDragOffsetX}px`;
+        workoutFloatingClone.style.top = `${event.clientY - workoutDragOffsetY}px`;
+    }
+}
+
+function handleWorkoutExerciseDragEnd(event) {
+    if (workoutFloatingClone) {
+        document.body.removeChild(workoutFloatingClone);
+        workoutFloatingClone = null;
+    }
+    if (workoutDraggedItem) {
+        workoutDraggedItem.classList.remove('drag-source-hidden');
+        workoutDraggedItem.style.opacity = '';
+    }
+    workoutDraggedItem = null;
+    document.removeEventListener('dragover', handleWorkoutExerciseDragMouseMove);
+}
+
+function handleWorkoutExerciseDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    
+    const container = event.currentTarget;
+    if (!workoutDraggedItem) return;
+
+    const afterElement = getWorkoutDragAfterElement(container, event.clientY, workoutDraggedItem);
+    if (afterElement === undefined && container.lastChild !== workoutDraggedItem) {
+        // Can move to end
+    } else if (afterElement && afterElement !== workoutDraggedItem) {
+        // Can insert before afterElement
+    }
+}
+
+function getWorkoutDragAfterElement(container, y, currentDraggedItem) {
+    const draggableElements = [...container.querySelectorAll('.workout-exercise-card:not(.drag-source-hidden)')];
+
+    return draggableElements.reduce((closest, child) => {
+        if (child === currentDraggedItem) return closest;
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function handleWorkoutExerciseDrop(event) {
+    event.preventDefault();
+    if (workoutDraggedItem) {
+        const container = event.currentTarget;
+        const afterElement = getWorkoutDragAfterElement(container, event.clientY, workoutDraggedItem);
+
+        if (afterElement) {
+            container.insertBefore(workoutDraggedItem, afterElement);
+        } else {
+            container.appendChild(workoutDraggedItem);
+        }
+        workoutDraggedItem.classList.remove('drag-source-hidden');
+
+        // Update order in database
+        updateWorkoutExerciseOrder(container);
+    }
+}
+
+async function updateWorkoutExerciseOrder(container) {
+    const workoutId = document.getElementById('workout-exercises-container').dataset.workoutId;
+    const exercises = container.querySelectorAll('.workout-exercise-card');
+    const updates = [];
+    
+    exercises.forEach((card, index) => {
+        const exerciseId = card.dataset.exerciseId;
+        updates.push({
+            id: exerciseId,
+            order: index + 1
+        });
+    });
+
+    // Send update to backend
+    try {
+        const response = await httpRequestHelper(`/api/workouts/${workoutId}/reorder-exercises/`, 'POST', {
+            exercises: updates
+        });
+        
+        if (response.ok) {
+            send_toast('Exercise order updated', 'success');
+        } else {
+            send_toast('Failed to update exercise order', 'danger');
+            // Optionally reload to restore original order
+        }
+    } catch (error) {
+        console.error('Error updating exercise order:', error);
+        send_toast('Error updating exercise order', 'danger');
+    }
+}
+
+function initializeWorkoutExercisesDragDrop() {
+    const container = document.getElementById('workout-exercises-container');
+    if (!container) return;
+
+    // Set up drag and drop for all exercise cards
+    container.querySelectorAll('.workout-exercise-card').forEach(card => {
+        card.addEventListener('dragstart', handleWorkoutExerciseDragStart);
+        card.addEventListener('dragend', handleWorkoutExerciseDragEnd);
+    });
+
+    // Set up drop zones for each category
+    container.querySelectorAll('.exercise-category-container').forEach(categoryContainer => {
+        categoryContainer.addEventListener('dragover', handleWorkoutExerciseDragOver);
+        categoryContainer.addEventListener('drop', handleWorkoutExerciseDrop);
+    });
+}
+
+// ======================================
+//      PROGRAM ROUTINES DRAG & DROP
+// ======================================
+
+let programDraggedChip = null;
+let programFloatingClone = null;
+let programDragOffsetX = 0;
+let programDragOffsetY = 0;
+
+function handleProgramRoutineDragStart(event) {
+    programDraggedChip = event.target;
+    if (!programDraggedChip.classList.contains('routine-chip')) return;
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', programDraggedChip.dataset.routineId);
+
+    // Create transparent image to hide default ghost
+    const img = new Image();
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    event.dataTransfer.setDragImage(img, 0, 0);
+
+    // Create visual clone
+    programFloatingClone = programDraggedChip.cloneNode(true);
+    programFloatingClone.classList.add('dragging-clone');
+
+    const rect = programDraggedChip.getBoundingClientRect();
+    programFloatingClone.style.width = `${rect.width}px`;
+    programFloatingClone.style.height = `${rect.height}px`;
+
+    document.body.appendChild(programFloatingClone);
+
+    programDragOffsetX = event.clientX - rect.left;
+    programDragOffsetY = event.clientY - rect.top;
+
+    programFloatingClone.style.left = `${event.clientX - programDragOffsetX}px`;
+    programFloatingClone.style.top = `${event.clientY - programDragOffsetY}px`;
+
+    setTimeout(() => {
+        if(programDraggedChip) programDraggedChip.classList.add('drag-source-hidden');
+    }, 0);
+
+    document.addEventListener('dragover', handleProgramRoutineDragMouseMove);
+}
+
+function handleProgramRoutineDragMouseMove(event) {
+    if (programFloatingClone) {
+        programFloatingClone.style.left = `${event.clientX - programDragOffsetX}px`;
+        programFloatingClone.style.top = `${event.clientY - programDragOffsetY}px`;
+    }
+}
+
+function handleProgramRoutineDragEnd(event) {
+    if (programFloatingClone) {
+        document.body.removeChild(programFloatingClone);
+        programFloatingClone = null;
+    }
+    if (programDraggedChip) {
+        programDraggedChip.classList.remove('drag-source-hidden');
+        programDraggedChip.style.opacity = '';
+    }
+    programDraggedChip = null;
+    document.removeEventListener('dragover', handleProgramRoutineDragMouseMove);
+}
+
+function handleProgramRoutineDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    
+    // Visual feedback: you could add a highlight to the container
+    const container = event.currentTarget;
+    container.classList.add('drag-over');
+}
+
+function handleProgramRoutineDragLeave(event) {
+    const container = event.currentTarget;
+    container.classList.remove('drag-over');
+}
+
+function handleProgramRoutineDrop(event) {
+    event.preventDefault();
+    const container = event.currentTarget;
+    container.classList.remove('drag-over');
+    
+    if (programDraggedChip) {
+        const newDayValue = container.closest('.day-column').dataset.dayValue;
+        
+        // Update the hidden input's name to reflect the new day
+        const hiddenInput = programDraggedChip.querySelector('input[type="hidden"]');
+        if (hiddenInput) {
+            hiddenInput.name = `weekly_day_${newDayValue}_routines`;
+        }
+        
+        // Move the chip to the new container
+        container.appendChild(programDraggedChip);
+        programDraggedChip.classList.remove('drag-source-hidden');
+    }
+}
+
+function setupProgramRoutineDragListeners(chip) {
+    chip.addEventListener('dragstart', handleProgramRoutineDragStart);
+    chip.addEventListener('dragend', handleProgramRoutineDragEnd);
+}
+
+function initializeProgramRoutinesDragDrop() {
+    const weeklyContainer = document.getElementById('weekly-schedule-container');
+    if (!weeklyContainer) return;
+
+    // Set up drag and drop for all existing routine chips
+    weeklyContainer.querySelectorAll('.routine-chip').forEach(chip => {
+        setupProgramRoutineDragListeners(chip);
+    });
+
+    // Set up drop zones for each day
+    weeklyContainer.querySelectorAll('.routines-for-day-container').forEach(container => {
+        container.addEventListener('dragover', handleProgramRoutineDragOver);
+        container.addEventListener('dragleave', handleProgramRoutineDragLeave);
+        container.addEventListener('drop', handleProgramRoutineDrop);
+    });
+}
+
+// ======================================
 //      PROGRAM FORM FUNCTIONS
 // ======================================
 
@@ -1443,7 +2326,9 @@ function handleAddRoutineToDay(event) {
     // Create the chip
     const chip = document.createElement('div');
     chip.className = 'routine-chip';
+    chip.draggable = true; // Make it draggable
     chip.dataset.routineId = routineId;
+    chip.dataset.routineName = routineName; // Store name for drag and drop
     chip.innerHTML = `
         <span>${routineName}</span>
         <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
@@ -1451,6 +2336,9 @@ function handleAddRoutineToDay(event) {
     `;
 
     container.appendChild(chip);
+    
+    // Set up drag and drop listeners for the new chip
+    setupProgramRoutineDragListeners(chip);
 
     // Reset the select
     select.value = '';

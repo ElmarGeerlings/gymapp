@@ -141,16 +141,40 @@ else:
 # Disable Redis if not available (for free deployments)
 REDIS_URL = os.environ.get('REDIS_URL')
 if REDIS_URL:
-    # Use the full REDIS_URL if provided (for Redis Cloud, Upstash, etc)
-    CACHES = {
-        'default': {
-            'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': REDIS_URL,
-            'OPTIONS': {
-                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+    # Parse Redis URL for SSL/TLS connections (common on Render)
+    import ssl
+    from urllib.parse import urlparse
+    
+    parsed_redis_url = urlparse(REDIS_URL)
+    
+    # Check if it's a rediss:// URL (Redis with SSL/TLS)
+    if parsed_redis_url.scheme == 'rediss':
+        # Configure for SSL/TLS connection
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': REDIS_URL,
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                    'CONNECTION_POOL_KWARGS': {
+                        'ssl_cert_reqs': None,  # Don't require certificates
+                        'ssl_check_hostname': False,  # Don't check hostname
+                        'ssl_ca_certs': None,  # No certificate authority
+                    }
+                },
             },
-        },
-    }
+        }
+    else:
+        # Regular Redis connection without SSL
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': REDIS_URL,
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                },
+            },
+        }
 elif REDIS_CACHE_TYPE == 'django-redis':
     # Fall back to individual Redis settings
     redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
@@ -242,17 +266,37 @@ LOGIN_URL = 'login'       # URL name of the login view
 
 # RQ Queue configuration
 if REDIS_URL:
-    # Use the full REDIS_URL if provided
-    RQ_QUEUES = {
-        'default': {
-            'URL': REDIS_URL,
-            'DEFAULT_TIMEOUT': 500,
-            'DEFAULT_RESULT_TTL': 500,
-        },
-        'django-redis': {
-            'USE_REDIS_CACHE': 'default',
-        },
-    }
+    # Parse Redis URL for SSL/TLS connections
+    from urllib.parse import urlparse
+    parsed_redis_url = urlparse(REDIS_URL)
+    
+    if parsed_redis_url.scheme == 'rediss':
+        # Configure for SSL/TLS connection
+        RQ_QUEUES = {
+            'default': {
+                'URL': REDIS_URL,
+                'DEFAULT_TIMEOUT': 500,
+                'DEFAULT_RESULT_TTL': 500,
+                'CONNECTION_CLASS': 'redis.SSLConnection',
+                'SSL_CERT_REQS': None,
+                'SSL_CHECK_HOSTNAME': False,
+            },
+            'django-redis': {
+                'USE_REDIS_CACHE': 'default',
+            },
+        }
+    else:
+        # Regular Redis connection without SSL
+        RQ_QUEUES = {
+            'default': {
+                'URL': REDIS_URL,
+                'DEFAULT_TIMEOUT': 500,
+                'DEFAULT_RESULT_TTL': 500,
+            },
+            'django-redis': {
+                'USE_REDIS_CACHE': 'default',
+            },
+        }
 else:
     # Fall back to individual settings
     redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"

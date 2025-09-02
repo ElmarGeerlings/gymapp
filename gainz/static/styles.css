@@ -541,11 +541,19 @@ footer {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    transition: background-color 0.2s ease;
+}
+
+.routines-for-day-container.drag-over {
+    background-color: #e8f4f8;
+    border: 2px dashed #4a90e2;
+    border-radius: 4px;
 }
 
 .routine-chip {
     display: flex;
     justify-content: space-between;
+    cursor: move;
     align-items: center;
     background-color: #007bff;
     color: white;

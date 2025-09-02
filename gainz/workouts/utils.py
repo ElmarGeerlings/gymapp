@@ -1,9 +1,10 @@
 import re
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, timedelta
+from typing import List, Dict, Optional
 
 from gainz.workouts.models import Workout, ExerciseSet, RoutineExerciseSet, RoutineExercise, Routine
-from gainz.exercises.models import Exercise
+from gainz.exercises.models import Exercise, ExerciseAlternativeName
 
 
 # Helper to resolve target_reps string to an integer
@@ -200,4 +201,180 @@ def get_prefill_data(user, routine_exercise_set_template: RoutineExerciseSet, cu
         return {'reps': suggested_reps, 'weight': None}
         
     # If all else fails, return no pre-fill
-    return {'reps': None, 'weight': None} 
+    return {'reps': None, 'weight': None}
+
+
+class WorkoutParser:
+    """
+    Parser for converting text-based workout logs into structured data.
+    
+    Format expected:
+    Exercise Name SetsxReps Weight
+    
+    Examples:
+    OHP 3x5 70
+    Pull ups 3x10
+    Triceps 4x10 40
+    """
+    
+    def __init__(self):
+        self.parsed_exercises = []
+        self.unmatched_exercises = []
+    
+    def parse_workout_text(self, text: str) -> List[Dict]:
+        """
+        Parse workout text and return a list of exercise dictionaries.
+        
+        Returns:
+            List of dictionaries containing:
+            - exercise_name: str
+            - sets: int
+            - reps: str (can be a range like "8-12")
+            - weight: Optional[float]
+            - raw_line: str (original text line)
+        """
+        lines = text.strip().split('\n')
+        exercises = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            parsed = self._parse_exercise_line(line)
+            if parsed:
+                exercises.append(parsed)
+        
+        return exercises
+    
+    def _parse_exercise_line(self, line: str) -> Optional[Dict]:
+        """
+        Parse a single exercise line.
+        
+        Patterns to match:
+        1. "Exercise 3x5 70" - sets x reps weight
+        2. "Exercise 3x5" - sets x reps (no weight, bodyweight)
+        3. "Exercise 2x2x11 60" - bilateral sets (2 sets per side)
+        """
+        # Skip empty lines
+        if not line.strip():
+            return None
+        
+        # Pattern for exercises with bilateral sets (2x2x11 format)
+        bilateral_pattern = r'^(.+?)\s+(\d+)x(\d+)x(\d+(?:-\d+)?)\s*(\d+(?:\.\d+)?)?$'
+        # Pattern for normal exercises (3x5 format)
+        normal_pattern = r'^(.+?)\s+(\d+)x(\d+(?:-\d+)?)\s*(\d+(?:\.\d+)?)?$'
+        
+        # Try bilateral pattern first
+        match = re.match(bilateral_pattern, line)
+        if match:
+            exercise_name = match.group(1).strip()
+            bilateral_sets = int(match.group(2))
+            sets_per_side = int(match.group(3))
+            reps = match.group(4)
+            weight = float(match.group(5)) if match.group(5) else None
+            
+            # Convert bilateral to total sets
+            total_sets = bilateral_sets * sets_per_side
+            
+            return {
+                'exercise_name': exercise_name,
+                'sets': total_sets,
+                'reps': reps,
+                'weight': weight,
+                'is_bilateral': True,
+                'raw_line': line
+            }
+        
+        # Try normal pattern
+        match = re.match(normal_pattern, line)
+        if match:
+            exercise_name = match.group(1).strip()
+            sets = int(match.group(2))
+            reps = match.group(3)
+            weight = float(match.group(4)) if match.group(4) else None
+            
+            return {
+                'exercise_name': exercise_name,
+                'sets': sets,
+                'reps': reps,
+                'weight': weight,
+                'is_bilateral': False,
+                'raw_line': line
+            }
+        
+        # If no pattern matches, return None
+        return None
+    
+    def find_or_create_exercise(self, exercise_name: str) -> Optional[Exercise]:
+        """
+        Find an existing exercise or create a new one if it doesn't exist.
+        
+        First tries to find an exact match, then checks alternative names,
+        then does fuzzy matching.
+        """
+        # Clean the exercise name
+        clean_name = exercise_name.strip()
+        
+        # Try exact match (case-insensitive)
+        exercise = Exercise.objects.filter(name__iexact=clean_name).first()
+        if exercise:
+            return exercise
+        
+        # Try alternative names
+        alt_name = ExerciseAlternativeName.objects.filter(name__iexact=clean_name).first()
+        if alt_name:
+            return alt_name.exercise
+        
+        # Try fuzzy matching using the model's matches_name method
+        all_exercises = Exercise.objects.all()
+        for ex in all_exercises:
+            if ex.matches_name(clean_name):
+                return ex
+        
+        # If no match found, return None (will need to create)
+        return None
+    
+    def parse_workout_days(self, text: str) -> List[List[Dict]]:
+        """
+        Parse workout text and group exercises into separate days/routines.
+        
+        Days are separated by blank lines in the input text.
+        
+        Returns:
+            List of lists, where each inner list contains exercises for one day/routine.
+        """
+        lines = text.strip().split('\n')
+        workout_days = []
+        current_day_exercises = []
+        
+        for line in lines:
+            line = line.strip()
+            
+            # If we hit a blank line, it's the end of the current day
+            if not line:
+                if current_day_exercises:
+                    workout_days.append(current_day_exercises)
+                    current_day_exercises = []
+                continue
+            
+            # Parse the exercise line
+            parsed = self._parse_exercise_line(line)
+            if parsed:
+                current_day_exercises.append(parsed)
+        
+        # Don't forget the last day if there's no trailing blank line
+        if current_day_exercises:
+            workout_days.append(current_day_exercises)
+        
+        return workout_days
+    
+    def group_exercises_by_day(self, exercises: List[Dict]) -> List[List[Dict]]:
+        """
+        Group exercises into separate workout days.
+        
+        Assumes that exercises are already grouped by day in the input,
+        with empty lines or significant gaps indicating day boundaries.
+        """
+        # This method is deprecated in favor of parse_workout_days
+        return [exercises] if exercises else [] 

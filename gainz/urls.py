@@ -28,10 +28,13 @@ from gainz.views import (
     start_next_workout, # Add new view
     # ajax_get_exercise_details,
     ajax_update_workout_exercise_feedback,
+    ajax_update_program_scheduling,
+    ajax_restore_program_state, # Add restore function
     update_user_preferences, # Add new view for user preferences
     health_check, # Add health check view
     register, # Add register view
     generate_sample_data, # Add sample data generation view
+    import_routine, # Add import routine view
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -88,6 +91,9 @@ urlpatterns = [
 
     # Create Routine
     path('routines/create/', routine_create, name='routine-create'),
+    
+    # Import Routine
+    path('routines/import/', import_routine, name='import-routine'),
 
     # Update Routine
     path('routines/<int:routine_id>/edit/', routine_update, name='routine-update'),
@@ -126,6 +132,8 @@ urlpatterns = [
 
     # path('ajax/get_exercise_details/', ajax_get_exercise_details, name='ajax_get_exercise_details'),
     path('ajax/update_workout_exercise_feedback/', ajax_update_workout_exercise_feedback, name='ajax_update_workout_exercise_feedback'),
+    path('ajax/program/<int:program_id>/update-scheduling/', ajax_update_program_scheduling, name='ajax-update-program-scheduling'),
+    path('ajax/program/<int:program_id>/restore-state/', ajax_restore_program_state, name='ajax-restore-program-state'),
 
     # User Preferences
     path('ajax/update_user_preferences/', update_user_preferences, name='update-user-preferences'),

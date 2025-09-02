@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Import Program from Text</h1>
+    
+    {% if errors %}
+        <div class="alert alert-danger">
+            <ul class="mb-0">
+                {% for error in errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        <div class="mb-3">
+            <label for="program_name" class="form-label">Program Name</label>
+            <input type="text" class="form-control" id="program_name" name="program_name" 
+                   value="{{ program_name }}" required placeholder="e.g., My Training Program">
+        </div>
+        
+        <div class="mb-3">
+            <label for="workout_text" class="form-label">Paste Your Workout Text</label>
+            <textarea class="form-control" id="workout_text" name="workout_text" 
+                      rows="15" required placeholder="Paste your workout text here...">{{ workout_text }}</textarea>
+            <small class="form-text text-muted">
+                Format: Exercise Name SetsxReps Weight
+                <br>
+                Separate different workout days with blank lines.
+                <br>
+                Example:
+                <pre class="mt-2 p-2 bg-light">OHP 3x5 70
+Pull ups 3x10
+Triceps 4x10 40
+
+Ssb squat 3x5 150
+Leg extensions 4x9 35
+Hamstring curls 4x9 30
+
+Incline bench 3x8 70
+Seated low rows 4x10 65
+Pec deck 4x10 55
+
+Deadlift 3x10 180
+Leg press 3x11 200
+Face pulls 4x11 60</pre>
+            </small>
+        </div>
+        
+        <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" id="create_missing" name="create_missing" 
+                   {% if create_missing %}checked{% endif %}>
+            <label class="form-check-label" for="create_missing">
+                Automatically create exercises that don't exist in the database
+            </label>
+        </div>
+        
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Import Program</button>
+            <a href="{% url 'program-list' %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

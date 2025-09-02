@@ -13,6 +13,9 @@
             <a href="{% url 'program-create' %}" class="btn btn-success">
                 <i class="fas fa-plus me-1"></i><span class="d-none d-sm-inline">Create New</span><span class="d-sm-none">New</span>
             </a>
+            <a href="{% url 'import-routine' %}" class="btn btn-info">
+                <i class="fas fa-file-import me-1"></i><span class="d-none d-sm-inline">Import from Text</span><span class="d-sm-none">Import</span>
+            </a>
         </div>
     </div>
 
@@ -32,16 +35,16 @@
     {% else %}
         <div class="list-group">
             {% for program in programs %}
-                <div class="list-group-item {% if program.is_active %}active{% endif %}">
+                <div class="list-group-item {% if program.is_active %}bg-warning text-dark{% endif %}">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">
-                            <h5 class="mb-1 {% if program.is_active %}text-white{% else %}text-dark{% endif %}">{{ program.name }}</h5>
-                            <p class="mb-2 {% if program.is_active %}text-white-50{% else %}text-muted{% endif %}"><small>{{ program.description|truncatewords:20 }}</small></p>
+                            <h5 class="mb-1 {% if program.is_active %}text-dark{% else %}text-dark{% endif %}">{{ program.name }}</h5>
+                            <p class="mb-2 {% if program.is_active %}text-dark{% else %}text-muted{% endif %}"><small>{{ program.description|truncatewords:20 }}</small></p>
 
                             <!-- Show routines and exercises -->
                             {% if program.program_routines.all %}
                                 <div class="mt-2">
-                                    <small class="{% if program.is_active %}text-white-50{% else %}text-muted{% endif %}">
+                                    <small class="{% if program.is_active %}text-dark{% else %}text-muted{% endif %}">
                                         <strong>Routines ({{ program.program_routines.count }}):</strong>
                                     </small>
                                     <div class="row mt-1">
