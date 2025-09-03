@@ -275,14 +275,19 @@ if REDIS_URL:
     
     if parsed_redis_url.scheme == 'rediss':
         # Configure for SSL/TLS connection
-        # For RQ, we need to use a different approach
-        # RQ doesn't support ssl_context directly, so we'll use the URL as-is
-        # and let the redis library handle the SSL connection
+        # Use individual connection parameters with REDIS_CLIENT_KWARGS for SSL
         RQ_QUEUES = {
             'default': {
-                'URL': REDIS_URL,
+                'HOST': parsed_redis_url.hostname,
+                'PORT': parsed_redis_url.port or 6379,
+                'DB': 0,
+                'PASSWORD': parsed_redis_url.password,
                 'DEFAULT_TIMEOUT': 500,
                 'DEFAULT_RESULT_TTL': 500,
+                'REDIS_CLIENT_KWARGS': {
+                    'ssl_cert_reqs': None,  # Don't require SSL certificates
+                    'ssl': True,  # Enable SSL
+                }
             },
             'django-redis': {
                 'USE_REDIS_CACHE': 'default',

@@ -5,6 +5,11 @@ argument-hint: [question to ask Perplexity]
 
 # Perplexity Query: $ARGUMENTS
 
+## Usage:
+```bash
+p 'Your question here'
+```
+
 You have access to 3 Perplexity MCP tools with different capabilities:
 - **ask**: Simple, direct questions
 - **discover**: Advanced research with deeper analysis
