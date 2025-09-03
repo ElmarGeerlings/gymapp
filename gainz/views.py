@@ -29,8 +29,9 @@ from decimal import Decimal
 # Make Redis optional for deployments without Redis
 def get_redis_connection():
     try:
-        from django_rq import get_queue
-        return get_queue().connection
+        # Use django_redis which respects our SSL configuration in settings.py
+        from django_redis import get_redis_connection as django_redis_conn
+        return django_redis_conn("default")
     except:
         return None
 

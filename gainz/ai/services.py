@@ -1,7 +1,10 @@
 import json
 import requests
 from django.conf import settings
-from django_rq import get_queue
+try:
+    from django_redis import get_redis_connection
+except ImportError:
+    get_redis_connection = None
 
 
 class GeminiAIService:
@@ -605,30 +608,36 @@ class ConversationManager:
     """Manages AI conversation state using Redis and persistent logging"""
 
     def __init__(self):
-        queue = get_queue()
-        self.redis = queue.connection
+        # Use django_redis which works with SSL configuration
+        if get_redis_connection:
+            self.redis = get_redis_connection("default")
+        else:
+            self.redis = None
 
     def get_conversation_key(self, user_id, session_id):
         return f"ai_conversation:{user_id}:{session_id}"
 
     def save_conversation(self, user_id, session_id, conversation_history):
         # Save to Redis for active session
-        key = self.get_conversation_key(user_id, session_id)
-        self.redis.set(key, json.dumps(conversation_history), ex=3600)  # 1 hour expiry
+        if self.redis:
+            key = self.get_conversation_key(user_id, session_id)
+            self.redis.set(key, json.dumps(conversation_history), ex=3600)  # 1 hour expiry
 
         # Also save to database for debugging
         self._log_conversation(user_id, session_id, conversation_history)
 
     def get_conversation(self, user_id, session_id):
-        key = self.get_conversation_key(user_id, session_id)
-        data = self.redis.get(key)
-        if data:
-            return json.loads(data.decode('utf-8'))
+        if self.redis:
+            key = self.get_conversation_key(user_id, session_id)
+            data = self.redis.get(key)
+            if data:
+                return json.loads(data.decode('utf-8'))
         return []
 
     def clear_conversation(self, user_id, session_id):
-        key = self.get_conversation_key(user_id, session_id)
-        self.redis.delete(key)
+        if self.redis:
+            key = self.get_conversation_key(user_id, session_id)
+            self.redis.delete(key)
 
     def _log_conversation(self, user_id, session_id, conversation_history):
         """Save conversation to database for debugging"""
