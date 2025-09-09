@@ -31,10 +31,21 @@ from gainz.views import (
     ajax_update_program_scheduling,
     ajax_restore_program_state, # Add restore function
     update_user_preferences, # Add new view for user preferences
+    api_timer_preferences, # Add timer preferences API view
+    api_exercise_timer_overrides, # Add exercise timer overrides API view
+    api_exercise_timer_override_delete, # Add exercise timer override delete API view
+    api_exercises_search, # Add exercises search API view
+    api_program_timer_preferences, # Add program timer preferences API view
+    api_routine_timer_preferences, # Add routine timer preferences API view
     health_check, # Add health check view
     register, # Add register view
     generate_sample_data, # Add sample data generation view
     import_routine, # Add import routine view
+    profile, # Add profile view
+    progress_overview, # Add progress overview view
+    exercise_progress_detail, # Add exercise progress detail view
+    api_exercise_chart_data, # Add exercise chart data API view
+    api_progress_filter_options, # Add progress filter options API view
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -62,12 +73,27 @@ urlpatterns = [
     path('accounts/register/', register, name='register'),  # Added register view
     path('accounts/login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),  # Added login view
     path('accounts/logout/', auth_views.LogoutView.as_view(next_page='home'), name='logout'), # Added logout view
+    path('accounts/profile/', profile, name='profile'),  # Added profile view
 
     # API endpoints
     path('api/', include(router.urls)),
 
     # Simple API test endpoint
     path('api/simple-test/', simple_api_test, name='simple-api-test'),
+    
+    # Timer preferences API endpoint
+    path('api/timer-preferences/', api_timer_preferences, name='api-timer-preferences'),
+    
+    # Exercise timer overrides API endpoints
+    path('api/exercise-timer-overrides/', api_exercise_timer_overrides, name='api-exercise-timer-overrides'),
+    path('api/exercise-timer-overrides/<int:override_id>/delete/', api_exercise_timer_override_delete, name='api-exercise-timer-override-delete'),
+    
+    # Exercise search API endpoint
+    path('api/exercises/search/', api_exercises_search, name='api-exercises-search'),
+    
+    # Program and routine timer preferences API endpoints
+    path('api/programs/<int:program_id>/timer-preferences/', api_program_timer_preferences, name='api-program-timer-preferences'),
+    path('api/routines/<int:routine_id>/timer-preferences/', api_routine_timer_preferences, name='api-routine-timer-preferences'),
 
     # Nested API endpoints
     path('api/workouts/exercises/<int:workout_exercise_id>/sets/',
@@ -137,6 +163,17 @@ urlpatterns = [
 
     # User Preferences
     path('ajax/update_user_preferences/', update_user_preferences, name='update-user-preferences'),
+    
+    # Progress Views
+    path('progress/', progress_overview, name='progress-overview'),
+    path('progress/exercise/<int:exercise_id>/', exercise_progress_detail, name='exercise-progress-detail'),
+
+    # Progress API Endpoints
+    path('api/progress/filter-options/', api_progress_filter_options, name='api-progress-filter-options'),
+    path('api/progress/exercise/<int:exercise_id>/chart-data/', api_exercise_chart_data, name='api-exercise-chart-data'),
+    
+    # Social Features
+    path('social/', include('gainz.social.urls')),
     
     # Development Tools (REMOVE IN PRODUCTION!)
     path('dev/generate-sample-data/', generate_sample_data, name='generate-sample-data'),

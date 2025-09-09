@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="page-header mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'progress-overview' %}">Progress</a></li>
+                <li class="breadcrumb-item active">{{ exercise.name }}</li>
+            </ol>
+        </nav>
+        <h1 class="responsive-text">
+            <i class="fas fa-chart-line me-2"></i>{{ exercise.name }} Progress
+        </h1>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Current Max</h5>
+                    <h3 class="text-primary">{{ progress_data.current_max|floatformat:1|default:"--" }} kg</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Best 1RM Estimate</h5>
+                    <h3 class="text-success">{{ progress_data.best_1rm|floatformat:1|default:"--" }} kg</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Total Volume</h5>
+                    <h3 class="text-info">{{ progress_data.total_volume|floatformat:0|default:"--" }} kg</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Workouts</h5>
+                    <h3 class="text-warning">{{ progress_data.workout_count|default:"--" }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Placeholder -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Progress Chart</h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center py-5">
+                        <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Chart Coming Soon</h5>
+                        <p class="text-muted">Interactive progress chart for {{ exercise.name }} will be displayed here.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Sets Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Recent Sets</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Weight</th>
+                                    <th>Reps</th>
+                                    <th>Est. 1RM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for set_data in recent_sets %}
+                                <tr>
+                                    <td>{{ set_data.date|date:"M j" }}</td>
+                                    <td>{{ set_data.weight }} kg</td>
+                                    <td>{{ set_data.reps }}</td>
+                                    <td>{{ set_data.estimated_1rm|floatformat:1 }} kg</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted">
+                                        No recent sets found
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

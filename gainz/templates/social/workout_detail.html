@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ workout.name }} - Workout{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <!-- Back Button -->
+            <div class="mb-3">
+                <a href="{% url 'social:feed' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i>Back to Feed
+                </a>
+            </div>
+
+            <!-- Workout Header -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-user-circle fa-2x text-primary"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h5 class="mb-0">{{ workout.name }}</h5>
+                            <p class="text-muted mb-0">
+                                by <a href="{% url 'social:profile' workout.user.username %}" class="text-decoration-none">{{ workout.user.username }}</a>
+                                • {{ workout.date|date:"M d, Y \a\t g:i A" }}
+                            </p>
+                        </div>
+                        {% if workout.visibility == 'private' %}
+                            <span class="badge bg-warning text-dark">Private</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if workout.notes %}
+                <div class="card-body">
+                    <p class="mb-0">{{ workout.notes|linebreaksbr }}</p>
+                </div>
+                {% endif %}
+
+                <!-- Social Actions -->
+                <div class="card-footer bg-transparent">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="social-stats">
+                            <span class="me-3">
+                                <i class="fas fa-heart text-danger me-1"></i>
+                                <span class="like-count">{{ workout.get_like_count }}</span> likes
+                            </span>
+                            <span>
+                                <i class="fas fa-comment text-primary me-1"></i>
+                                <span class="comment-count">{{ workout.get_comment_count }}</span> comments
+                            </span>
+                        </div>
+                        
+                        <div class="social-actions">
+                            <button class="btn btn-sm {% if user_has_liked %}btn-danger{% else %}btn-outline-danger{% endif %} like-btn" 
+                                    data-workout-id="{{ workout.id }}"
+                                    data-function="click->toggleLike">
+                                <i class="fas fa-heart me-1"></i>
+                                <span class="like-text">{% if user_has_liked %}Liked{% else %}Like{% endif %}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workout Exercises -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-dumbbell me-2"></i>Exercises ({{ workout.exercises.count }})</h6>
+                </div>
+                <div class="card-body">
+                    {% for exercise in workout.exercises.all %}
+                        <div class="exercise-item mb-4 {% if not forloop.last %}border-bottom pb-3{% endif %}">
+                            <h6 class="mb-2">{{ exercise.exercise.name }}</h6>
+                            
+                            {% if exercise.sets.all %}
+                                <div class="table-responsive">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Set</th>
+                                                <th>Reps</th>
+                                                <th>Weight</th>
+                                                <th>Type</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for set in exercise.sets.all %}
+                                                <tr>
+                                                    <td>{{ set.set_number }}</td>
+                                                    <td>{{ set.reps }}</td>
+                                                    <td>{{ set.weight }} kg</td>
+                                                    <td>
+                                                        {% if set.is_warmup %}
+                                                            <span class="badge bg-warning text-dark">Warmup</span>
+                                                        {% else %}
+                                                            <span class="badge bg-success">Working</span>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% endif %}
+                            
+                            {% if exercise.notes %}
+                                <p class="text-muted small mt-2"><strong>Notes:</strong> {{ exercise.notes }}</p>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Comments Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0" id="comments"><i class="fas fa-comment me-2"></i>Comments</h6>
+                </div>
+                
+                <!-- Add Comment Form -->
+                {% if can_comment and user.is_authenticated %}
+                <div class="card-body border-bottom">
+                    <form class="add-comment-form">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <textarea class="form-control" name="content" rows="3" 
+                                      placeholder="Write a comment..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm"
+                                data-workout-id="{{ workout.id }}"
+                                data-function="submit->addComment">
+                            <i class="fas fa-paper-plane me-1"></i>Post Comment
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+                
+                <!-- Comments List -->
+                <div class="card-body">
+                    <div class="comments-container">
+                        {% if comments %}
+                            {% for comment in comments %}
+                                <div class="comment-item d-flex mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
+                                    <div class="me-3">
+                                        <i class="fas fa-user-circle fa-2x text-primary"></i>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">
+                                            <a href="{% url 'social:profile' comment.user.username %}" class="text-decoration-none">
+                                                {{ comment.user.username }}
+                                            </a>
+                                            <small class="text-muted ms-2">{{ comment.created_at|date:"M d, Y \a\t g:i A" }}</small>
+                                        </h6>
+                                        <p class="mb-0">{{ comment.content|linebreaksbr }}</p>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-3">
+                                <i class="fas fa-comment fa-3x text-muted mb-3"></i>
+                                <p class="text-muted">No comments yet. Be the first to comment!</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Like functionality
+window.toggleLike = function(event) {
+    const button = event.target.closest('button');
+    const workoutId = button.dataset.workoutId;
+    
+    fetch(`/social/api/like/${workoutId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.liked) {
+            button.classList.remove('btn-outline-danger');
+            button.classList.add('btn-danger');
+            button.querySelector('.like-text').textContent = 'Liked';
+        } else {
+            button.classList.remove('btn-danger');
+            button.classList.add('btn-outline-danger');
+            button.querySelector('.like-text').textContent = 'Like';
+        }
+        
+        // Update like count
+        document.querySelector('.like-count').textContent = data.like_count;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+};
+
+// Add comment functionality
+window.addComment = function(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const workoutId = form.querySelector('[data-workout-id]').dataset.workoutId;
+    const contentField = form.querySelector('[name="content"]');
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalButtonText = submitButton.innerHTML;
+    
+    // Disable form during submission
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Posting...';
+    
+    const formData = new FormData(form);
+    
+    fetch(`/social/api/comment/${workoutId}/`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Clear form
+            contentField.value = '';
+            
+            // Add new comment to the list
+            const commentsContainer = document.querySelector('.comments-container');
+            const newCommentHTML = `
+                <div class="comment-item d-flex mb-3 border-bottom pb-3">
+                    <div class="me-3">
+                        <i class="fas fa-user-circle fa-2x text-primary"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">
+                            <a href="/social/profile/${data.comment.user}/" class="text-decoration-none">
+                                ${data.comment.user}
+                            </a>
+                            <small class="text-muted ms-2">${data.comment.created_at}</small>
+                        </h6>
+                        <p class="mb-0">${data.comment.content}</p>
+                    </div>
+                </div>
+            `;
+            
+            // If no comments were shown, replace the "no comments" message
+            if (commentsContainer.querySelector('.text-center')) {
+                commentsContainer.innerHTML = newCommentHTML;
+            } else {
+                commentsContainer.insertAdjacentHTML('beforeend', newCommentHTML);
+            }
+            
+            // Update comment count
+            document.querySelector('.comment-count').textContent = data.comment.comment_count;
+        } else {
+            alert('Error posting comment: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error posting comment. Please try again.');
+    })
+    .finally(() => {
+        // Re-enable form
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalButtonText;
+    });
+};
+</script>
+{% endblock %}

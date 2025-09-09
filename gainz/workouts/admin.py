@@ -1,7 +1,8 @@
 from django.contrib import admin
 from .models import (
     Program, Routine, RoutineExercise, RoutineExerciseSet,
-    Workout, WorkoutExercise, ExerciseSet, ProgramRoutine
+    Workout, WorkoutExercise, ExerciseSet, ProgramRoutine,
+    UserTimerPreference, ExerciseTimerOverride, PersonalRecord
 )
 
 # --- Planning Model Admins ---
@@ -117,6 +118,39 @@ class ExerciseSetAdmin(admin.ModelAdmin):
     search_fields = ('workout_exercise__exercise__name', 'workout_exercise__workout__name')
     # Autocomplete fields are good for ForeignKeys with many options
     autocomplete_fields = ['workout_exercise']
+
+# --- Timer Preference Model Admins ---
+
+@admin.register(UserTimerPreference)
+class UserTimerPreferenceAdmin(admin.ModelAdmin):
+    list_display = ('user', 'primary_timer_seconds', 'secondary_timer_seconds', 'accessory_timer_seconds', 'auto_start_timer', 'timer_sound_enabled')
+    list_filter = ('auto_start_timer', 'timer_sound_enabled')
+    search_fields = ('user__username', 'user__email')
+    autocomplete_fields = ['user']
+    fieldsets = (
+        ('Default Timer Settings', {
+            'fields': ('user', 'primary_timer_seconds', 'secondary_timer_seconds', 'accessory_timer_seconds')
+        }),
+        ('Timer Behavior', {
+            'fields': ('auto_start_timer', 'timer_sound_enabled')
+        }),
+    )
+
+@admin.register(ExerciseTimerOverride)
+class ExerciseTimerOverrideAdmin(admin.ModelAdmin):
+    list_display = ('user', 'exercise', 'timer_seconds')
+    list_filter = ('user', 'exercise__exercise_type')
+    search_fields = ('user__username', 'exercise__name')
+    autocomplete_fields = ['user', 'exercise']
+
+@admin.register(PersonalRecord)
+class PersonalRecordAdmin(admin.ModelAdmin):
+    list_display = ('user', 'exercise', 'record_type', 'weight', 'reps', 'date_achieved')
+    list_filter = ('record_type', 'exercise', 'date_achieved')
+    search_fields = ('user__username', 'exercise__name')
+    ordering = ('-date_achieved',)
+    readonly_fields = ('date_achieved', 'get_estimated_1rm')
+    autocomplete_fields = ['user', 'exercise']
 
 # Remove the old simple registrations
 # admin.site.register(Workout, WorkoutAdmin)

@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, timedelta
 from typing import List, Dict, Optional
 
-from gainz.workouts.models import Workout, ExerciseSet, RoutineExerciseSet, RoutineExercise, Routine
+from gainz.workouts.models import Workout, ExerciseSet, RoutineExerciseSet, RoutineExercise, Routine, UserTimerPreference, WorkoutExercise
 from gainz.exercises.models import Exercise, ExerciseAlternativeName
 
 
@@ -90,6 +90,13 @@ def get_prefill_data(user, routine_exercise_set_template: RoutineExerciseSet, cu
     routine_exercise = routine_exercise_set_template.routine_exercise
     base_exercise = routine_exercise.exercise
 
+    # Get user's auto-progression preferences
+    timer_prefs = None
+    try:
+        timer_prefs = UserTimerPreference.objects.get(user=user)
+    except UserTimerPreference.DoesNotExist:
+        pass
+
     # --- 1. Last Logged Performance (Same Routine, Same Set Number) ---
     # Find the most recent Workout by user linked to routine_exercise_set_template.routine_exercise.
     # From that workout, get the actual reps and weight logged for the ExerciseSet
@@ -112,6 +119,28 @@ def get_prefill_data(user, routine_exercise_set_template: RoutineExerciseSet, cu
             if logged_set:
                 suggested_reps = logged_set.reps
                 suggested_weight = logged_set.weight
+                
+                # Apply auto-progression if enabled and performance feedback exists
+                if (timer_prefs and timer_prefs.auto_progression_enabled and 
+                    workout_exercise_instance.performance_feedback):
+                    
+                    if workout_exercise_instance.performance_feedback == 'increase':
+                        # Try to increase weight first
+                        if suggested_weight and timer_prefs.default_weight_increment:
+                            suggested_weight = suggested_weight + timer_prefs.default_weight_increment
+                        # If no weight or weight is bodyweight exercise, increase reps
+                        elif timer_prefs.default_rep_increment:
+                            suggested_reps = suggested_reps + timer_prefs.default_rep_increment
+                            
+                    elif workout_exercise_instance.performance_feedback == 'decrease':
+                        # Try to decrease weight first
+                        if suggested_weight and timer_prefs.default_weight_increment:
+                            new_weight = suggested_weight - timer_prefs.default_weight_increment
+                            suggested_weight = max(new_weight, Decimal('0.0'))  # Don't go below 0
+                        # If no weight or already at minimum weight, decrease reps
+                        elif timer_prefs.default_rep_increment and suggested_reps > timer_prefs.default_rep_increment:
+                            suggested_reps = suggested_reps - timer_prefs.default_rep_increment
+                
                 return {'reps': suggested_reps, 'weight': suggested_weight}
 
     # --- 2. First Time with Routine - Use Template Values ---

@@ -1,6 +1,9 @@
 from django.db import models
 from django.conf import settings
 from gainz.exercises.models import Exercise
+from decimal import Decimal
+import math
+from typing import Dict, Optional
 
 # -- Program and Routine Planning Models --
 
@@ -121,9 +124,45 @@ class Workout(models.Model):
         null=True,
         blank=True
     )
+    
+    # Social features
+    VISIBILITY_CHOICES = [
+        ('public', 'Public'),
+        ('private', 'Private'),
+    ]
+    visibility = models.CharField(
+        max_length=10,
+        choices=VISIBILITY_CHOICES,
+        default='public',
+        help_text="Who can see this workout"
+    )
 
     def __str__(self):
         return f"{self.name} - {self.date.strftime('%Y-%m-%d')}"
+    
+    def is_public(self):
+        """Check if workout is public"""
+        return self.visibility == 'public'
+    
+    def can_be_viewed_by(self, user):
+        """Check if user can view this workout"""
+        if self.user == user:
+            return True  # Owner can always view
+        return self.is_public()
+    
+    def get_like_count(self):
+        """Get total number of likes for this workout"""
+        return self.likes.count() if hasattr(self, 'likes') else 0
+    
+    def get_comment_count(self):
+        """Get total number of comments for this workout"""
+        return self.comments.count() if hasattr(self, 'comments') else 0
+    
+    def is_liked_by(self, user):
+        """Check if user has liked this workout"""
+        if not user.is_authenticated:
+            return False
+        return self.likes.filter(user=user).exists() if hasattr(self, 'likes') else False
 
 class WorkoutExercise(models.Model):
     """ Represents a specific exercise performed during a logged workout. """
@@ -185,3 +224,225 @@ class ExerciseSet(models.Model):
     def __str__(self):
         # Adding a basic __str__ for ExerciseSet
         return f"Set {self.set_number} for {self.workout_exercise}"
+    
+    def calculate_1rm_epley(self) -> Decimal:
+        """Calculate 1RM using Epley formula - best for 1-5 reps"""
+        if self.reps == 1:
+            return self.weight
+        return self.weight * (1 + Decimal('0.0333') * self.reps)
+    
+    def calculate_1rm_brzycki(self) -> Decimal:
+        """Calculate 1RM using Brzycki formula - best for 6-10 reps"""
+        if self.reps == 1:
+            return self.weight
+        return self.weight / (Decimal('1.0278') - Decimal('0.0278') * self.reps)
+    
+    def calculate_1rm_lombardi(self) -> Decimal:
+        """Calculate 1RM using Lombardi formula"""
+        if self.reps == 1:
+            return self.weight
+        return self.weight * (Decimal(str(self.reps)) ** Decimal('0.10'))
+    
+    def calculate_1rm_mcglothin(self) -> Decimal:
+        """Calculate 1RM using McGlothin formula"""
+        if self.reps == 1:
+            return self.weight
+        return self.weight * (1 + Decimal('0.025') * self.reps)
+    
+    def calculate_1rm_wathen(self) -> Decimal:
+        """Calculate 1RM using Wathen formula - most accurate overall"""
+        if self.reps == 1:
+            return self.weight
+        exp_term = Decimal(str(math.exp(-0.075 * self.reps)))
+        return self.weight * (Decimal('48.8') + Decimal('53.8') * exp_term) / 100
+    
+    def get_best_1rm_estimate(self) -> Optional[Decimal]:
+        """Return most accurate 1RM estimate based on rep range"""
+        if not self.is_valid_for_1rm():
+            return None
+            
+        if self.reps == 1:
+            return self.weight
+        elif 2 <= self.reps <= 5:
+            return self.calculate_1rm_epley()
+        elif 6 <= self.reps <= 10:
+            return self.calculate_1rm_brzycki()
+        elif 11 <= self.reps <= 15:
+            return self.calculate_1rm_brzycki()
+        else:
+            return None  # Unreliable for >15 reps
+    
+    def get_all_1rm_estimates(self) -> Dict[str, Optional[Decimal]]:
+        """Return all 1RM calculations for comparison"""
+        if not self.is_valid_for_1rm():
+            return {}
+            
+        return {
+            'epley': self.calculate_1rm_epley(),
+            'brzycki': self.calculate_1rm_brzycki(),
+            'lombardi': self.calculate_1rm_lombardi(),
+            'mcglothin': self.calculate_1rm_mcglothin(),
+            'wathen': self.calculate_1rm_wathen(),
+            'best_estimate': self.get_best_1rm_estimate(),
+        }
+    
+    def get_rep_range_category(self) -> str:
+        """Return 'low' (1-3), 'mid' (4-6), 'high' (7+)"""
+        if 1 <= self.reps <= 3:
+            return 'low'
+        elif 4 <= self.reps <= 6:
+            return 'mid'
+        else:
+            return 'high'
+    
+    def is_valid_for_1rm(self) -> bool:
+        """Check if set is valid for 1RM calculation"""
+        return (
+            not self.is_warmup and 
+            self.weight > 0 and 
+            self.reps > 0 and 
+            self.reps <= 15
+        )
+    
+    def get_volume(self) -> Decimal:
+        """Calculate volume (sets × reps × weight) for this set"""
+        return self.reps * self.weight
+
+# -- Timer Preference Models --
+
+class UserTimerPreference(models.Model):
+    """ User's default timer preferences for different exercise types """
+    WEIGHT_UNIT_CHOICES = [
+        ('kg', 'Kilograms'),
+        ('lbs', 'Pounds'),
+    ]
+    
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='timer_preferences')
+    primary_timer_seconds = models.PositiveIntegerField(default=180, help_text="Default rest timer for primary exercises in seconds")
+    secondary_timer_seconds = models.PositiveIntegerField(default=120, help_text="Default rest timer for secondary exercises in seconds")
+    accessory_timer_seconds = models.PositiveIntegerField(default=90, help_text="Default rest timer for accessory exercises in seconds")
+    auto_start_timer = models.BooleanField(default=False, help_text="Automatically start timer after logging a set")
+    timer_sound_enabled = models.BooleanField(default=True, help_text="Play sound when timer completes")
+    preferred_weight_unit = models.CharField(
+        max_length=3,
+        choices=WEIGHT_UNIT_CHOICES,
+        default='kg',
+        help_text="Preferred unit for displaying and entering weights"
+    )
+    
+    # Auto-progression preferences
+    auto_progression_enabled = models.BooleanField(default=False, help_text="Automatically adjust weights/reps based on performance feedback")
+    default_weight_increment = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=2.5,
+        help_text="Default weight increment for auto-progression (e.g., 2.5 kg/lbs)"
+    )
+    default_rep_increment = models.PositiveIntegerField(
+        default=1,
+        help_text="Default rep increment for auto-progression when weight can't be increased"
+    )
+
+    class Meta:
+        verbose_name = "User Timer Preference"
+        verbose_name_plural = "User Timer Preferences"
+
+    def __str__(self):
+        return f"Timer preferences for {self.user.username}"
+
+class ExerciseTimerOverride(models.Model):
+    """ User-specific timer overrides for individual exercises """
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='exercise_timer_overrides')
+    exercise = models.ForeignKey('exercises.Exercise', on_delete=models.CASCADE)
+    timer_seconds = models.PositiveIntegerField(help_text="Custom rest timer for this exercise in seconds")
+
+    class Meta:
+        verbose_name = "Exercise Timer Override"
+        verbose_name_plural = "Exercise Timer Overrides"
+        unique_together = ('user', 'exercise')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.exercise.name} ({self.timer_seconds}s)"
+
+class PersonalRecord(models.Model):
+    """ Tracks personal records for exercises with optional video proof """
+    RECORD_TYPE_CHOICES = [
+        ('1rm', '1 Rep Max'),
+        ('volume', 'Volume Record'),
+        ('endurance', 'Endurance Record'),
+    ]
+    
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='personal_records')
+    exercise = models.ForeignKey('exercises.Exercise', on_delete=models.CASCADE, related_name='records')
+    record_type = models.CharField(max_length=20, choices=RECORD_TYPE_CHOICES, default='1rm')
+    
+    # Core record data
+    weight = models.DecimalField(max_digits=6, decimal_places=2, help_text="Weight used for the record")
+    reps = models.PositiveIntegerField(help_text="Reps achieved for the record")
+    
+    # Metadata
+    date_achieved = models.DateTimeField(auto_now_add=True)
+    workout_exercise_source = models.ForeignKey(
+        WorkoutExercise,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='personal_records_achieved',
+        help_text="The workout exercise that achieved this record"
+    )
+    
+    # Optional video upload
+    video = models.FileField(
+        upload_to='personal_records/videos/%Y/%m/',
+        null=True,
+        blank=True,
+        help_text="Optional video proof of the personal record"
+    )
+    
+    notes = models.TextField(blank=True, help_text="Additional notes about this record")
+    
+    class Meta:
+        verbose_name = "Personal Record"
+        verbose_name_plural = "Personal Records"
+        unique_together = ('user', 'exercise', 'record_type')
+        ordering = ['-date_achieved']
+        
+    def __str__(self):
+        return f"{self.user.username} - {self.exercise.name} {self.record_type}: {self.weight}kg x {self.reps}"
+    
+    def get_estimated_1rm(self):
+        """Calculate estimated 1RM using Brzycki formula"""
+        if self.reps == 1:
+            return self.weight
+        # Brzycki formula: 1RM = weight / (1.0278 - 0.0278 × reps)
+        return self.weight / (1.0278 - 0.0278 * self.reps)
+
+class ProgramTimerPreference(models.Model):
+    """ Program-specific timer preferences for the highest level of timer customization """
+    program = models.OneToOneField(Program, on_delete=models.CASCADE, related_name='timer_preferences')
+    primary_timer_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Program-specific timer for primary exercises in seconds")
+    secondary_timer_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Program-specific timer for secondary exercises in seconds")
+    accessory_timer_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Program-specific timer for accessory exercises in seconds")
+    auto_start_timer = models.BooleanField(null=True, blank=True, help_text="Program-specific auto-start timer preference")
+
+    class Meta:
+        verbose_name = "Program Timer Preference"
+        verbose_name_plural = "Program Timer Preferences"
+
+    def __str__(self):
+        return f"Timer preferences for program: {self.program.name}"
+
+class RoutineTimerPreference(models.Model):
+    """ Routine-specific timer preferences for granular timer customization """
+    routine = models.OneToOneField(Routine, on_delete=models.CASCADE, related_name='timer_preferences')
+    primary_timer_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Routine-specific timer for primary exercises in seconds")
+    secondary_timer_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Routine-specific timer for secondary exercises in seconds")
+    accessory_timer_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Routine-specific timer for accessory exercises in seconds")
+    auto_start_timer = models.BooleanField(null=True, blank=True, help_text="Routine-specific auto-start timer preference")
+
+    class Meta:
+        verbose_name = "Routine Timer Preference"
+        verbose_name_plural = "Routine Timer Preferences"
+
+    def __str__(self):
+        return f"Timer preferences for routine: {self.routine.name}"

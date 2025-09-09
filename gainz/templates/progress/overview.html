@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="page-header mb-4">
+        <h1 class="responsive-text">
+            <i class="fas fa-chart-line me-2"></i>Progress Overview
+        </h1>
+    </div>
+
+    <!-- Progress Metrics Cards -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-dumbbell fa-2x"></i>
+                        </div>
+                        <div>
+                            <h5 class="card-title mb-1">{{ metrics.total_workouts|default:0 }}</h5>
+                            <p class="card-text mb-0">Total Workouts</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-trophy fa-2x"></i>
+                        </div>
+                        <div>
+                            <h5 class="card-title mb-1">{{ metrics.personal_records|default:0 }}</h5>
+                            <p class="card-text mb-0">Personal Records</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-weight-hanging fa-2x"></i>
+                        </div>
+                        <div>
+                            <h5 class="card-title mb-1">{{ metrics.total_volume|floatformat:0|default:0 }}</h5>
+                            <p class="card-text mb-0">Total Volume (kg)</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-calendar-check fa-2x"></i>
+                        </div>
+                        <div>
+                            <h5 class="card-title mb-1">{{ metrics.consistency_score|floatformat:0|default:0 }}%</h5>
+                            <p class="card-text mb-0">Consistency</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Placeholder for Charts -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-line me-2"></i>Progress Charts
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center py-5">
+                        <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Charts Coming Soon</h5>
+                        <p class="text-muted">Interactive progress charts will be displayed here.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Exercises Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-medal me-2"></i>Top Exercises
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for exercise in top_exercises %}
+                        <div class="col-lg-2 col-md-3 col-sm-4 col-6 mb-3">
+                            <a href="{% url 'exercise-progress-detail' exercise.id %}" class="text-decoration-none">
+                                <div class="card h-100 border-2">
+                                    <div class="card-body text-center">
+                                        <i class="fas fa-dumbbell fa-2x text-primary mb-2"></i>
+                                        <h6 class="card-title">{{ exercise.name }}</h6>
+                                        <p class="card-text text-muted mb-1">
+                                            <strong>{{ exercise.volume|floatformat:0 }} kg</strong>
+                                        </p>
+                                        <small class="text-muted">Total Volume</small>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                        {% empty %}
+                        <div class="col-12">
+                            <div class="text-center text-muted py-4">
+                                <i class="fas fa-info-circle fa-2x mb-3"></i>
+                                <p>No exercise data available.</p>
+                                <a href="{% url 'log-workout' %}" class="btn btn-primary">
+                                    <i class="fas fa-plus me-1"></i>Log Your First Workout
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -39,6 +39,41 @@
 
                 <hr class="my-4">
 
+                <h4 class="mb-3">Timer Preferences</h4>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="primary_timer_seconds" class="form-label">Primary Exercise Timer (seconds)</label>
+                        <input type="number" class="form-control" id="primary_timer_seconds" name="primary_timer_seconds" 
+                               value="{% if program_timer_prefs.primary_timer_seconds %}{{ program_timer_prefs.primary_timer_seconds }}{% endif %}" 
+                               min="10" max="3600" placeholder="Default: User Setting">
+                        <small class="form-text text-muted">Leave blank to use user default</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="secondary_timer_seconds" class="form-label">Secondary Exercise Timer (seconds)</label>
+                        <input type="number" class="form-control" id="secondary_timer_seconds" name="secondary_timer_seconds" 
+                               value="{% if program_timer_prefs.secondary_timer_seconds %}{{ program_timer_prefs.secondary_timer_seconds }}{% endif %}" 
+                               min="10" max="3600" placeholder="Default: User Setting">
+                        <small class="form-text text-muted">Leave blank to use user default</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="accessory_timer_seconds" class="form-label">Accessory Exercise Timer (seconds)</label>
+                        <input type="number" class="form-control" id="accessory_timer_seconds" name="accessory_timer_seconds" 
+                               value="{% if program_timer_prefs.accessory_timer_seconds %}{{ program_timer_prefs.accessory_timer_seconds }}{% endif %}" 
+                               min="10" max="3600" placeholder="Default: User Setting">
+                        <small class="form-text text-muted">Leave blank to use user default</small>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="auto_start_timer" name="auto_start_timer"
+                               {% if program_timer_prefs.auto_start_timer %}checked{% endif %}>
+                        <label class="form-check-label" for="auto_start_timer">Auto-start timer for this program</label>
+                        <small class="form-text text-muted d-block">Override user's auto-start setting for this program</small>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
                 <h4 class="mb-3">Scheduling Type</h4>
                 <div class="mb-3">
                     <div class="form-check">

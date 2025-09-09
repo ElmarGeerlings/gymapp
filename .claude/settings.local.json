@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\Users\\Elmar\\buffdaddy\\gymapp\\gainz\\workouts\\migrations\")",
+      "Bash(python manage.py makemigrations:*)",
+      "Bash(python manage.py migrate:*)",
+      "Bash(python manage.py:*)",
+      "Bash(python:*)",
+      "Bash(node:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

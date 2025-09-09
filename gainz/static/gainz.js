@@ -231,7 +231,7 @@ async function restoreProgramStateViaAPI(programId, originalState) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
+                'X-CSRFToken': getCsrfToken()
             },
             body: JSON.stringify({
                 original_state: originalState
@@ -313,7 +313,7 @@ async function toggleScheduleType() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken')
+                        'X-CSRFToken': getCsrfToken()
                     },
                     body: JSON.stringify({
                         scheduling_type: 'weekly',
@@ -397,7 +397,7 @@ async function toggleScheduleType() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken')
+                        'X-CSRFToken': getCsrfToken()
                     },
                     body: JSON.stringify({
                         scheduling_type: 'sequential',
@@ -554,11 +554,30 @@ document.addEventListener('keydown', (event) => {
 //          UI UTILITIES
 // ======================================
 
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            // Does this cookie string begin with the name we want?
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
 function getCsrfToken() {
     let token = document.querySelector('meta[name="csrf-token"]');
     if (token) return token.content;
     token = document.querySelector('[name=csrfmiddlewaretoken]');
     if (token) return token.value;
+    // Fallback to cookie
+    token = getCookie('csrftoken');
+    if (token) return token;
     console.error('CSRF token not found');
     return null;
 }
@@ -899,6 +918,11 @@ async function addSet(event) {
     
     if (response.ok) {
         send_toast('Set added', 'success');
+        
+        // Auto-start timer based on user preferences
+        if (window.handleTimerAutoStart) {
+            await window.handleTimerAutoStart(button);
+        }
         
         // No inputs to clear since we're using a simple + button
         
@@ -1433,6 +1457,8 @@ function handleDrop(event) {
 function setupDragAndDropListeners(cardElement) {
     cardElement.addEventListener('dragstart', handleDragStart);
     cardElement.addEventListener('dragend', handleDragEnd);
+    // Add touch support for mobile
+    addTouchDragSupport(cardElement, 'routine-exercises');
 }
 
 // This function was modified to correctly handle new card structure and add a default set.
@@ -1658,6 +1684,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('workout-exercises-container')) {
         initializeWorkoutExercisesDragDrop();
     }
+
+    // Initialize touch drag support for all existing draggable elements
+    initializeTouchDragSupport();
 
     // Start observing the body for dynamically added/changed elements
     console.log('Starting MutationObserver for data-function attributes...');
@@ -2102,6 +2131,8 @@ function initializeWorkoutExercisesDragDrop() {
     container.querySelectorAll('.workout-exercise-card').forEach(card => {
         card.addEventListener('dragstart', handleWorkoutExerciseDragStart);
         card.addEventListener('dragend', handleWorkoutExerciseDragEnd);
+        // Add touch support for mobile
+        addTouchDragSupport(card, 'workout-exercises');
     });
 
     // Set up drop zones for each category
@@ -2212,6 +2243,8 @@ function handleProgramRoutineDrop(event) {
 function setupProgramRoutineDragListeners(chip) {
     chip.addEventListener('dragstart', handleProgramRoutineDragStart);
     chip.addEventListener('dragend', handleProgramRoutineDragEnd);
+    // Add touch support for mobile
+    addTouchDragSupport(chip, 'program-routines');
 }
 
 function initializeProgramRoutinesDragDrop() {
@@ -2347,3 +2380,260 @@ function handleAddRoutineToDay(event) {
 function handleRemoveRoutineFromDay(chipElement) {
     chipElement.remove();
 }
+
+
+// ======================================
+//      MOBILE TOUCH DRAG & DROP SUPPORT
+// ======================================
+
+let touchDragData = {
+    isDragging: false,
+    draggedElement: null,
+    startX: 0,
+    startY: 0,
+    offsetX: 0,
+    offsetY: 0,
+    clone: null,
+    originalParent: null,
+    dragType: null // 'routine-exercises', 'workout-exercises', 'program-routines'
+};
+
+function addTouchDragSupport(element, dragType) {
+    element.addEventListener('touchstart', (e) => handleTouchStart(e, dragType), { passive: false });
+    element.addEventListener('touchmove', handleTouchMove, { passive: false });
+    element.addEventListener('touchend', handleTouchEnd, { passive: false });
+}
+
+function handleTouchStart(event, dragType) {
+    if (event.touches.length !== 1) return;
+    
+    const touch = event.touches[0];
+    const element = event.currentTarget;
+    
+    // Only start drag for draggable elements
+    if (!element.draggable) return;
+    
+    touchDragData.isDragging = false; // Will be set to true in touchmove if threshold exceeded
+    touchDragData.draggedElement = element;
+    touchDragData.startX = touch.clientX;
+    touchDragData.startY = touch.clientY;
+    touchDragData.dragType = dragType;
+    touchDragData.originalParent = element.parentNode;
+    
+    const rect = element.getBoundingClientRect();
+    touchDragData.offsetX = touch.clientX - rect.left;
+    touchDragData.offsetY = touch.clientY - rect.top;
+    
+    // Prevent default to avoid scrolling while potentially dragging
+    event.preventDefault();
+}
+
+function handleTouchMove(event) {
+    if (!touchDragData.draggedElement || event.touches.length !== 1) return;
+    
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - touchDragData.startX);
+    const deltaY = Math.abs(touch.clientY - touchDragData.startY);
+    
+    // Threshold to start dragging (prevents accidental drags)
+    if (!touchDragData.isDragging && (deltaX > 10 || deltaY > 10)) {
+        touchDragData.isDragging = true;
+        startTouchDrag(event);
+    }
+    
+    if (touchDragData.isDragging) {
+        updateTouchDrag(event);
+    }
+    
+    event.preventDefault();
+}
+
+function startTouchDrag(event) {
+    const element = touchDragData.draggedElement;
+    
+    // Create visual clone
+    touchDragData.clone = element.cloneNode(true);
+    touchDragData.clone.classList.add('dragging-clone');
+    touchDragData.clone.style.pointerEvents = 'none';
+    touchDragData.clone.style.transform = 'rotate(5deg)';
+    touchDragData.clone.style.opacity = '0.8';
+    
+    const rect = element.getBoundingClientRect();
+    touchDragData.clone.style.width = `${rect.width}px`;
+    touchDragData.clone.style.height = `${rect.height}px`;
+    
+    document.body.appendChild(touchDragData.clone);
+    
+    // Hide original element
+    element.classList.add('drag-source-hidden');
+    
+    // Call appropriate drag start handler
+    simulateDragStart(element);
+}
+
+function updateTouchDrag(event) {
+    if (!touchDragData.clone) return;
+    
+    const touch = event.touches[0];
+    touchDragData.clone.style.left = `${touch.clientX - touchDragData.offsetX}px`;
+    touchDragData.clone.style.top = `${touch.clientY - touchDragData.offsetY}px`;
+    
+    // Find element under touch (excluding the clone)
+    touchDragData.clone.style.display = 'none';
+    const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    touchDragData.clone.style.display = 'block';
+    
+    if (elementBelow) {
+        handleTouchDragOver(elementBelow, touch);
+    }
+}
+
+function handleTouchDragOver(elementBelow, touch) {
+    const draggedElement = touchDragData.draggedElement;
+    
+    switch (touchDragData.dragType) {
+        case 'routine-exercises':
+            const routineContainer = document.getElementById('routine-exercises-container');
+            if (routineContainer && routineContainer.contains(elementBelow)) {
+                // Simulate routine exercise reordering
+                const afterElement = getDragAfterElement(routineContainer, touch.clientY, draggedElement);
+                if (afterElement && afterElement !== draggedElement) {
+                    routineContainer.insertBefore(draggedElement, afterElement);
+                } else if (!afterElement) {
+                    routineContainer.appendChild(draggedElement);
+                }
+            }
+            break;
+            
+        case 'workout-exercises':
+            const categoryContainer = elementBelow.closest('.exercise-category-container');
+            if (categoryContainer) {
+                const afterElement = getWorkoutDragAfterElement(categoryContainer, touch.clientY, draggedElement);
+                if (afterElement && afterElement !== draggedElement) {
+                    categoryContainer.insertBefore(draggedElement, afterElement);
+                } else if (!afterElement) {
+                    categoryContainer.appendChild(draggedElement);
+                }
+            }
+            break;
+            
+        case 'program-routines':
+            const dayContainer = elementBelow.closest('.routines-for-day-container');
+            if (dayContainer && dayContainer !== touchDragData.originalParent) {
+                // Update hidden input for new day
+                const newDayValue = dayContainer.closest('.day-column').dataset.dayValue;
+                const hiddenInput = draggedElement.querySelector('input[type="hidden"]');
+                if (hiddenInput) {
+                    hiddenInput.name = `weekly_day_${newDayValue}_routines`;
+                }
+                dayContainer.appendChild(draggedElement);
+            }
+            break;
+    }
+}
+
+function handleTouchEnd(event) {
+    if (!touchDragData.isDragging) {
+        // Not a drag, might be a tap - reset and allow normal behavior
+        resetTouchDrag();
+        return;
+    }
+    
+    event.preventDefault();
+    
+    if (touchDragData.draggedElement) {
+        // Restore visibility
+        touchDragData.draggedElement.classList.remove('drag-source-hidden');
+        
+        // Call appropriate update functions
+        switch (touchDragData.dragType) {
+            case 'routine-exercises':
+                updateRoutineExerciseOrderNumbers();
+                break;
+            case 'workout-exercises':
+                const container = touchDragData.draggedElement.closest('.exercise-category-container');
+                if (container) {
+                    updateWorkoutExerciseOrder(container);
+                }
+                break;
+            case 'program-routines':
+                // Program routine updates are handled in handleTouchDragOver
+                break;
+        }
+    }
+    
+    resetTouchDrag();
+}
+
+function simulateDragStart(element) {
+    // Set the appropriate global drag variables based on drag type
+    switch (touchDragData.dragType) {
+        case 'routine-exercises':
+            draggedItem = element;
+            break;
+        case 'workout-exercises':
+            workoutDraggedItem = element;
+            break;
+        case 'program-routines':
+            programDraggedChip = element;
+            break;
+    }
+}
+
+function resetTouchDrag() {
+    if (touchDragData.clone) {
+        document.body.removeChild(touchDragData.clone);
+    }
+    
+    if (touchDragData.draggedElement) {
+        touchDragData.draggedElement.classList.remove('drag-source-hidden');
+    }
+    
+    // Reset global drag variables
+    draggedItem = null;
+    workoutDraggedItem = null;
+    programDraggedChip = null;
+    
+    touchDragData = {
+        isDragging: false,
+        draggedElement: null,
+        startX: 0,
+        startY: 0,
+        offsetX: 0,
+        offsetY: 0,
+        clone: null,
+        originalParent: null,
+        dragType: null
+    };
+}
+
+// ======================================
+//      INITIALIZE TOUCH SUPPORT
+// ======================================
+
+function initializeTouchDragSupport() {
+    // Routine exercises
+    const routineContainer = document.getElementById('routine-exercises-container');
+    if (routineContainer) {
+        routineContainer.querySelectorAll('.exercise-routine-card[draggable="true"]').forEach(card => {
+            addTouchDragSupport(card, 'routine-exercises');
+        });
+    }
+    
+    // Workout exercises
+    const workoutContainer = document.getElementById('workout-exercises-container');
+    if (workoutContainer) {
+        workoutContainer.querySelectorAll('.workout-exercise-card[draggable="true"]').forEach(card => {
+            addTouchDragSupport(card, 'workout-exercises');
+        });
+    }
+    
+    // Program routine chips
+    const weeklyContainer = document.getElementById('weekly-schedule-container');
+    if (weeklyContainer) {
+        weeklyContainer.querySelectorAll('.routine-chip[draggable="true"]').forEach(chip => {
+            addTouchDragSupport(chip, 'program-routines');
+        });
+    }
+}
+

@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Social Feed - Gainz{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-users me-2"></i>Social Feed</h2>
+                <div class="btn-group" role="group">
+                    <a href="{% url 'social:search' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-search me-1"></i>Find Users
+                    </a>
+                    <a href="{% url 'social:profile' request.user.username %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-user me-1"></i>My Profile
+                    </a>
+                </div>
+            </div>
+
+            {% if workouts %}
+                <!-- Workout Feed -->
+                {% for workout in workouts %}
+                    <div class="card mb-4 workout-feed-item">
+                        <!-- Workout Header -->
+                        <div class="card-header bg-light">
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <i class="fas fa-user-circle fa-2x text-primary"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-0">
+                                        <a href="{% url 'social:profile' workout.user.username %}" class="text-decoration-none">
+                                            {{ workout.user.username }}
+                                        </a>
+                                        {% if workout.user == request.user %}
+                                            <span class="badge bg-secondary ms-1">You</span>
+                                        {% endif %}
+                                    </h6>
+                                    <small class="text-muted">
+                                        {{ workout.date|date:"M d, Y \a\t g:i A" }}
+                                        {% if workout.visibility == 'private' %}
+                                            <i class="fas fa-lock ms-1" title="Private workout"></i>
+                                        {% endif %}
+                                    </small>
+                                </div>
+                                <div>
+                                    <a href="{% url 'social:workout_detail' workout.id %}" class="btn btn-sm btn-outline-primary">
+                                        View Details
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Workout Content -->
+                        <div class="card-body">
+                            <h5 class="card-title">{{ workout.name }}</h5>
+                            
+                            {% if workout.routine_source %}
+                                <p class="text-muted small mb-2">
+                                    <i class="fas fa-clipboard-list me-1"></i>
+                                    Based on routine: {{ workout.routine_source.name }}
+                                </p>
+                            {% endif %}
+                            
+                            {% if workout.notes %}
+                                <p class="card-text">{{ workout.notes|truncatewords:30 }}</p>
+                            {% endif %}
+
+                            <!-- Exercise Summary -->
+                            <div class="exercise-summary mb-3">
+                                <h6 class="text-muted">Exercises ({{ workout.exercises.count }})</h6>
+                                <div class="d-flex flex-wrap gap-1">
+                                    {% for exercise in workout.exercises.all|slice:":5" %}
+                                        <span class="badge bg-light text-dark border">
+                                            {{ exercise.exercise.name }}
+                                        </span>
+                                    {% endfor %}
+                                    {% if workout.exercises.count > 5 %}
+                                        <span class="badge bg-secondary">
+                                            +{{ workout.exercises.count|add:"-5" }} more
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Social Actions -->
+                        <div class="card-footer bg-transparent">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div class="social-stats">
+                                    <span class="me-3">
+                                        <i class="fas fa-heart text-danger me-1"></i>
+                                        <span class="like-count">{{ workout.get_like_count }}</span>
+                                    </span>
+                                    <span>
+                                        <i class="fas fa-comment text-primary me-1"></i>
+                                        <span class="comment-count">{{ workout.get_comment_count }}</span>
+                                    </span>
+                                </div>
+                                
+                                <div class="social-actions">
+                                    <button class="btn btn-sm {% if workout.user_has_liked %}btn-danger{% else %}btn-outline-danger{% endif %} like-btn" 
+                                            data-workout-id="{{ workout.id }}"
+                                            data-function="click->toggleLike">
+                                        <i class="fas fa-heart me-1"></i>
+                                        <span class="like-text">{% if workout.user_has_liked %}Liked{% else %}Like{% endif %}</span>
+                                    </button>
+                                    
+                                    <a href="{% url 'social:workout_detail' workout.id %}#comments" class="btn btn-sm btn-outline-primary ms-2">
+                                        <i class="fas fa-comment me-1"></i>Comment
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+
+                <!-- Pagination -->
+                {% if page_obj.has_other_pages %}
+                    <nav aria-label="Workout feed pagination">
+                        <ul class="pagination justify-content-center">
+                            {% if page_obj.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                                </li>
+                            {% endif %}
+                            
+                            {% for i in page_obj.paginator.page_range %}
+                                {% if page_obj.number == i %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ i }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ i }}">{{ i }}</a>
+                                    </li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if page_obj.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                {% endif %}
+
+            {% else %}
+                <!-- Empty State -->
+                <div class="text-center py-5">
+                    <i class="fas fa-users fa-4x text-muted mb-3"></i>
+                    <h4 class="text-muted">Your feed is empty</h4>
+                    <p class="text-muted">
+                        Follow other users to see their workouts here, or check out 
+                        <a href="{% url 'social:search' %}">user search</a> to find people to follow.
+                    </p>
+                    <a href="{% url 'social:search' %}" class="btn btn-primary">
+                        <i class="fas fa-search me-1"></i>Find Users
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Like functionality
+window.toggleLike = function(event) {
+    const button = event.target.closest('button');
+    const workoutId = button.dataset.workoutId;
+    
+    fetch(`/social/api/like/${workoutId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.liked) {
+            button.classList.remove('btn-outline-danger');
+            button.classList.add('btn-danger');
+            button.querySelector('.like-text').textContent = 'Liked';
+        } else {
+            button.classList.remove('btn-danger');
+            button.classList.add('btn-outline-danger');
+            button.querySelector('.like-text').textContent = 'Like';
+        }
+        
+        // Update like count
+        const likeCountSpan = button.closest('.card-footer').querySelector('.like-count');
+        likeCountSpan.textContent = data.like_count;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+};
+</script>
+{% endblock %}

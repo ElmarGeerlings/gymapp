@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'gainz.exercises',  # Full path to the app
     'gainz.workouts',   # Full path to the app
     'gainz.ai',         # AI conversation app
+    'gainz.social',     # Social features app
 ]
 
 MIDDLEWARE = [
@@ -257,6 +258,10 @@ STATICFILES_DIRS = [
 
 # WhiteNoise configuration for static files
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Media files configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'mediafiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

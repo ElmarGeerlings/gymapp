@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
-from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet, ProgramRoutine
+from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet, ProgramRoutine, UserTimerPreference, ExerciseTimerOverride, ProgramTimerPreference, RoutineTimerPreference
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
 from django.template.loader import render_to_string
@@ -25,6 +25,11 @@ from django.core.management import call_command
 from io import StringIO
 from gainz.workouts.utils import WorkoutParser
 from decimal import Decimal
+from django.db.models import F, Sum, Min, Max, Avg
+from .utils.progress_tracking import (
+    get_progress_metrics, analyze_strength_trends, 
+    get_top_exercises_by_volume, get_exercise_progress
+)
 
 # Make Redis optional for deployments without Redis
 def get_redis_connection():
@@ -1387,6 +1392,151 @@ def update_user_preferences(request):
 
     return JsonResponse({'status': 'error', 'message': 'Invalid request method.'}, status=405)
 
+@login_required
+def api_timer_preferences(request):
+    """API endpoint to fetch and save user timer preferences"""
+    if request.method == 'GET':
+        try:
+            # Try to get existing preferences
+            timer_prefs, created = UserTimerPreference.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    'primary_timer_seconds': 180,
+                    'secondary_timer_seconds': 120,
+                    'accessory_timer_seconds': 90,
+                    'auto_start_timer': False,
+                    'timer_sound_enabled': True,
+                    'preferred_weight_unit': 'kg',
+                }
+            )
+            
+            return JsonResponse({
+                'primary_timer_seconds': timer_prefs.primary_timer_seconds,
+                'secondary_timer_seconds': timer_prefs.secondary_timer_seconds,
+                'accessory_timer_seconds': timer_prefs.accessory_timer_seconds,
+                'auto_start_timer': timer_prefs.auto_start_timer,
+                'timer_sound_enabled': timer_prefs.timer_sound_enabled,
+                'preferred_weight_unit': timer_prefs.preferred_weight_unit,
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    elif request.method == 'POST':
+        try:
+            # Parse JSON data from request body
+            data = json.loads(request.body.decode('utf-8'))
+            
+            # Get or create user timer preferences
+            timer_prefs, created = UserTimerPreference.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    'primary_timer_seconds': 180,
+                    'secondary_timer_seconds': 120,
+                    'accessory_timer_seconds': 90,
+                    'auto_start_timer': False,
+                    'timer_sound_enabled': True,
+                    'preferred_weight_unit': 'kg',
+                }
+            )
+            
+            # Validate and update fields
+            errors = {}
+            
+            # Validate primary_timer_seconds (10-3600 seconds)
+            if 'primary_timer_seconds' in data:
+                try:
+                    primary_timer = int(data['primary_timer_seconds'])
+                    if 10 <= primary_timer <= 3600:
+                        timer_prefs.primary_timer_seconds = primary_timer
+                    else:
+                        errors['primary_timer_seconds'] = 'Must be between 10 and 3600 seconds'
+                except (ValueError, TypeError):
+                    errors['primary_timer_seconds'] = 'Must be a valid integer'
+            
+            # Validate secondary_timer_seconds (10-3600 seconds)
+            if 'secondary_timer_seconds' in data:
+                try:
+                    secondary_timer = int(data['secondary_timer_seconds'])
+                    if 10 <= secondary_timer <= 3600:
+                        timer_prefs.secondary_timer_seconds = secondary_timer
+                    else:
+                        errors['secondary_timer_seconds'] = 'Must be between 10 and 3600 seconds'
+                except (ValueError, TypeError):
+                    errors['secondary_timer_seconds'] = 'Must be a valid integer'
+            
+            # Validate accessory_timer_seconds (10-3600 seconds)
+            if 'accessory_timer_seconds' in data:
+                try:
+                    accessory_timer = int(data['accessory_timer_seconds'])
+                    if 10 <= accessory_timer <= 3600:
+                        timer_prefs.accessory_timer_seconds = accessory_timer
+                    else:
+                        errors['accessory_timer_seconds'] = 'Must be between 10 and 3600 seconds'
+                except (ValueError, TypeError):
+                    errors['accessory_timer_seconds'] = 'Must be a valid integer'
+            
+            # Validate auto_start_timer (boolean)
+            if 'auto_start_timer' in data:
+                if isinstance(data['auto_start_timer'], bool):
+                    timer_prefs.auto_start_timer = data['auto_start_timer']
+                else:
+                    errors['auto_start_timer'] = 'Must be a boolean value'
+            
+            # Validate timer_sound_enabled (boolean)
+            if 'timer_sound_enabled' in data:
+                if isinstance(data['timer_sound_enabled'], bool):
+                    timer_prefs.timer_sound_enabled = data['timer_sound_enabled']
+                else:
+                    errors['timer_sound_enabled'] = 'Must be a boolean value'
+            
+            # Validate preferred_weight_unit (choices: kg/lbs)
+            if 'preferred_weight_unit' in data:
+                valid_units = [choice[0] for choice in UserTimerPreference.WEIGHT_UNIT_CHOICES]
+                weight_unit = data['preferred_weight_unit']
+                if weight_unit in valid_units:
+                    timer_prefs.preferred_weight_unit = weight_unit
+                else:
+                    errors['preferred_weight_unit'] = f'Must be one of: {", ".join(valid_units)}'
+            
+            # Return validation errors if any
+            if errors:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Validation failed',
+                    'errors': errors
+                }, status=400)
+            
+            # Save the updated preferences
+            timer_prefs.save()
+            
+            # Return success response with updated data
+            return JsonResponse({
+                'success': True,
+                'message': 'Timer preferences updated successfully',
+                'data': {
+                    'primary_timer_seconds': timer_prefs.primary_timer_seconds,
+                    'secondary_timer_seconds': timer_prefs.secondary_timer_seconds,
+                    'accessory_timer_seconds': timer_prefs.accessory_timer_seconds,
+                    'auto_start_timer': timer_prefs.auto_start_timer,
+                    'timer_sound_enabled': timer_prefs.timer_sound_enabled,
+                    'preferred_weight_unit': timer_prefs.preferred_weight_unit,
+                }
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid JSON data'
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+    
+    return JsonResponse({'error': 'Only GET and POST requests allowed'}, status=405)
+
 # Health check view for Railway deployment
 def health_check(request):
     """Simple health check endpoint for Railway"""
@@ -1625,3 +1775,649 @@ Triceps 4x10 40
 Laterals 4x10 14"""
     }
     return render(request, 'import_routine.html', context)
+
+@login_required
+def profile(request):
+    """User profile view with basic info and timer preferences"""
+    user = request.user
+    
+    # Get or create user timer preferences
+    timer_prefs, created = UserTimerPreference.objects.get_or_create(
+        user=user,
+        defaults={
+            'primary_timer_seconds': 180,
+            'secondary_timer_seconds': 120,
+            'accessory_timer_seconds': 90,
+            'auto_start_timer': False,
+            'timer_sound_enabled': True,
+            'auto_progression_enabled': False,
+            'default_weight_increment': 2.5,
+            'default_rep_increment': 1,
+        }
+    )
+    
+    if request.method == 'POST':
+        # Handle basic profile update (username and email)
+        new_username = request.POST.get('username', '').strip()
+        new_email = request.POST.get('email', '').strip()
+        preferred_weight_unit = request.POST.get('preferred_weight_unit', 'kg')
+        
+        # Get timer preferences
+        primary_timer_seconds = request.POST.get('primary_timer_seconds', '180')
+        secondary_timer_seconds = request.POST.get('secondary_timer_seconds', '120')
+        accessory_timer_seconds = request.POST.get('accessory_timer_seconds', '90')
+        auto_start_timer = request.POST.get('auto_start_timer') == '1'
+        timer_sound_enabled = request.POST.get('timer_sound_enabled') == '1'
+        
+        # Get auto-progression preferences
+        auto_progression_enabled = request.POST.get('auto_progression_enabled') == '1'
+        default_weight_increment = request.POST.get('default_weight_increment', '2.5')
+        default_rep_increment = request.POST.get('default_rep_increment', '1')
+        
+        errors = []
+        
+        if not new_username:
+            errors.append('Username is required.')
+        elif new_username != user.username and User.objects.filter(username=new_username).exists():
+            errors.append('Username already taken.')
+        
+        # Validate weight unit choice
+        valid_units = [choice[0] for choice in UserTimerPreference.WEIGHT_UNIT_CHOICES]
+        if preferred_weight_unit not in valid_units:
+            errors.append('Invalid weight unit selection.')
+        
+        # Validate timer fields
+        try:
+            primary_timer_int = int(primary_timer_seconds)
+            if not (10 <= primary_timer_int <= 3600):
+                errors.append('Primary timer must be between 10 and 3600 seconds.')
+        except (ValueError, TypeError):
+            errors.append('Primary timer must be a valid integer.')
+            
+        try:
+            secondary_timer_int = int(secondary_timer_seconds)
+            if not (10 <= secondary_timer_int <= 3600):
+                errors.append('Secondary timer must be between 10 and 3600 seconds.')
+        except (ValueError, TypeError):
+            errors.append('Secondary timer must be a valid integer.')
+            
+        try:
+            accessory_timer_int = int(accessory_timer_seconds)
+            if not (10 <= accessory_timer_int <= 3600):
+                errors.append('Accessory timer must be between 10 and 3600 seconds.')
+        except (ValueError, TypeError):
+            errors.append('Accessory timer must be a valid integer.')
+        
+        # Validate auto-progression fields
+        try:
+            default_weight_increment_decimal = Decimal(default_weight_increment)
+            if default_weight_increment_decimal < 0:
+                errors.append('Weight increment must be positive.')
+        except (ValueError, TypeError):
+            errors.append('Weight increment must be a valid number.')
+            
+        try:
+            default_rep_increment_int = int(default_rep_increment)
+            if default_rep_increment_int < 1:
+                errors.append('Rep increment must be at least 1.')
+        except (ValueError, TypeError):
+            errors.append('Rep increment must be a valid integer.')
+        
+        if not errors:
+            try:
+                # Update user basic info
+                user.username = new_username
+                user.email = new_email
+                user.save()
+                
+                # Update timer preferences (all fields)
+                timer_prefs.preferred_weight_unit = preferred_weight_unit
+                timer_prefs.primary_timer_seconds = int(primary_timer_seconds)
+                timer_prefs.secondary_timer_seconds = int(secondary_timer_seconds)
+                timer_prefs.accessory_timer_seconds = int(accessory_timer_seconds)
+                timer_prefs.auto_start_timer = auto_start_timer
+                timer_prefs.timer_sound_enabled = timer_sound_enabled
+                timer_prefs.auto_progression_enabled = auto_progression_enabled
+                timer_prefs.default_weight_increment = Decimal(default_weight_increment)
+                timer_prefs.default_rep_increment = int(default_rep_increment)
+                timer_prefs.save()
+                
+                messages.success(request, 'Profile and timer settings updated successfully!')
+                return redirect('profile')
+            except Exception as e:
+                errors.append(f'Error updating profile: {str(e)}')
+        
+        context = {
+            'title': 'My Profile',
+            'user': user,
+            'timer_prefs': timer_prefs,
+            'weight_unit_choices': UserTimerPreference.WEIGHT_UNIT_CHOICES,
+            'errors': errors,
+        }
+        return render(request, 'profile.html', context)
+    
+    # GET request
+    context = {
+        'title': 'My Profile',
+        'user': user,
+        'timer_prefs': timer_prefs,
+        'weight_unit_choices': UserTimerPreference.WEIGHT_UNIT_CHOICES,
+    }
+    return render(request, 'profile.html', context)
+
+# ============================================================================
+# EXERCISE TIMER OVERRIDE API ENDPOINTS
+# ============================================================================
+
+@login_required
+def api_exercise_timer_overrides(request):
+    """API endpoint to manage exercise timer overrides (GET/POST)"""
+    if request.method == 'GET':
+        try:
+            # Get all timer overrides for the current user
+            overrides = ExerciseTimerOverride.objects.filter(
+                user=request.user
+            ).select_related('exercise').order_by('exercise__name')
+            
+            override_data = []
+            for override in overrides:
+                override_data.append({
+                    'id': override.id,
+                    'exercise_id': override.exercise.id,
+                    'exercise_name': override.exercise.name,
+                    'exercise_category': override.exercise.category.name if override.exercise.category else None,
+                    'timer_seconds': override.timer_seconds,
+                })
+            
+            return JsonResponse({
+                'overrides': override_data
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    elif request.method == 'POST':
+        try:
+            # Parse JSON data from request body
+            data = json.loads(request.body.decode('utf-8'))
+            
+            exercise_id = data.get('exercise_id')
+            timer_seconds = data.get('timer_seconds')
+            
+            # Validate required fields
+            errors = {}
+            
+            if not exercise_id:
+                errors['exercise_id'] = ['Exercise is required.']
+            
+            if not timer_seconds:
+                errors['timer_seconds'] = ['Timer duration is required.']
+            else:
+                try:
+                    timer_seconds_int = int(timer_seconds)
+                    if timer_seconds_int < 10:
+                        errors['timer_seconds'] = ['Timer duration must be at least 10 seconds.']
+                    elif timer_seconds_int > 3600:
+                        errors['timer_seconds'] = ['Timer duration must be no more than 3600 seconds (1 hour).']
+                except (ValueError, TypeError):
+                    errors['timer_seconds'] = ['Timer duration must be a valid number.']
+            
+            if errors:
+                return JsonResponse({'errors': errors}, status=400)
+            
+            # Validate exercise exists and user has access
+            try:
+                exercise = Exercise.objects.get(
+                    Q(id=exercise_id) & 
+                    (Q(is_custom=False) | Q(created_by=request.user))
+                )
+            except Exercise.DoesNotExist:
+                return JsonResponse({'errors': {'exercise_id': ['Exercise not found.']}}, status=400)
+            
+            # Create or update the timer override
+            override, created = ExerciseTimerOverride.objects.update_or_create(
+                user=request.user,
+                exercise=exercise,
+                defaults={'timer_seconds': timer_seconds_int}
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'created': created,
+                'override': {
+                    'id': override.id,
+                    'exercise_id': override.exercise.id,
+                    'exercise_name': override.exercise.name,
+                    'exercise_category': override.exercise.category.name if override.exercise.category else None,
+                    'timer_seconds': override.timer_seconds,
+                }
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON data.'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+@login_required
+def api_exercise_timer_override_delete(request, override_id):
+    """API endpoint to delete a specific exercise timer override (DELETE)"""
+    if request.method == 'DELETE':
+        try:
+            override = get_object_or_404(
+                ExerciseTimerOverride, 
+                id=override_id, 
+                user=request.user
+            )
+            
+            override_data = {
+                'id': override.id,
+                'exercise_name': override.exercise.name,
+                'timer_seconds': override.timer_seconds,
+            }
+            
+            override.delete()
+            
+            return JsonResponse({
+                'success': True,
+                'deleted_override': override_data
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+@login_required  
+def api_exercises_search(request):
+    """API endpoint to search exercises for dropdown selection"""
+    if request.method == 'GET':
+        try:
+            search_query = request.GET.get('q', '').strip()
+            limit = min(int(request.GET.get('limit', 50)), 100)  # Max 100 results
+            
+            # Build queryset - user can access built-in exercises and their custom ones
+            exercises = Exercise.objects.filter(
+                Q(is_custom=False) | Q(created_by=request.user)
+            )
+            
+            # Apply search filter if provided
+            if search_query:
+                exercises = exercises.filter(
+                    Q(name__icontains=search_query) |
+                    Q(category__name__icontains=search_query)
+                ).distinct()
+            
+            # Order by name and limit results
+            exercises = exercises.select_related('category').order_by('name')[:limit]
+            
+            exercise_data = []
+            for exercise in exercises:
+                exercise_data.append({
+                    'id': exercise.id,
+                    'name': exercise.name,
+                    'category': exercise.category.name if exercise.category else 'Uncategorized',
+                    'exercise_type': exercise.exercise_type,
+                })
+            
+            return JsonResponse({
+                'exercises': exercise_data,
+                'total': len(exercise_data)
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+# ============================================================================
+# PROGRAM AND ROUTINE TIMER PREFERENCES API ENDPOINTS
+# ============================================================================
+
+@login_required
+def api_program_timer_preferences(request, program_id):
+    """API endpoint to manage program timer preferences (GET/POST)"""
+    # Verify user owns the program
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+    
+    if request.method == 'GET':
+        try:
+            # Get program timer preferences if they exist
+            prefs = getattr(program, 'timer_preferences', None)
+            
+            if prefs:
+                return JsonResponse({
+                    'primary_timer_seconds': prefs.primary_timer_seconds,
+                    'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                    'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                    'auto_start_timer': prefs.auto_start_timer,
+                })
+            else:
+                # Return null values if no preferences set
+                return JsonResponse({
+                    'primary_timer_seconds': None,
+                    'secondary_timer_seconds': None,
+                    'accessory_timer_seconds': None,
+                    'auto_start_timer': None,
+                })
+                
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            
+            # Get or create program timer preferences
+            prefs, created = ProgramTimerPreference.objects.get_or_create(program=program)
+            
+            # Update fields if provided
+            if 'primary_timer_seconds' in data:
+                prefs.primary_timer_seconds = data['primary_timer_seconds'] if data['primary_timer_seconds'] else None
+            if 'secondary_timer_seconds' in data:
+                prefs.secondary_timer_seconds = data['secondary_timer_seconds'] if data['secondary_timer_seconds'] else None
+            if 'accessory_timer_seconds' in data:
+                prefs.accessory_timer_seconds = data['accessory_timer_seconds'] if data['accessory_timer_seconds'] else None
+            if 'auto_start_timer' in data:
+                prefs.auto_start_timer = data['auto_start_timer'] if data['auto_start_timer'] is not None else None
+            
+            prefs.save()
+            
+            return JsonResponse({
+                'success': True,
+                'primary_timer_seconds': prefs.primary_timer_seconds,
+                'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                'auto_start_timer': prefs.auto_start_timer,
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+@login_required
+def api_routine_timer_preferences(request, routine_id):
+    """API endpoint to manage routine timer preferences (GET/POST)"""
+    # Verify user owns the routine
+    routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+    
+    if request.method == 'GET':
+        try:
+            # Get routine timer preferences if they exist
+            prefs = getattr(routine, 'timer_preferences', None)
+            
+            if prefs:
+                return JsonResponse({
+                    'primary_timer_seconds': prefs.primary_timer_seconds,
+                    'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                    'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                    'auto_start_timer': prefs.auto_start_timer,
+                })
+            else:
+                # Return null values if no preferences set
+                return JsonResponse({
+                    'primary_timer_seconds': None,
+                    'secondary_timer_seconds': None,
+                    'accessory_timer_seconds': None,
+                    'auto_start_timer': None,
+                })
+                
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            
+            # Get or create routine timer preferences
+            prefs, created = RoutineTimerPreference.objects.get_or_create(routine=routine)
+            
+            # Update fields if provided
+            if 'primary_timer_seconds' in data:
+                prefs.primary_timer_seconds = data['primary_timer_seconds'] if data['primary_timer_seconds'] else None
+            if 'secondary_timer_seconds' in data:
+                prefs.secondary_timer_seconds = data['secondary_timer_seconds'] if data['secondary_timer_seconds'] else None
+            if 'accessory_timer_seconds' in data:
+                prefs.accessory_timer_seconds = data['accessory_timer_seconds'] if data['accessory_timer_seconds'] else None
+            if 'auto_start_timer' in data:
+                prefs.auto_start_timer = data['auto_start_timer'] is not None and data['auto_start_timer']
+            
+            prefs.save()
+            
+            return JsonResponse({
+                'success': True,
+                'primary_timer_seconds': prefs.primary_timer_seconds,
+                'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                'auto_start_timer': prefs.auto_start_timer,
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+@login_required
+def progress_overview(request):
+    """Dashboard showing exercise progress trends and statistics"""
+    
+    # Get filtering parameters
+    period_days = int(request.GET.get('period', '30'))
+    exercise_filter = request.GET.get('exercise', '')
+    rep_range_filter = request.GET.get('rep_range', '')
+    
+    # Get basic metrics
+    recent_workouts = Workout.objects.filter(
+        user=request.user,
+        date__gte=timezone.now() - timedelta(days=period_days)
+    ).count()
+    
+    # Get top exercises by volume
+    top_exercises_data = []
+    exercises_with_data = Exercise.objects.filter(
+        workoutexercise__workout__user=request.user
+    ).distinct()[:6]
+    
+    for exercise in exercises_with_data:
+        sets = ExerciseSet.objects.filter(
+            workout_exercise__workout__user=request.user,
+            workout_exercise__exercise=exercise,
+            workout_exercise__workout__date__gte=timezone.now() - timedelta(days=period_days)
+        )
+        total_volume = sum(s.get_volume() for s in sets if s.is_valid_for_1rm())
+        if total_volume > 0:
+            top_exercises_data.append({
+                'exercise': exercise,
+                'total_volume': total_volume,
+                'set_count': sets.count()
+            })
+    
+    top_exercises_data.sort(key=lambda x: x['total_volume'], reverse=True)
+    
+    context = {
+        'recent_workouts': recent_workouts,
+        'top_exercises': top_exercises_data[:6],
+        'period_days': period_days,
+        'title': 'Progress Overview'
+    }
+    
+    return render(request, 'progress/overview.html', context)
+
+
+@login_required
+def exercise_progress_detail(request, exercise_id):
+    """Detailed progress view for a specific exercise"""
+    
+    exercise = get_object_or_404(Exercise, id=exercise_id)
+    
+    # Verify user can access this exercise
+    if exercise.is_custom and exercise.user != request.user:
+        raise Http404("Exercise not found")
+    
+    # Get filtering parameters
+    period_days = int(request.GET.get('period', '90'))
+    rep_range = request.GET.get('rep_range', '')
+    comparison_type = request.GET.get('comparison', 'heaviest')
+    
+    # Get exercise sets with filtering
+    sets_query = ExerciseSet.objects.filter(
+        workout_exercise__workout__user=request.user,
+        workout_exercise__exercise=exercise,
+        workout_exercise__workout__date__gte=timezone.now() - timedelta(days=period_days)
+    ).select_related('workout_exercise__workout')
+    
+    # Apply rep range filtering
+    if rep_range == 'low':
+        sets_query = sets_query.filter(reps__range=(1, 3))
+    elif rep_range == 'mid':
+        sets_query = sets_query.filter(reps__range=(4, 6))
+    elif rep_range == 'high':
+        sets_query = sets_query.filter(reps__gte=7)
+    
+    # Build chart data
+    chart_data = []
+    for set_obj in sets_query.order_by('workout_exercise__workout__date'):
+        if set_obj.is_valid_for_1rm():
+            chart_data.append({
+                'date': set_obj.workout_exercise.workout.date.isoformat(),
+                'weight': float(set_obj.weight),
+                'reps': set_obj.reps,
+                'estimated_1rm': float(set_obj.get_best_1rm_estimate() or 0),
+                'rep_range': set_obj.get_rep_range_category(),
+                'volume': float(set_obj.get_volume())
+            })
+    
+    # Get best 1RM estimate
+    best_1rm = 0
+    if chart_data:
+        best_1rm = max(d['estimated_1rm'] for d in chart_data)
+    
+    context = {
+        'exercise': exercise,
+        'chart_data': chart_data,
+        'best_1rm': best_1rm,
+        'period_days': period_days,
+        'rep_range': rep_range,
+        'comparison_type': comparison_type,
+        'title': f'{exercise.name} Progress'
+    }
+    
+    return render(request, 'progress/exercise_detail.html', context)
+
+
+@login_required
+def api_exercise_chart_data(request, exercise_id):
+    """API endpoint for exercise chart data with filtering"""
+    
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
+    try:
+        exercise = get_object_or_404(Exercise, id=exercise_id)
+        
+        # Verify access
+        if exercise.is_custom and exercise.user != request.user:
+            return JsonResponse({'error': 'Access denied'}, status=403)
+        
+        # Get parameters
+        period_days = int(request.GET.get('period', '90'))
+        rep_range = request.GET.get('rep_range', '')
+        chart_type = request.GET.get('chart_type', '1rm')
+        
+        # Query sets with filtering
+        sets_query = ExerciseSet.objects.filter(
+            workout_exercise__workout__user=request.user,
+            workout_exercise__exercise=exercise,
+            workout_exercise__workout__date__gte=timezone.now() - timedelta(days=period_days)
+        ).select_related('workout_exercise__workout')
+        
+        # Apply rep range filter
+        if rep_range == 'low':
+            sets_query = sets_query.filter(reps__range=(1, 3))
+        elif rep_range == 'mid':
+            sets_query = sets_query.filter(reps__range=(4, 6))
+        elif rep_range == 'high':
+            sets_query = sets_query.filter(reps__gte=7)
+        elif rep_range == 'custom':
+            min_reps = int(request.GET.get('min_reps', 1))
+            max_reps = int(request.GET.get('max_reps', 20))
+            sets_query = sets_query.filter(reps__range=(min_reps, max_reps))
+        
+        # Build chart data
+        chart_data = []
+        for set_obj in sets_query.order_by('workout_exercise__workout__date'):
+            if set_obj.is_valid_for_1rm():
+                if chart_type == '1rm':
+                    value = float(set_obj.get_best_1rm_estimate() or 0)
+                else:  # volume
+                    value = float(set_obj.get_volume())
+                
+                chart_data.append({
+                    'x': set_obj.workout_exercise.workout.date.isoformat(),
+                    'y': value,
+                    'weight': float(set_obj.weight),
+                    'reps': set_obj.reps,
+                    'rep_range': set_obj.get_rep_range_category()
+                })
+        
+        return JsonResponse({
+            'success': True,
+            'data': chart_data,
+            'exercise_name': exercise.name,
+            'chart_type': chart_type,
+            'period_days': period_days,
+            'rep_range': rep_range
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+def api_progress_filter_options(request):
+    """Get available filtering options for progress views"""
+    
+    try:
+        # Get user's exercises with recorded sets
+        exercises_with_data = Exercise.objects.filter(
+            workoutexercise__workout__user=request.user,
+            workoutexercise__sets__isnull=False
+        ).distinct().order_by('name')
+        
+        exercise_options = [
+            {'id': ex.id, 'name': ex.name, 'type': ex.exercise_type}
+            for ex in exercises_with_data
+        ]
+        
+        # Get date ranges with data
+        oldest_workout = Workout.objects.filter(user=request.user).aggregate(
+            Min('date')
+        )['date__min']
+        
+        date_ranges = [
+            {'value': 7, 'label': '1 Week'},
+            {'value': 30, 'label': '1 Month'},
+            {'value': 90, 'label': '3 Months'},
+            {'value': 180, 'label': '6 Months'},
+            {'value': 365, 'label': '1 Year'},
+        ]
+        
+        if oldest_workout:
+            days_since_oldest = (timezone.now().date() - oldest_workout.date()).days
+            date_ranges.append({'value': days_since_oldest, 'label': 'All Time'})
+        
+        return JsonResponse({
+            'exercises': exercise_options,
+            'date_ranges': date_ranges,
+            'rep_ranges': [
+                {'value': '', 'label': 'All Rep Ranges'},
+                {'value': 'low', 'label': 'Low Reps (1-3)'},
+                {'value': 'mid', 'label': 'Mid Reps (4-6)'},
+                {'value': 'high', 'label': 'High Reps (7+)'},
+                {'value': 'custom', 'label': 'Custom Range'},
+            ]
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

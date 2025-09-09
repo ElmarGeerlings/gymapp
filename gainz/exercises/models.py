@@ -19,6 +19,18 @@ class Exercise(models.Model):
         ('secondary', 'Secondary'),
         ('accessory', 'Accessory'),
     ]
+    
+    BODYPART_CHOICES = [
+        ('chest', 'Chest'),
+        ('back', 'Back'),
+        ('shoulders', 'Shoulders'),
+        ('arms', 'Arms'),
+        ('legs', 'Legs'),
+        ('glutes', 'Glutes'),
+        ('core', 'Core'),
+        ('cardio', 'Cardio'),
+        ('full_body', 'Full Body'),
+    ]
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -39,6 +51,20 @@ class Exercise(models.Model):
         max_length=20,
         choices=EXERCISE_TYPE_CHOICES,
         default='accessory'
+    )
+    primary_bodypart = models.CharField(
+        max_length=20,
+        choices=BODYPART_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Primary muscle group targeted by this exercise"
+    )
+    secondary_bodypart = models.CharField(
+        max_length=20,
+        choices=BODYPART_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Secondary muscle group targeted by this exercise"
     )
 
     def __str__(self):
@@ -69,6 +95,62 @@ class Exercise(models.Model):
                 return True
 
         return False
+
+    def get_timer_duration_for_user(self, user):
+        """
+        Get the appropriate timer duration for this exercise for a specific user.
+        
+        Priority order:
+        1. User-specific exercise timer override
+        2. User's default timer preference for exercise type
+        3. System defaults (180s for primary, 120s for secondary, 90s for accessory)
+        """
+        # Check for user-specific override first
+        try:
+            override = user.exercise_timer_overrides.get(exercise=self)
+            return override.timer_seconds
+        except:
+            pass
+        
+        # Fall back to user's default preferences for exercise type
+        try:
+            preferences = user.timer_preferences
+            if self.exercise_type == 'primary':
+                return preferences.primary_timer_seconds
+            elif self.exercise_type == 'secondary':
+                return preferences.secondary_timer_seconds
+            else:  # accessory
+                return preferences.accessory_timer_seconds
+        except:
+            pass
+        
+        # Final fallback to system defaults
+        if self.exercise_type == 'primary':
+            return 180
+        elif self.exercise_type == 'secondary':
+            return 120
+        else:  # accessory
+            return 90
+
+    def get_auto_start_timer_setting(self, user):
+        """
+        Get the auto-start timer setting for this user.
+        Returns False if user has no preferences set.
+        """
+        try:
+            return user.timer_preferences.auto_start_timer
+        except:
+            return False
+
+    def get_timer_sound_setting(self, user):
+        """
+        Get the timer sound setting for this user.
+        Returns True if user has no preferences set (default enabled).
+        """
+        try:
+            return user.timer_preferences.timer_sound_enabled
+        except:
+            return True
 
 
 class ExerciseAlternativeName(models.Model):
