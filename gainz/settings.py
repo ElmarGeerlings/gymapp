@@ -285,8 +285,7 @@ if REDIS_URL:
                 'DEFAULT_TIMEOUT': 500,
                 'DEFAULT_RESULT_TTL': 500,
                 'REDIS_CLIENT_KWARGS': {
-                    'ssl_cert_reqs': None,  # Don't require SSL certificates
-                    'ssl': True,  # Enable SSL
+                    'ssl_cert_reqs': ssl.CERT_NONE,  # Don't require SSL certificates
                 }
             },
             'django-redis': {
