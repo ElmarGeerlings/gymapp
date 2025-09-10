@@ -1,14 +1,14 @@
 /**
  * Timer Module for Gainz Workout App
- * 
+ *
  * This module contains all timer-related functionality including:
  * - WorkoutTimer class for rest timer management
  * - Timer utility functions for user interactions
  * - Timer display management
  * - Auto-start timer integration
  * - Timer preferences form handling
- * 
- * Dependencies: 
+ *
+ * Dependencies:
  * - httpRequestHelper (from gainz.js)
  * - send_toast (from gainz.js)
  * - displayFormErrors (from gainz.js)
@@ -39,14 +39,14 @@ class WorkoutTimer {
             onStop: null,
             onReset: null
         };
-        
+
         // Load timer state from localStorage on initialization
         this.loadFromStorage();
-        
+
         // Handle page visibility changes for tab switching
         this.setupVisibilityHandling();
     }
-    
+
     /**
      * Format seconds to MM:SS display format
      * @param {number} seconds - Number of seconds to format
@@ -57,7 +57,7 @@ class WorkoutTimer {
         const secs = seconds % 60;
         return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
-    
+
     /**
      * Start timer with specified duration in seconds
      * @param {number|null} durationSeconds - Timer duration in seconds
@@ -68,74 +68,74 @@ class WorkoutTimer {
             this.duration = durationSeconds;
             this.remaining = durationSeconds;
         }
-        
+
         if (this.remaining <= 0) return false;
-        
+
         this.startTime = Date.now() - ((this.duration - this.remaining) * 1000);
         this.isRunning = true;
         this.isPaused = false;
-        
+
         this.intervalId = setInterval(() => {
             this.tick();
         }, 1000);
-        
+
         this.saveToStorage();
-        
+
         if (this.callbacks.onStart) {
             this.callbacks.onStart(this.remaining);
         }
-        
+
         return true;
     }
-    
+
     /**
      * Pause the running timer
      * @returns {boolean} True if timer paused successfully
      */
     pause() {
         if (!this.isRunning || this.isPaused) return false;
-        
+
         this.isPaused = true;
         this.isRunning = false;
-        
+
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
         }
-        
+
         this.saveToStorage();
-        
+
         if (this.callbacks.onPause) {
             this.callbacks.onPause(this.remaining);
         }
-        
+
         return true;
     }
-    
+
     /**
      * Resume paused timer
      * @returns {boolean} True if timer resumed successfully
      */
     resume() {
         if (!this.isPaused || this.isRunning) return false;
-        
+
         this.startTime = Date.now() - ((this.duration - this.remaining) * 1000);
         this.isRunning = true;
         this.isPaused = false;
-        
+
         this.intervalId = setInterval(() => {
             this.tick();
         }, 1000);
-        
+
         this.saveToStorage();
-        
+
         if (this.callbacks.onStart) {
             this.callbacks.onStart(this.remaining);
         }
-        
+
         return true;
     }
-    
+
     /**
      * Stop the timer completely
      * @returns {boolean} True if timer stopped successfully
@@ -143,21 +143,21 @@ class WorkoutTimer {
     stop() {
         this.isRunning = false;
         this.isPaused = false;
-        
+
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
         }
-        
+
         this.clearStorage();
-        
+
         if (this.callbacks.onStop) {
             this.callbacks.onStop();
         }
-        
+
         return true;
     }
-    
+
     /**
      * Reset timer to initial state
      * @returns {boolean} True if timer reset successfully
@@ -166,14 +166,14 @@ class WorkoutTimer {
         this.stop();
         this.remaining = this.duration;
         this.startTime = null;
-        
+
         if (this.callbacks.onReset) {
             this.callbacks.onReset(this.remaining);
         }
-        
+
         return true;
     }
-    
+
     /**
      * Add time to current timer (can be negative to subtract)
      * @param {number} seconds - Seconds to add/subtract
@@ -182,40 +182,40 @@ class WorkoutTimer {
     adjustTime(seconds) {
         this.remaining = Math.max(0, this.remaining + seconds);
         this.duration = Math.max(0, this.duration + seconds);
-        
+
         if (this.isRunning) {
             this.startTime = Date.now() - ((this.duration - this.remaining) * 1000);
         }
-        
+
         this.saveToStorage();
-        
+
         if (this.callbacks.onTick) {
             this.callbacks.onTick(this.remaining);
         }
-        
+
         return this.remaining;
     }
-    
+
     /**
      * Timer tick handler - called every second
      */
     tick() {
         if (!this.isRunning || this.isPaused) return;
-        
+
         const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
         this.remaining = Math.max(0, this.duration - elapsed);
-        
+
         if (this.callbacks.onTick) {
             this.callbacks.onTick(this.remaining);
         }
-        
+
         if (this.remaining <= 0) {
             this.complete();
         } else {
             this.saveToStorage();
         }
     }
-    
+
     /**
      * Timer completion handler
      */
@@ -223,20 +223,20 @@ class WorkoutTimer {
         this.isRunning = false;
         this.isPaused = false;
         this.remaining = 0;
-        
+
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
         }
-        
+
         this.clearStorage();
         this.playNotification();
-        
+
         if (this.callbacks.onComplete) {
             this.callbacks.onComplete();
         }
     }
-    
+
     /**
      * Play notification sound/alert when timer completes
      */
@@ -254,7 +254,7 @@ class WorkoutTimer {
             this.showBrowserNotification();
         }
     }
-    
+
     /**
      * Show browser notification when timer completes
      */
@@ -275,7 +275,7 @@ class WorkoutTimer {
             });
         }
     }
-    
+
     /**
      * Set callback functions for timer events
      * @param {string} event - Event name (tick, start, pause, stop, reset, complete)
@@ -286,7 +286,7 @@ class WorkoutTimer {
             this.callbacks[`on${event.charAt(0).toUpperCase() + event.slice(1)}`] = callback;
         }
     }
-    
+
     /**
      * Get current timer state
      * @returns {object} Current timer state object
@@ -300,7 +300,7 @@ class WorkoutTimer {
             formattedTime: this.formatTime(this.remaining)
         };
     }
-    
+
     /**
      * Save timer state to localStorage for persistence
      */
@@ -313,14 +313,14 @@ class WorkoutTimer {
             startTime: this.startTime,
             timestamp: Date.now()
         };
-        
+
         try {
             localStorage.setItem('gainz.workoutTimer', JSON.stringify(state));
         } catch (e) {
             console.warn('Could not save timer state to localStorage:', e);
         }
     }
-    
+
     /**
      * Load timer state from localStorage on page load
      */
@@ -328,19 +328,19 @@ class WorkoutTimer {
         try {
             const saved = localStorage.getItem('gainz.workoutTimer');
             if (!saved) return;
-            
+
             const state = JSON.parse(saved);
             const now = Date.now();
             const timeSinceLastUpdate = (now - state.timestamp) / 1000;
-            
+
             this.duration = state.duration;
             this.startTime = state.startTime;
-            
+
             if (state.isRunning && !state.isPaused) {
                 // Calculate how much time has passed since last save
                 const elapsed = Math.floor((now - state.startTime) / 1000);
                 this.remaining = Math.max(0, state.duration - elapsed);
-                
+
                 if (this.remaining > 0) {
                     this.isRunning = true;
                     this.isPaused = false;
@@ -361,7 +361,7 @@ class WorkoutTimer {
             this.clearStorage();
         }
     }
-    
+
     /**
      * Clear timer state from localStorage
      */
@@ -372,7 +372,7 @@ class WorkoutTimer {
             console.warn('Could not clear timer state from localStorage:', e);
         }
     }
-    
+
     /**
      * Handle page visibility changes for tab switching
      */
@@ -382,7 +382,7 @@ class WorkoutTimer {
                 // Page became visible again, recalculate remaining time
                 const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
                 this.remaining = Math.max(0, this.duration - elapsed);
-                
+
                 if (this.remaining <= 0) {
                     this.complete();
                 } else if (this.callbacks.onTick) {
@@ -390,7 +390,7 @@ class WorkoutTimer {
                 }
             }
         });
-        
+
         // Handle page unload
         window.addEventListener('beforeunload', () => {
             if (this.isRunning || this.isPaused) {
@@ -413,7 +413,7 @@ class TimerManager {
         this.timers = new Map(); // exerciseId -> WorkoutTimer instance
         this.activeTimerId = null; // Currently active timer exercise ID
     }
-    
+
     /**
      * Get or create timer instance for specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -422,12 +422,12 @@ class TimerManager {
     getTimer(exerciseId) {
         if (!this.timers.has(exerciseId)) {
             const timer = new WorkoutTimer();
-            
+
             // Override storage methods to be exercise-specific
             const originalSaveToStorage = timer.saveToStorage.bind(timer);
             const originalLoadFromStorage = timer.loadFromStorage.bind(timer);
             const originalClearStorage = timer.clearStorage.bind(timer);
-            
+
             timer.saveToStorage = () => {
                 const state = {
                     duration: timer.duration,
@@ -437,30 +437,30 @@ class TimerManager {
                     startTime: timer.startTime,
                     timestamp: Date.now()
                 };
-                
+
                 try {
                     localStorage.setItem(`gainz.workoutTimer.${exerciseId}`, JSON.stringify(state));
                 } catch (e) {
                     console.warn(`Could not save timer state for exercise ${exerciseId}:`, e);
                 }
             };
-            
+
             timer.loadFromStorage = () => {
                 try {
                     const saved = localStorage.getItem(`gainz.workoutTimer.${exerciseId}`);
                     if (!saved) return;
-                    
+
                     const state = JSON.parse(saved);
                     const now = Date.now();
-                    
+
                     timer.duration = state.duration;
                     timer.startTime = state.startTime;
-                    
+
                     if (state.isRunning && !state.isPaused) {
                         // Calculate how much time has passed since last save
                         const elapsed = Math.floor((now - state.startTime) / 1000);
                         timer.remaining = Math.max(0, state.duration - elapsed);
-                        
+
                         if (timer.remaining > 0) {
                             timer.isRunning = true;
                             timer.isPaused = false;
@@ -485,7 +485,7 @@ class TimerManager {
                     timer.clearStorage();
                 }
             };
-            
+
             timer.clearStorage = () => {
                 try {
                     localStorage.removeItem(`gainz.workoutTimer.${exerciseId}`);
@@ -493,61 +493,62 @@ class TimerManager {
                     console.warn(`Could not clear timer state for exercise ${exerciseId}:`, e);
                 }
             };
-            
+
             // Load saved state for this exercise
             timer.loadFromStorage();
-            
+
             this.timers.set(exerciseId, timer);
         }
-        
+
         return this.timers.get(exerciseId);
     }
-    
+
     /**
      * Start timer for specific exercise, stopping any other active timers
      * @param {string} exerciseId - Exercise ID
      * @param {number} durationSeconds - Timer duration in seconds
      * @returns {boolean} True if timer started successfully
      */
-    startTimer(exerciseId, durationSeconds = null) {
+    async startTimer(exerciseId, durationSeconds = null) {
         // Stop any currently active timer and reset its display
         if (this.activeTimerId && this.activeTimerId !== exerciseId) {
-            const activeTimer = this.timers.get(this.activeTimerId);
+            const oldTimerId = this.activeTimerId; // Save the ID before stop() clears it
+            const activeTimer = this.timers.get(oldTimerId);
             if (activeTimer) {
                 activeTimer.stop();
                 // Reset the old timer's display to its actual default duration
-                const oldDisplay = document.querySelector(`[data-timer-display][data-exercise-id="${this.activeTimerId}"]`);
+                const oldDisplay = document.querySelector(`[data-timer-display][data-exercise-id="${oldTimerId}"]`);
                 if (oldDisplay) {
-                    // Get the actual default duration from user settings (not hardcoded values)
-                    this.getDefaultDurationForExercise(this.activeTimerId).then(realDuration => {
+                    try {
+                        // Get the actual default duration from user settings (not hardcoded values)
+                        const realDuration = await this.getDefaultDurationForExercise(oldTimerId);
                         activeTimer.duration = realDuration;
                         activeTimer.remaining = realDuration;
                         oldDisplay.textContent = activeTimer.formatTime(realDuration);
-                        console.log(`Reset old timer ${this.activeTimerId} to user setting: ${realDuration}s (${oldDisplay.textContent})`);
-                    }).catch(() => {
-                        console.error(`Failed to get user settings for timer ${this.activeTimerId}`);
-                    });
+                    } catch (error) {
+                        console.error(`Failed to get user settings for timer ${oldTimerId}:`, error);
+                    }
                 }
             }
         }
-        
+
         const timer = this.getTimer(exerciseId);
-        
+
         // If timer is already running for this exercise, stop it first to allow restart
         if (timer.isRunning) {
             timer.stop();
         }
-        
+
         const result = timer.start(durationSeconds);
-        
+
         if (result) {
             this.activeTimerId = exerciseId;
             this.updateTimerDisplays();
         }
-        
+
         return result;
     }
-    
+
     /**
      * Pause/resume timer for specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -556,7 +557,7 @@ class TimerManager {
     pauseTimer(exerciseId) {
         const timer = this.getTimer(exerciseId);
         let result;
-        
+
         if (timer.isPaused) {
             result = timer.resume();
             if (result) {
@@ -565,14 +566,14 @@ class TimerManager {
         } else {
             result = timer.pause();
         }
-        
+
         if (result) {
             this.updateTimerDisplays();
         }
-        
+
         return result;
     }
-    
+
     /**
      * Stop timer for specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -581,11 +582,11 @@ class TimerManager {
     stopTimer(exerciseId) {
         const timer = this.getTimer(exerciseId);
         const result = timer.stop();
-        
+
         if (result && this.activeTimerId === exerciseId) {
             this.activeTimerId = null;
         }
-        
+
         // Reset timer display to default duration
         const display = document.querySelector(`[data-timer-display][data-exercise-id="${exerciseId}"]`);
         if (display) {
@@ -601,10 +602,10 @@ class TimerManager {
             });
         }
         this.updateTimerDisplays();
-        
+
         return result;
     }
-    
+
     /**
      * Reset timer for specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -613,11 +614,11 @@ class TimerManager {
     resetTimer(exerciseId) {
         const timer = this.getTimer(exerciseId);
         const result = timer.reset();
-        
+
         if (result && this.activeTimerId === exerciseId) {
             this.activeTimerId = null;
         }
-        
+
         // Reset timer display to default duration
         const display = document.querySelector(`[data-timer-display][data-exercise-id="${exerciseId}"]`);
         if (display) {
@@ -633,10 +634,10 @@ class TimerManager {
             });
         }
         this.updateTimerDisplays();
-        
+
         return result;
     }
-    
+
     /**
      * Adjust timer for specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -649,7 +650,7 @@ class TimerManager {
         this.updateTimerDisplays();
         return newRemaining;
     }
-    
+
     /**
      * Get default duration for a specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -661,7 +662,7 @@ class TimerManager {
             const exerciseCard = document.querySelector(`[data-exercise-id="${exerciseId}"]`);
             const categoryContainer = exerciseCard?.closest('.exercise-category-container');
             const exerciseType = categoryContainer?.dataset.category || 'accessory';
-            
+
             // Fetch user preferences
             const preferencesResponse = await httpRequestHelper('/api/timer-preferences/', 'GET');
             if (preferencesResponse.ok) {
@@ -676,7 +677,7 @@ class TimerManager {
             throw error; // Don't use hardcoded fallbacks that ignore user settings
         }
     }
-    
+
     /**
      * Static method to format time without instance
      * @param {number} seconds - Seconds to format
@@ -687,7 +688,7 @@ class TimerManager {
         const secs = seconds % 60;
         return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
-    
+
     /**
      * Reset timer display to default duration for specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -698,11 +699,11 @@ class TimerManager {
             if (timerDisplay) {
                 const defaultDuration = await this.getDefaultDurationForExercise(exerciseId);
                 const timer = this.getTimer(exerciseId);
-                
+
                 // Update timer instance
                 timer.duration = defaultDuration;
                 timer.remaining = defaultDuration;
-                
+
                 const formattedDefault = timer.formatTime(defaultDuration);
                 timerDisplay.textContent = formattedDefault;
             }
@@ -714,7 +715,7 @@ class TimerManager {
             }
         }
     }
-    
+
     /**
      * Update all timer displays on the page
      */
@@ -727,7 +728,7 @@ class TimerManager {
                 if (timer) {
                     const state = timer.getState();
                     element.textContent = state.formattedTime;
-                    
+
                     // Update timer control buttons for this exercise
                     this.updateTimerControls(exerciseId, state);
                 } else {
@@ -739,7 +740,7 @@ class TimerManager {
                     } catch (error) {
                         element.textContent = '01:30'; // Fallback to 90 seconds
                     }
-                    
+
                     this.updateTimerControls(exerciseId, {
                         isRunning: false,
                         isPaused: false
@@ -748,7 +749,7 @@ class TimerManager {
             }
         });
     }
-    
+
     /**
      * Update timer control buttons for specific exercise
      * @param {string} exerciseId - Exercise ID
@@ -759,7 +760,7 @@ class TimerManager {
         document.querySelectorAll(`[data-function*="startTimer"][data-exercise-id="${exerciseId}"]`).forEach(element => {
             element.disabled = state.isRunning && !state.isPaused;
         });
-        
+
         // Update pause buttons
         document.querySelectorAll(`[data-function*="pauseTimer"][data-exercise-id="${exerciseId}"]`).forEach(element => {
             element.disabled = !state.isRunning && !state.isPaused;
@@ -768,25 +769,25 @@ class TimerManager {
                 spanElement.textContent = state.isPaused ? 'Resume' : 'Pause';
             }
         });
-        
+
         // Update stop buttons
         document.querySelectorAll(`[data-function*="stopTimer"][data-exercise-id="${exerciseId}"], [data-function*="resetTimer"][data-exercise-id="${exerciseId}"]`).forEach(element => {
             element.disabled = !state.isRunning && !state.isPaused;
         });
     }
-    
+
     /**
      * Set up callbacks for all timers to update displays
      */
     setupCallbacks() {
         // Set up callbacks for existing timers and any new ones
         const updateDisplays = () => this.updateTimerDisplays();
-        
+
         // Override getTimer to set up callbacks for new timers
         const originalGetTimer = this.getTimer.bind(this);
         this.getTimer = (exerciseId) => {
             const timer = originalGetTimer(exerciseId);
-            
+
             // Set up callbacks if not already done
             if (!timer._callbacksSetup) {
                 timer.on('tick', updateDisplays);
@@ -809,7 +810,7 @@ class TimerManager {
                         this.activeTimerId = null;
                     }
                     updateDisplays();
-                    
+
                     // Show completion message for this specific exercise
                     const timerMessages = document.querySelectorAll(`[data-timer-message][data-exercise-id="${exerciseId}"]`);
                     timerMessages.forEach(element => {
@@ -821,10 +822,10 @@ class TimerManager {
                         }, 5000);
                     });
                 });
-                
+
                 timer._callbacksSetup = true;
             }
-            
+
             return timer;
         };
     }
@@ -842,34 +843,38 @@ window.timerManager.setupCallbacks();
  * Start timer with duration from data attributes or exercise type
  * Used by data-function="click->startTimer"
  */
-window.startTimer = function(event) {
+window.startTimer = async function(event) {
     if (event && event.preventDefault) {
         event.preventDefault();
     }
-    
-    const element = event?.target || event;
+
+    // Use currentTarget to get the button element, not the clicked icon/span inside
+    const element = event?.currentTarget || event?.target || event;
     const exerciseId = element?.dataset?.exerciseId;
-    
-    console.log('startTimer called for exercise:', exerciseId);
-    
+
+
     if (!exerciseId) {
         console.error('No exercise ID found for timer');
         return false;
     }
-    
-    // Get duration from data attributes or determine from exercise type
+
+    // Get duration from data attributes or determine from user preferences
     let duration = element?.dataset?.duration || element?.dataset?.timer;
-    
+
     if (!duration) {
-        // Try to get duration based on exercise type and user preferences
-        const exerciseType = element?.dataset?.exerciseType;
-        duration = getDefaultTimerDuration(exerciseType);
+        try {
+            // Get duration from user preferences instead of hardcoded values
+            duration = await window.timerManager.getDefaultDurationForExercise(exerciseId);
+        } catch (error) {
+            console.error('Failed to get user timer preferences, using fallback:', error);
+            // Only use hardcoded fallback if user preferences fail
+            const exerciseType = element?.dataset?.exerciseType;
+            duration = getDefaultTimerDuration(exerciseType);
+        }
     }
-    
+
     const seconds = parseInt(duration || 60, 10);
-    
-    console.log('Starting timer with duration:', seconds, 'for exercise:', exerciseId);
-    return window.timerManager.startTimer(exerciseId, seconds);
+    return await window.timerManager.startTimer(exerciseId, seconds);
 };
 
 /**
@@ -880,15 +885,16 @@ window.pauseTimer = function(event) {
     if (event && event.preventDefault) {
         event.preventDefault();
     }
-    
-    const element = event?.target || event;
+
+    // Use currentTarget to get the button element, not the clicked icon/span inside
+    const element = event?.currentTarget || event?.target || event;
     const exerciseId = element?.dataset?.exerciseId;
-    
+
     if (!exerciseId) {
         console.error('No exercise ID found for timer');
         return false;
     }
-    
+
     return window.timerManager.pauseTimer(exerciseId);
 };
 
@@ -900,15 +906,16 @@ window.stopTimer = function(event) {
     if (event && event.preventDefault) {
         event.preventDefault();
     }
-    
-    const element = event?.target || event;
+
+    // Use currentTarget to get the button element, not the clicked icon/span inside
+    const element = event?.currentTarget || event?.target || event;
     const exerciseId = element?.dataset?.exerciseId;
-    
+
     if (!exerciseId) {
         console.error('No exercise ID found for timer');
         return false;
     }
-    
+
     return window.timerManager.stopTimer(exerciseId);
 };
 
@@ -917,14 +924,15 @@ window.stopTimer = function(event) {
  * Used by data-function="click->resetTimer"
  */
 window.resetTimer = function(event) {
-    const element = event?.target || event;
+    // Use currentTarget to get the button element, not the clicked icon/span inside
+    const element = event?.currentTarget || event?.target || event;
     const exerciseId = element?.dataset?.exerciseId;
-    
+
     if (!exerciseId) {
         console.error('No exercise ID found for timer');
         return false;
     }
-    
+
     return window.timerManager.resetTimer(exerciseId);
 };
 
@@ -933,15 +941,16 @@ window.resetTimer = function(event) {
  * Used by data-function="click->adjustTimer"
  */
 window.adjustTimer = function(event) {
-    const element = event?.target || event;
+    // Use currentTarget to get the button element, not the clicked icon/span inside
+    const element = event?.currentTarget || event?.target || event;
     const exerciseId = element?.dataset?.exerciseId;
     const adjustment = parseInt(element?.dataset?.adjust || '30', 10);
-    
+
     if (!exerciseId) {
         console.error('No exercise ID found for timer');
         return 0;
     }
-    
+
     return window.timerManager.adjustTimer(exerciseId, adjustment);
 };
 
@@ -950,14 +959,15 @@ window.adjustTimer = function(event) {
  * Used by data-function="click->addThirtySeconds"
  */
 window.addThirtySeconds = function(event) {
-    const element = event?.target || event;
+    // Use currentTarget to get the button element, not the clicked icon/span inside
+    const element = event?.currentTarget || event?.target || event;
     const exerciseId = element?.dataset?.exerciseId;
-    
+
     if (!exerciseId) {
         console.error('No exercise ID found for timer');
         return 0;
     }
-    
+
     return window.timerManager.adjustTimer(exerciseId, 30);
 };
 
@@ -966,14 +976,15 @@ window.addThirtySeconds = function(event) {
  * Used by data-function="click->subtractThirtySeconds"
  */
 window.subtractThirtySeconds = function(event) {
-    const element = event?.target || event;
+    // Use currentTarget to get the button element, not the clicked icon/span inside
+    const element = event?.currentTarget || event?.target || event;
     const exerciseId = element?.dataset?.exerciseId;
-    
+
     if (!exerciseId) {
         console.error('No exercise ID found for timer');
         return 0;
     }
-    
+
     return window.timerManager.adjustTimer(exerciseId, -30);
 };
 
@@ -989,7 +1000,7 @@ function getDefaultTimerDuration(exerciseType) {
         'secondary': 120,  // 2 minutes
         'accessory': 90    // 90 seconds (fixed from 60)
     };
-    
+
     return defaults[exerciseType] || defaults.accessory;
 }
 
@@ -1024,45 +1035,45 @@ async function handleTimerAutoStart(addSetButton) {
     try {
         // Fetch user timer preferences
         const preferencesResponse = await httpRequestHelper('/api/timer-preferences/', 'GET');
-        
+
         if (!preferencesResponse.ok) {
             console.warn('Failed to fetch timer preferences, skipping auto-start');
             return;
         }
-        
+
         const preferences = preferencesResponse.data;
-        
+
         // Only auto-start if user has the preference enabled
         if (!preferences.auto_start_timer) {
             return;
         }
-        
+
         // Determine exercise type from parent container
         const exerciseCard = addSetButton.closest('.workout-exercise-card');
         if (!exerciseCard) {
             console.warn('Could not find exercise card for timer auto-start');
             return;
         }
-        
-        // Get the exercise ID from the button's parent container  
+
+        // Get the exercise ID from the button's parent container
         const exerciseCardForTimer = addSetButton.closest('.workout-exercise-card');
         const exerciseId = exerciseCardForTimer?.dataset.exerciseId;
-        
+
         if (!exerciseId) {
             console.warn('Could not find exercise ID for timer auto-start');
             return;
         }
-        
+
         // Determine timer duration using override hierarchy
         let timerDuration = await determineTimerDuration(exerciseId, preferences);
-        
+
         // Start the timer if we have a valid duration and exercise ID
         if (timerDuration && timerDuration > 0) {
             if (window.timerManager.startTimer(exerciseId, timerDuration)) {
                 console.log(`Timer auto-started for exercise ${exerciseId}: ${timerDuration} seconds`);
             }
         }
-        
+
     } catch (error) {
         console.error('Error in timer auto-start:', error);
         // Silently fail - don't show error to user as this is a convenience feature
@@ -1072,11 +1083,11 @@ async function handleTimerAutoStart(addSetButton) {
 /**
  * Determine timer duration using the complete override hierarchy:
  * 1. Program-specific setting (highest priority)
- * 2. Routine-specific setting 
+ * 2. Routine-specific setting
  * 3. Exercise-specific override
  * 4. Exercise type default (primary/secondary/accessory)
  * 5. System defaults (lowest priority)
- * 
+ *
  * @param {string} exerciseId - Exercise ID
  * @param {object} preferences - User timer preferences
  * @returns {Promise<number>} Timer duration in seconds
@@ -1087,35 +1098,32 @@ async function determineTimerDuration(exerciseId, preferences) {
         const exerciseCard = document.querySelector(`[data-exercise-id="${exerciseId}"]`);
         const categoryContainer = exerciseCard?.closest('.exercise-category-container');
         const exerciseType = categoryContainer?.dataset.category || 'accessory';
-        
+
         // Step 1: Check for program-specific setting (highest priority)
         const programTimerDuration = await getProgramTimerDuration(exerciseType);
         if (programTimerDuration) {
-            console.log(`Using program-specific setting: ${programTimerDuration}s for ${exerciseType} exercise ${exerciseId}`);
             return programTimerDuration;
         }
-        
+
         // Step 2: Check for routine-specific setting
         const routineTimerDuration = await getRoutineTimerDuration(exerciseType);
         if (routineTimerDuration) {
-            console.log(`Using routine-specific setting: ${routineTimerDuration}s for ${exerciseType} exercise ${exerciseId}`);
             return routineTimerDuration;
         }
-        
+
         // Step 3: Check for exercise-specific override
         const overridesResponse = await httpRequestHelper('/api/exercise-timer-overrides/', 'GET');
-        
+
         if (overridesResponse.ok && overridesResponse.data.overrides) {
             const exerciseOverride = overridesResponse.data.overrides.find(
                 override => override.exercise_id == exerciseId
             );
-            
+
             if (exerciseOverride) {
-                console.log(`Using exercise-specific override: ${exerciseOverride.timer_seconds}s for exercise ${exerciseId}`);
                 return exerciseOverride.timer_seconds;
             }
         }
-        
+
         // Step 4: Fall back to exercise type default (from user preferences)
         if (exerciseCard) {
             let typeDuration;
@@ -1132,23 +1140,21 @@ async function determineTimerDuration(exerciseId, preferences) {
                 default:
                     typeDuration = preferences.accessory_timer_seconds; // Default fallback
             }
-            
+
             if (typeDuration && typeDuration > 0) {
-                console.log(`Using exercise type default: ${typeDuration}s for ${exerciseType} exercise ${exerciseId}`);
                 return typeDuration;
             }
         }
-        
+
         // Step 5: Use user preferences as final fallback (lowest priority)
         if (preferences) {
             const fallbackDuration = preferences.accessory_timer_seconds || 90;
-            console.log(`Using user preference fallback: ${fallbackDuration}s for exercise ${exerciseId}`);
             return fallbackDuration;
         }
-        
+
         console.error(`No timer preferences available for exercise ${exerciseId}`);
         throw new Error('No timer preferences available');
-        
+
     } catch (error) {
         console.error('Error determining timer duration:', error);
         throw error;
@@ -1165,18 +1171,18 @@ async function getProgramTimerDuration(exerciseType) {
         // Check if we're in a workout that has a program context
         const workoutElement = document.querySelector('[data-workout-id]');
         const programElement = document.querySelector('[data-program-id]');
-        
+
         if (!programElement) {
             return null; // No program context
         }
-        
+
         const programId = programElement.dataset.programId;
         const response = await httpRequestHelper(`/api/programs/${programId}/timer-preferences/`, 'GET');
-        
+
         if (response.ok && response.data) {
             const programPrefs = response.data;
             let timerSeconds = null;
-            
+
             switch (exerciseType) {
                 case 'primary':
                     timerSeconds = programPrefs.primary_timer_seconds;
@@ -1188,10 +1194,10 @@ async function getProgramTimerDuration(exerciseType) {
                     timerSeconds = programPrefs.accessory_timer_seconds;
                     break;
             }
-            
+
             return timerSeconds && timerSeconds > 0 ? timerSeconds : null;
         }
-        
+
         return null;
     } catch (error) {
         console.warn('Error fetching program timer preferences:', error);
@@ -1209,18 +1215,18 @@ async function getRoutineTimerDuration(exerciseType) {
         // Check if we're in a workout that has a routine context
         const workoutElement = document.querySelector('[data-workout-id]');
         const routineElement = document.querySelector('[data-routine-id]');
-        
+
         if (!routineElement) {
             return null; // No routine context
         }
-        
+
         const routineId = routineElement.dataset.routineId;
         const response = await httpRequestHelper(`/api/routines/${routineId}/timer-preferences/`, 'GET');
-        
+
         if (response.ok && response.data) {
             const routinePrefs = response.data;
             let timerSeconds = null;
-            
+
             switch (exerciseType) {
                 case 'primary':
                     timerSeconds = routinePrefs.primary_timer_seconds;
@@ -1232,10 +1238,10 @@ async function getRoutineTimerDuration(exerciseType) {
                     timerSeconds = routinePrefs.accessory_timer_seconds;
                     break;
             }
-            
+
             return timerSeconds && timerSeconds > 0 ? timerSeconds : null;
         }
-        
+
         return null;
     } catch (error) {
         console.warn('Error fetching routine timer preferences:', error);
@@ -1256,45 +1262,45 @@ window.saveTimerPreferences = async function(event) {
     const button = event.target;
     const form = button.closest('form');
     if (!form) return;
-    
+
     // Disable button during request
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = 'Saving...';
-    
+
     // Clear any previous errors
     clearTimerPreferencesErrors();
-    
+
     try {
         // Extract form data
         const formData = new FormData(form);
         const data = {};
-        
+
         // Extract timer preference fields
         const timerFields = [
             'primary_timer_seconds',
-            'secondary_timer_seconds', 
+            'secondary_timer_seconds',
             'accessory_timer_seconds',
             'preferred_weight_unit',
             'default_weight_increment',
             'default_rep_increment'
         ];
-        
+
         timerFields.forEach(field => {
             const value = formData.get(field);
             if (value !== null) {
                 data[field] = value;
             }
         });
-        
+
         // Handle checkbox fields
         data.auto_start_timer = formData.has('auto_start_timer');
         data.timer_sound_enabled = formData.has('timer_sound_enabled');
         data.auto_progression_enabled = formData.has('auto_progression_enabled');
-        
+
         // Make AJAX request
         const response = await httpRequestHelper('/api/timer-preferences/', 'POST', data);
-        
+
         if (response.ok) {
             send_toast('Timer preferences saved successfully!', 'success');
             clearTimerPreferencesErrors();
@@ -1336,7 +1342,7 @@ function displayTimerPreferencesErrors(errors) {
                 if (existingErrorDiv) {
                     existingErrorDiv.remove();
                 }
-                
+
                 // Add error styling and message
                 input.classList.add('is-invalid');
                 const errorDiv = document.createElement('div');
@@ -1355,7 +1361,7 @@ function clearTimerPreferencesErrors() {
     const timerFields = [
         'primary_timer_seconds',
         'secondary_timer_seconds',
-        'accessory_timer_seconds', 
+        'accessory_timer_seconds',
         'preferred_weight_unit',
         'auto_start_timer',
         'timer_sound_enabled',
@@ -1363,7 +1369,7 @@ function clearTimerPreferencesErrors() {
         'default_weight_increment',
         'default_rep_increment'
     ];
-    
+
     timerFields.forEach(fieldName => {
         const input = document.getElementById(fieldName) || document.querySelector(`[name="${fieldName}"]`);
         if (input) {
@@ -1408,7 +1414,7 @@ window.initExerciseTimerOverrides = function() {
 async function loadExerciseTimerOverrides() {
     try {
         const response = await httpRequestHelper('/api/exercise-timer-overrides/', 'GET');
-        
+
         if (response.ok && response.data.overrides) {
             displayExerciseTimerOverrides(response.data.overrides);
         } else {
@@ -1426,19 +1432,19 @@ async function loadExerciseTimerOverrides() {
 function displayExerciseTimerOverrides(overrides) {
     const overridesList = document.getElementById('exercise-timer-overrides-list');
     const noOverridesMessage = document.getElementById('no-overrides-message');
-    
+
     if (!overridesList) return;
-    
+
     // Clear existing content
     overridesList.innerHTML = '';
-    
+
     if (!overrides || overrides.length === 0) {
         if (noOverridesMessage) {
             overridesList.appendChild(noOverridesMessage);
         }
         return;
     }
-    
+
     // Create override items
     overrides.forEach(override => {
         const overrideItem = createOverrideItem(override);
@@ -1455,13 +1461,13 @@ function createOverrideItem(override) {
     const div = document.createElement('div');
     div.className = 'timer-override-item d-flex justify-content-between align-items-center border-bottom py-2';
     div.setAttribute('data-override-id', override.id);
-    
+
     const formatTime = (seconds) => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
     };
-    
+
     div.innerHTML = `
         <div class="override-info flex-grow-1">
             <div class="fw-semibold text-dark">${escapeHtml(override.exercise_name)}</div>
@@ -1472,7 +1478,7 @@ function createOverrideItem(override) {
             </div>
         </div>
         <div class="override-actions">
-            <button type="button" class="btn btn-sm btn-outline-danger" 
+            <button type="button" class="btn btn-sm btn-outline-danger"
                     data-function="click->deleteExerciseTimerOverride"
                     data-override-id="${override.id}"
                     data-exercise-name="${escapeHtml(override.exercise_name)}"
@@ -1481,7 +1487,7 @@ function createOverrideItem(override) {
             </button>
         </div>
     `;
-    
+
     return div;
 }
 
@@ -1491,10 +1497,10 @@ function createOverrideItem(override) {
 function setupExerciseSearch() {
     const searchSelect = document.getElementById('override_exercise_search');
     if (!searchSelect) return;
-    
+
     // Load initial exercises
     loadExerciseOptions('');
-    
+
     // Add search functionality (debounced)
     let searchTimeout;
     searchSelect.addEventListener('input', function() {
@@ -1516,15 +1522,15 @@ async function loadExerciseOptions(query = '') {
     try {
         const searchSelect = document.getElementById('override_exercise_search');
         if (!searchSelect) return;
-        
+
         const response = await httpRequestHelper(`/api/exercises/search/?q=${encodeURIComponent(query)}&limit=50`, 'GET');
-        
+
         if (response.ok && response.data.exercises) {
             // Clear existing options (except the first placeholder)
             const placeholder = searchSelect.firstElementChild;
             searchSelect.innerHTML = '';
             searchSelect.appendChild(placeholder);
-            
+
             // Add exercise options
             response.data.exercises.forEach(exercise => {
                 const option = document.createElement('option');
@@ -1544,50 +1550,50 @@ async function loadExerciseOptions(query = '') {
  */
 window.addExerciseTimerOverride = async function(event) {
     event.preventDefault();
-    
+
     const form = document.getElementById('exercise-timer-override-form');
     if (!form) return;
-    
+
     const button = event.target;
     const originalText = button.innerHTML;
-    
+
     // Disable button during request
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
-    
+
     try {
         // Clear previous errors
         clearExerciseOverrideFormErrors();
-        
+
         // Get form data
         const formData = new FormData(form);
         const data = {
             exercise_id: parseInt(formData.get('exercise_id')),
             timer_seconds: parseInt(formData.get('timer_seconds'))
         };
-        
+
         // Validate data
         if (!data.exercise_id) {
             showExerciseOverrideFieldError('override_exercise_search', 'Please select an exercise.');
             return;
         }
-        
+
         if (!data.timer_seconds || data.timer_seconds < 10 || data.timer_seconds > 3600) {
             showExerciseOverrideFieldError('override_timer_seconds', 'Timer duration must be between 10 and 3600 seconds.');
             return;
         }
-        
+
         // Make API request
         const response = await httpRequestHelper('/api/exercise-timer-overrides/', 'POST', data);
-        
+
         if (response.ok) {
             send_toast('Exercise timer override added successfully!', 'success');
-            
+
             // Clear form
             form.reset();
             const searchSelect = document.getElementById('override_exercise_search');
             if (searchSelect) searchSelect.selectedIndex = 0;
-            
+
             // Reload overrides list
             await loadExerciseTimerOverrides();
         } else {
@@ -1613,37 +1619,37 @@ window.addExerciseTimerOverride = async function(event) {
  */
 window.deleteExerciseTimerOverride = async function(event) {
     event.preventDefault();
-    
+
     const button = event.target.closest('button');
     const overrideId = button.getAttribute('data-override-id');
     const exerciseName = button.getAttribute('data-exercise-name');
-    
+
     if (!overrideId) {
         console.error('No override ID found');
         return;
     }
-    
+
     // Confirm deletion
     if (!confirm(`Delete timer override for "${exerciseName}"?`)) {
         return;
     }
-    
+
     const originalText = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    
+
     try {
         const response = await httpRequestHelper(`/api/exercise-timer-overrides/${overrideId}/delete/`, 'DELETE');
-        
+
         if (response.ok) {
             send_toast('Exercise timer override deleted successfully!', 'success');
-            
+
             // Remove the item from the DOM
             const overrideItem = document.querySelector(`[data-override-id="${overrideId}"]`);
             if (overrideItem) {
                 overrideItem.remove();
             }
-            
+
             // If no more overrides, show the "no overrides" message
             const overridesList = document.getElementById('exercise-timer-overrides-list');
             if (overridesList && overridesList.children.length === 0) {
@@ -1669,7 +1675,7 @@ window.deleteExerciseTimerOverride = async function(event) {
  */
 function clearExerciseOverrideFormErrors() {
     const fields = ['override_exercise_search', 'override_timer_seconds'];
-    
+
     fields.forEach(fieldId => {
         const field = document.getElementById(fieldId);
         if (field) {
@@ -1713,7 +1719,7 @@ function displayExerciseOverrideFormErrors(errors) {
             } else if (fieldName === 'timer_seconds') {
                 fieldId = 'override_timer_seconds';
             }
-            
+
             if (fieldId) {
                 showExerciseOverrideFieldError(fieldId, fieldErrors[0]);
             }
@@ -1748,7 +1754,7 @@ async function initializeTimerDisplays() {
     try {
         // Find all timer displays and set them to default values
         const timerDisplays = document.querySelectorAll('[data-timer-display][data-exercise-id]');
-        
+
         for (const display of timerDisplays) {
             const exerciseId = display.dataset.exerciseId;
             if (exerciseId) {
@@ -1776,7 +1782,7 @@ if (typeof window.observer !== 'undefined') {
         window.observer.callback = function(mutations) {
             // Call original callback first
             originalCallback(mutations);
-            
+
             // Then initialize any new timer displays
             mutations.forEach(mutation => {
                 if (mutation.type === 'childList') {
