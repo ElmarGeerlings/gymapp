@@ -22,7 +22,11 @@ from gainz.views import (
     program_update, # Add program_update view
     program_delete, # Add program_delete view
     program_list, # Add program_list view
+    program_activate, # Add program_activate view
+    program_deactivate, # Add program_deactivate view
     start_workout_from_routine, # Add start_workout_from_routine view
+    start_empty_workout, # Add empty workout view
+    clear_workout, # Add clear workout view
     workout_update,
     workout_delete,
     start_next_workout, # Add new view
@@ -147,14 +151,24 @@ urlpatterns = [
     # Delete Program
     path('programs/<int:program_id>/delete/', program_delete, name='program-delete'),
 
+    # Activate/Deactivate Program
+    path('programs/<int:program_id>/activate/', program_activate, name='program-activate'),
+    path('programs/<int:program_id>/deactivate/', program_deactivate, name='program-deactivate'),
+
     # Update Workout
     path('workouts/<int:workout_id>/edit/', workout_update, name='workout-update'),
 
     # Delete Workout
     path('workouts/<int:workout_id>/delete/', workout_delete, name='workout-delete'),
 
+    # Clear Workout (remove all exercises)
+    path('workouts/<int:workout_id>/clear/', clear_workout, name='clear-workout'),
+
     # Start Next Workout
     path('workouts/start-next/', start_next_workout, name='start-next-workout'),
+
+    # Start Empty Workout
+    path('workouts/start-empty/', start_empty_workout, name='start-empty-workout'),
 
     # path('ajax/get_exercise_details/', ajax_get_exercise_details, name='ajax_get_exercise_details'),
     path('ajax/update_workout_exercise_feedback/', ajax_update_workout_exercise_feedback, name='ajax_update_workout_exercise_feedback'),

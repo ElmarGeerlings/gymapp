@@ -80,6 +80,15 @@
                             {% endif %}
                         </div>
                         <div class="ms-3 d-flex flex-column flex-md-row gap-2">
+                            {% if program.is_active %}
+                                <a href="{% url 'program-deactivate' program.id %}" class="btn btn-sm btn-warning border-dark">
+                                    <i class="fas fa-pause me-1"></i><span class="d-none d-sm-inline">Deactivate</span>
+                                </a>
+                            {% else %}
+                                <a href="{% url 'program-activate' program.id %}" class="btn btn-sm btn-success">
+                                    <i class="fas fa-play me-1"></i><span class="d-none d-sm-inline">Activate</span>
+                                </a>
+                            {% endif %}
                             <a href="{% url 'program-update' program.id %}" class="btn btn-sm btn-outline-primary">
                                 <i class="fas fa-edit me-1"></i><span class="d-none d-sm-inline">Edit</span>
                             </a>

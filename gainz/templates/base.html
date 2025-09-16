@@ -4,6 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token }}">
+    <script>
+        // Mobile detection and device type cookie management
+        (function() {
+            function setDeviceTypeCookie() {
+                const isMobile = window.innerWidth <= 768;
+                const deviceType = isMobile ? 'mobile' : 'desktop';
+                document.cookie = `device_type=${deviceType}; path=/; max-age=31536000`; // 1 year expiry
+            }
+
+            // Set cookie immediately on page load
+            setDeviceTypeCookie();
+
+            // Update cookie on window resize
+            window.addEventListener('resize', setDeviceTypeCookie);
+        })();
+    </script>
     <title>Gainz - Workout Tracker</title>
     {% load static %}
     <!-- Bootstrap CSS -->

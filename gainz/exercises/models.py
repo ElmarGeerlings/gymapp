@@ -152,6 +152,13 @@ class Exercise(models.Model):
         except:
             return True
 
+    def get_category_ids_string(self):
+        """
+        Get comma-separated string of category IDs for this exercise.
+        Returns empty string if no categories.
+        """
+        return ','.join(str(cat_id) for cat_id in self.categories.values_list('id', flat=True))
+
 
 class ExerciseAlternativeName(models.Model):
     """Alternative names for exercises to improve matching"""

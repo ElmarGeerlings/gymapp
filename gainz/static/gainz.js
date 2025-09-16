@@ -519,6 +519,29 @@ function show_modal(event) {
     if (modal) {
         const form = modal.querySelector('form');
         if(form && form.id) clearFormErrors(form.id);
+
+        // Reset the form for add exercise modal
+        if (modalname === 'add-exercise-modal') {
+            // Reset title
+            const modalTitle = document.getElementById('exercise-modal-title');
+            if (modalTitle) modalTitle.textContent = 'Add New Exercise';
+
+            // Clear exercise ID
+            const exerciseIdField = document.getElementById('exercise-id');
+            if (exerciseIdField) exerciseIdField.value = '';
+
+            // Reset form
+            if (form) form.reset();
+
+            // Hide delete button
+            const deleteBtn = document.getElementById('delete-exercise-btn');
+            if (deleteBtn) deleteBtn.style.display = 'none';
+
+            // Reset exercise type to default
+            const exerciseTypeField = document.getElementById('id_exercise_type_modal');
+            if (exerciseTypeField) exerciseTypeField.value = 'accessory';
+        }
+
         modal.style.display = 'flex';
     }
     const focus = event.target.getAttribute('data-focus');
@@ -768,13 +791,16 @@ window.handle_and_morph = async function(event) { // Made async to use await wit
     }
 };
 
-// --- Add Exercise Modal Submission ---
+// --- Add/Edit Exercise Modal Submission ---
 // This function will be triggered by data-function="click->saveExercise"
 async function saveExercise(event) {
     const form = event.target.closest('form');
     if (!form) return;
     const formId = form.id;
     clearFormErrors(formId);
+
+    const exerciseId = document.getElementById('exercise-id').value;
+    const isEdit = exerciseId !== '';
 
     const formData = new FormData(form);
     const data = {};
@@ -794,20 +820,92 @@ async function saveExercise(event) {
     });
     data.is_custom = true; // Always set for this form
 
+    // Determine URL and method based on whether we're editing or creating
+    const url = isEdit ? `/api/exercises/${exerciseId}/` : form.action;
+    const method = isEdit ? 'PUT' : 'POST';
+
     // Use the helper for the actual request
-    const response = await httpRequestHelper(form.action, 'POST', data);
+    const response = await httpRequestHelper(url, method, data);
 
     if (response.ok) {
-        send_toast('Exercise added successfully!', 'success');
+        const message = isEdit ? 'Exercise updated successfully!' : 'Exercise added successfully!';
+        send_toast(message, 'success');
         const modal = form.closest('.siu-modal');
         if (modal) modal.style.display = 'none';
         form.reset();
+        document.getElementById('exercise-id').value = '';
         // Instead of full reload, maybe update list dynamically later?
         // For now, reload is simplest
         window.location.reload();
     } else {
         displayFormErrors(formId, response.data || { detail: response.statusText });
         send_toast(response.data?.detail || 'Error saving exercise.', 'danger');
+    }
+}
+
+// --- Edit Exercise ---
+// This function opens the modal with pre-filled data for editing
+function editExercise(event) {
+    const exerciseCard = event.currentTarget;
+
+    // Get the exercise data from data attributes
+    const exerciseId = exerciseCard.dataset.exerciseId;
+    const exerciseName = exerciseCard.dataset.exerciseName;
+    const exerciseDescription = exerciseCard.dataset.exerciseDescription || '';
+    const exerciseType = exerciseCard.dataset.exerciseType;
+    const exerciseCategories = exerciseCard.dataset.exerciseCategories ?
+        exerciseCard.dataset.exerciseCategories.split(',') : [];
+
+    // Update modal title
+    document.getElementById('exercise-modal-title').textContent = 'Edit Exercise';
+
+    // Fill the form fields
+    document.getElementById('exercise-id').value = exerciseId;
+    document.getElementById('id_name_modal').value = exerciseName;
+    document.getElementById('id_description_modal').value = exerciseDescription;
+    document.getElementById('id_exercise_type_modal').value = exerciseType;
+
+    // Set selected categories
+    const categorySelect = document.getElementById('id_categories_modal');
+    Array.from(categorySelect.options).forEach(option => {
+        option.selected = exerciseCategories.includes(option.value);
+    });
+
+    // Show delete button for editing
+    document.getElementById('delete-exercise-btn').style.display = 'inline-block';
+
+    // Open the modal
+    document.getElementById('add-exercise-modal').style.display = 'block';
+
+    // Focus on the name field
+    document.getElementById('id_name_modal').focus();
+}
+
+// --- Delete Exercise ---
+// This function deletes a custom exercise
+async function deleteExercise(event) {
+    const exerciseId = document.getElementById('exercise-id').value;
+
+    if (!exerciseId) {
+        send_toast('No exercise selected for deletion.', 'danger');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to delete this exercise? This cannot be undone.')) {
+        return;
+    }
+
+    const response = await httpRequestHelper(`/api/exercises/${exerciseId}/`, 'DELETE');
+
+    if (response.ok) {
+        send_toast('Exercise deleted successfully!', 'success');
+        const modal = document.getElementById('add-exercise-modal');
+        if (modal) modal.style.display = 'none';
+        document.getElementById('add-exercise-form').reset();
+        document.getElementById('exercise-id').value = '';
+        window.location.reload();
+    } else {
+        send_toast(response.data?.detail || 'Error deleting exercise.', 'danger');
     }
 }
 
@@ -1178,6 +1276,7 @@ window.fetchAndUpdateExerciseList = async function() {
     const searchInput = document.getElementById('exercise-search');
     const typeFilter = document.getElementById('exercise-type-filter');
     const categoryFilter = document.getElementById('category-filter');
+    const customFilter = document.getElementById('custom-filter');
     const listContainer = document.getElementById('exercise-list-container');
 
     if (!listContainer) return;
@@ -1191,6 +1290,9 @@ window.fetchAndUpdateExerciseList = async function() {
     }
     if (categoryFilter && categoryFilter.value) { // Added null check for categoryFilter
         params.append('category', categoryFilter.value);
+    }
+    if (customFilter && customFilter.value) { // Added custom filter
+        params.append('custom_filter', customFilter.value);
     }
 
     const newUrl = `${window.location.pathname}?${params.toString()}`;

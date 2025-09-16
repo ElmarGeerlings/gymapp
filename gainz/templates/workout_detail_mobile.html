@@ -1,0 +1,494 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ title|default:"Workout Details" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Workout Header -->
+    <div class="workout-header mb-4 pb-3 border-bottom">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <h1 class="mb-0 responsive-text">{{ workout.name }}</h1>
+            <a href="{% url 'workout-update' workout.id %}" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-edit"></i>
+            </a>
+        </div>
+        <p class="workout-date text-muted mb-2">{{ workout.date|date:"l, F j, Y, P" }}</p>
+        {% if workout.notes %}
+            <p class="mb-0"><strong>Notes:</strong> {{ workout.notes|linebreaksbr }}</p>
+        {% endif %}
+        {% if workout.routine_source %}
+            <p class="mb-0 mt-2">Based on Routine: <a href="{% url 'routine-detail' workout.routine_source.id %}">{{ workout.routine_source.name }}</a></p>
+        {% endif %}
+    </div>
+
+    {% if not primary_exercises and not secondary_exercises and not accessory_exercises %}
+        <!-- Empty Workout State -->
+        <div class="text-center py-5">
+            <div class="mb-4">
+                <i class="fas fa-dumbbell text-muted" style="font-size: 3rem;"></i>
+            </div>
+            <h3 class="text-muted mb-3">No exercises yet</h3>
+            <p class="text-muted mb-4">Start your workout by adding an exercise</p>
+            <button class="btn btn-primary btn-lg"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#add-exercise-form"
+                    aria-expanded="false"
+                    aria-controls="add-exercise-form">
+                <i class="fas fa-plus me-2"></i>Add Exercise
+            </button>
+        </div>
+    {% else %}
+        <!-- Exercise Content -->
+        {% with all_exercises=primary_exercises|add:secondary_exercises|add:accessory_exercises %}
+
+        <!-- Single Exercise Card Container -->
+        <div id="exercise-card-container" class="position-relative" style="min-height: 400px;">
+            {% for exercise in all_exercises %}
+                <div class="exercise-card {% if not forloop.first %}d-none{% endif %}" data-exercise-index="{{ forloop.counter0 }}">
+                    <div class="card workout-exercise-card" data-exercise-id="{{ exercise.id }}" data-order="{{ exercise.order }}">
+                        <!-- Card Header: Exercise Name and Delete Button -->
+                        <div class="card-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">{{ exercise.exercise.name }}</h5>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        data-function="click->removeExercise"
+                                        data-exercise-id="{{ exercise.id }}"
+                                        title="Remove exercise">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Card Body -->
+                        <div class="card-body">
+                            {% if exercise.notes %}
+                                <p class="card-text text-muted mb-3"><em>{{ exercise.notes|linebreaksbr }}</em></p>
+                            {% endif %}
+
+                            <!-- Timer Section -->
+                            <div class="timer-section text-center mb-4 p-3 bg-light rounded">
+                                <div class="timer-display mb-3" data-timer-display data-exercise-id="{{ exercise.id }}" style="font-size: 2rem; font-weight: bold;">00:00</div>
+                                <div class="timer-message small text-muted mb-3" data-timer-message data-exercise-id="{{ exercise.id }}"></div>
+                                <div class="d-flex justify-content-center gap-2">
+                                    <button type="button" class="btn btn-success timer-start-btn"
+                                            data-function="click->startTimer"
+                                            data-exercise-id="{{ exercise.id }}"
+                                            data-exercise-type="{{ exercise.get_exercise_type }}"
+                                            title="Start timer">
+                                        <i class="fas fa-play me-1"></i>Start
+                                    </button>
+                                    <button type="button" class="btn btn-warning timer-pause-btn"
+                                            data-function="click->pauseTimer"
+                                            data-exercise-id="{{ exercise.id }}"
+                                            title="Pause timer">
+                                        <i class="fas fa-pause me-1"></i>Pause
+                                    </button>
+                                    <button type="button" class="btn btn-danger timer-stop-btn"
+                                            data-function="click->stopTimer"
+                                            data-exercise-id="{{ exercise.id }}"
+                                            title="Stop timer">
+                                        <i class="fas fa-stop me-1"></i>Stop
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Feedback Buttons -->
+                            <div class="feedback-section mb-4">
+                                <h6 class="text-center mb-3">How was this exercise?</h6>
+                                <div class="d-flex justify-content-center gap-2">
+                                    <button type="button" class="btn btn-outline-success {% if exercise.performance_feedback == 'increase' %}active{% endif %}"
+                                            data-function="click->updateExerciseFeedback"
+                                            data-exercise-id="{{ exercise.id }}"
+                                            data-feedback="increase"
+                                            title="Increase weight/reps next time">
+                                        <i class="fas fa-plus me-1"></i>Increase
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary {% if exercise.performance_feedback == 'stay' %}active{% endif %}"
+                                            data-function="click->updateExerciseFeedback"
+                                            data-exercise-id="{{ exercise.id }}"
+                                            data-feedback="stay"
+                                            title="Keep same weight/reps">
+                                        <i class="fas fa-equals me-1"></i>Same
+                                    </button>
+                                    <button type="button" class="btn btn-outline-warning {% if exercise.performance_feedback == 'decrease' %}active{% endif %}"
+                                            data-function="click->updateExerciseFeedback"
+                                            data-exercise-id="{{ exercise.id }}"
+                                            data-feedback="decrease"
+                                            title="Decrease weight/reps next time">
+                                        <i class="fas fa-minus me-1"></i>Decrease
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Sets Section -->
+                            <div class="sets-container" data-exercise-id="{{ exercise.id }}" data-exercise-name="{{ exercise.exercise.name }}">
+                                <h6 class="mb-3">Sets & Reps</h6>
+                                {% if exercise.sets.all %}
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th width="100">Reps</th>
+                                                    <th width="120">Weight (kg)</th>
+                                                    <th width="80">Warmup</th>
+                                                    <th width="40"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="sets-tbody">
+                                                {% for set in exercise.sets.all %}
+                                                    <tr class="set-row" data-set-id="{{ set.id }}" data-reps="{{ set.reps }}" data-weight="{{ set.weight }}">
+                                                        <td class="set-reps">
+                                                            <input type="number" class="form-control form-control-sm set-reps-input"
+                                                                   value="{{ set.reps }}" min="0" step="1"
+                                                                   data-function="blur->updateSet"
+                                                                   data-set-id="{{ set.id }}"
+                                                                   data-field="reps">
+                                                        </td>
+                                                        <td class="set-weight">
+                                                            <input type="number" class="form-control form-control-sm set-weight-input"
+                                                                   value="{{ set.weight }}" min="0" step="0.5"
+                                                                   data-function="blur->updateSet"
+                                                                   data-set-id="{{ set.id }}"
+                                                                   data-field="weight">
+                                                        </td>
+                                                        <td class="set-warmup text-center">
+                                                            <input type="checkbox" class="form-check-input"
+                                                                   {% if set.is_warmup %}checked{% endif %}
+                                                                   data-function="change->updateSet"
+                                                                   data-set-id="{{ set.id }}"
+                                                                   data-field="is_warmup">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <a href="#" class="text-danger"
+                                                               data-function="click->deleteSet"
+                                                               data-set-id="{{ set.id }}"
+                                                               title="Delete set">
+                                                                <i class="fas fa-times"></i>
+                                                            </a>
+                                                        </td>
+                                                    </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                {% else %}
+                                    <p class="text-muted no-sets-message text-center">No sets recorded for this exercise.</p>
+                                {% endif %}
+
+                                <!-- Add Set Button -->
+                                <div class="text-center mt-3">
+                                    <button class="btn btn-outline-primary"
+                                            data-function="click->addSet"
+                                            data-exercise-id="{{ exercise.id }}"
+                                            title="Add set">
+                                        <i class="fas fa-plus me-1"></i>Add Set
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <!-- Navigation Below Card -->
+        <div class="exercise-navigation-bottom mt-3">
+            <!-- Exercise indicators -->
+            <div class="exercise-indicators d-flex justify-content-center gap-1 mb-2">
+                {% for exercise in all_exercises %}
+                    <div class="indicator {% if forloop.first %}active{% endif %}" data-exercise-index="{{ forloop.counter0 }}"></div>
+                {% endfor %}
+            </div>
+
+            <!-- Navigation buttons with counter -->
+            <div class="exercise-nav-buttons d-flex justify-content-between align-items-center">
+                <button class="btn btn-outline-secondary" id="prev-exercise" style="min-width: 100px;" disabled>
+                    <i class="fas fa-chevron-left me-1"></i>Previous
+                </button>
+
+                <div class="exercise-counter text-muted">
+                    <span id="current-exercise-num">1</span> of {{ all_exercises|length }}
+                </div>
+
+                <button class="btn btn-outline-secondary" id="next-exercise" style="min-width: 100px;" {% if all_exercises|length <= 1 %}disabled{% endif %}>
+                    Next<i class="fas fa-chevron-right ms-1"></i>
+                </button>
+            </div>
+        </div>
+        {% endwith %}
+    {% endif %}
+
+    <!-- Add Exercise Form (shown when there are exercises or when toggled) -->
+    <div class="{% if not primary_exercises and not secondary_exercises and not accessory_exercises %}collapse{% endif %} mt-5 pt-4 border-top" id="add-exercise-form">
+        <h5 class="mb-3">Add Exercise to This Workout</h5>
+        <form id="add-exercise-to-workout-form-{{ workout.id }}" class="add-exercise-controls">
+            {% csrf_token %}
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <label for="exercise-select-{{ workout.id }}" class="form-label">Exercise</label>
+                    <select id="exercise-select-{{ workout.id }}" name="exercise" class="form-select">
+                        <option value="" selected disabled>Choose an exercise...</option>
+                        {% for ex in all_exercises_for_form %}
+                            <option value="{{ ex.id }}">{{ ex.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label for="exercise-type-{{ workout.id }}" class="form-label">Type (Optional)</label>
+                    <select id="exercise-type-{{ workout.id }}" name="exercise_type" class="form-select">
+                        <option value="">Default</option>
+                        {% for type_val, type_display in exercise_type_choices %}
+                            <option value="{{ type_val }}">{{ type_display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-2 d-flex align-items-end">
+                    <button type="button" class="btn btn-primary w-100"
+                            data-function="click->addExerciseToWorkout"
+                            data-workout-id="{{ workout.id }}">
+                        <i class="fas fa-plus me-1"></i>Add
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Mobile Exercise Navigation Script -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const exerciseCards = document.querySelectorAll('.exercise-card');
+    const indicators = document.querySelectorAll('.indicator');
+    const prevBtn = document.getElementById('prev-exercise');
+    const nextBtn = document.getElementById('next-exercise');
+    const currentNumSpan = document.getElementById('current-exercise-num');
+
+    let currentIndex = 0;
+    const totalExercises = exerciseCards.length;
+
+    if (totalExercises === 0) return; // No exercises to navigate
+
+    function showExercise(index) {
+        // Hide all cards
+        exerciseCards.forEach(card => card.classList.add('d-none'));
+        indicators.forEach(ind => ind.classList.remove('active'));
+
+        // Show current card
+        if (exerciseCards[index]) {
+            exerciseCards[index].classList.remove('d-none');
+        }
+        if (indicators[index]) {
+            indicators[index].classList.add('active');
+        }
+
+        // Update navigation
+        currentNumSpan.textContent = index + 1;
+        if (prevBtn) {
+            prevBtn.disabled = index === 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = index === totalExercises - 1;
+        }
+
+        currentIndex = index;
+    }
+
+
+    // Navigation event listeners
+    if (prevBtn) {
+        prevBtn.addEventListener('click', function() {
+            if (currentIndex > 0) {
+                showExercise(currentIndex - 1);
+            }
+        });
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', function() {
+            if (currentIndex < totalExercises - 1) {
+                showExercise(currentIndex + 1);
+            }
+        });
+    }
+
+
+    // Indicator click handlers
+    indicators.forEach((indicator, index) => {
+        indicator.addEventListener('click', function() {
+            showExercise(index);
+        });
+    });
+
+    // Touch/swipe support (basic implementation)
+    let startX = 0;
+    let endX = 0;
+
+    const container = document.getElementById('exercise-card-container');
+    if (container) {
+        container.addEventListener('touchstart', function(e) {
+            startX = e.touches[0].clientX;
+        });
+
+        container.addEventListener('touchend', function(e) {
+            endX = e.changedTouches[0].clientX;
+            handleSwipe();
+        });
+
+        function handleSwipe() {
+            const threshold = 50; // Minimum distance for swipe
+            const diff = startX - endX;
+
+            if (Math.abs(diff) > threshold) {
+                if (diff > 0 && currentIndex < totalExercises - 1) {
+                    // Swipe left - next exercise
+                    showExercise(currentIndex + 1);
+                } else if (diff < 0 && currentIndex > 0) {
+                    // Swipe right - previous exercise
+                    showExercise(currentIndex - 1);
+                }
+            }
+        }
+    }
+
+    // Mobile-specific add exercise handling
+    window.currentExerciseIndex = currentIndex;
+
+    // Override the default add exercise behavior for mobile
+    const addExerciseBtn = document.querySelector('[data-function="click->addExerciseToWorkout"]');
+    if (addExerciseBtn) {
+        // Remove the default handler
+        addExerciseBtn.removeAttribute('data-function');
+
+        // Add mobile-specific handler
+        addExerciseBtn.addEventListener('click', async function(event) {
+            event.preventDefault();
+
+            const button = event.target.closest('button');
+            const workoutId = button.dataset.workoutId;
+
+            if (!workoutId) {
+                console.error('Missing data-workout-id');
+                return;
+            }
+
+            // Find controls
+            const container = button.closest('.add-exercise-controls');
+            if (!container) {
+                console.error('Cannot find container for add exercise controls');
+                return;
+            }
+
+            const exerciseSelect = container.querySelector('select[name="exercise"]');
+            const typeSelect = container.querySelector('select[name="exercise_type"]');
+            const exerciseId = exerciseSelect?.value;
+            const exerciseType = typeSelect?.value;
+
+            if (!exerciseId) {
+                if (typeof send_toast === 'function') {
+                    send_toast('Please select an exercise', 'warning');
+                }
+                return;
+            }
+
+            // Calculate order based on current exercise
+            let newOrder = 1;
+            if (exerciseCards.length > 0 && currentIndex < exerciseCards.length) {
+                const currentCard = exerciseCards[currentIndex];
+                const currentOrder = parseInt(currentCard.dataset.order) || 0;
+                newOrder = currentOrder + 1;
+            }
+
+            // Add exercise via API
+            const url = `/api/workouts/${workoutId}/add_exercise/`;
+            const data = {
+                exercise: exerciseId,
+                exercise_type: exerciseType,
+                order: newOrder
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    if (typeof send_toast === 'function') {
+                        send_toast('Exercise added! Refreshing...', 'success');
+                    }
+
+                    // For now, reload the page to get the new exercise
+                    // In a future enhancement, we could add the card dynamically
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                } else {
+                    if (typeof send_toast === 'function') {
+                        send_toast('Error adding exercise', 'danger');
+                    }
+                }
+            } catch (error) {
+                console.error('Error adding exercise:', error);
+                if (typeof send_toast === 'function') {
+                    send_toast('Error adding exercise', 'danger');
+                }
+            }
+        });
+    }
+
+    // Initialize with first exercise visible
+    if (totalExercises > 0) {
+        showExercise(0);
+    }
+});
+</script>
+
+<!-- Exercise Indicator Styles -->
+<style>
+.exercise-indicators .indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #dee2e6;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.exercise-indicators .indicator.active {
+    background-color: #007bff;
+}
+
+.exercise-indicators .indicator:hover {
+    background-color: #6c757d;
+}
+
+.exercise-indicators .indicator.active:hover {
+    background-color: #0056b3;
+}
+
+.timer-section {
+    border: 2px solid #e9ecef;
+}
+
+.feedback-section .btn {
+    min-width: 90px;
+}
+
+@media (max-width: 768px) {
+    .feedback-section .btn {
+        min-width: 80px;
+        font-size: 0.875rem;
+    }
+
+    .timer-display {
+        font-size: 1.75rem !important;
+    }
+}
+</style>
+{% endblock content %}

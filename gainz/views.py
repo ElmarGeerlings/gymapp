@@ -5,6 +5,7 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
 from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet, ProgramRoutine, UserTimerPreference, ExerciseTimerOverride, ProgramTimerPreference, RoutineTimerPreference
@@ -58,6 +59,19 @@ class ExerciseViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user, is_custom=True)
+
+    def perform_update(self, serializer):
+        # Only allow updating custom exercises owned by the user
+        exercise = self.get_object()
+        if not exercise.is_custom or exercise.user != self.request.user:
+            raise PermissionDenied("You can only edit your own custom exercises.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        # Only allow deleting custom exercises owned by the user
+        if not instance.is_custom or instance.user != self.request.user:
+            raise PermissionDenied("You can only delete your own custom exercises.")
+        instance.delete()
 
 # Workout ViewSets
 class WorkoutViewSet(viewsets.ModelViewSet):
@@ -179,7 +193,11 @@ def workout_detail(request, workout_id):
         'title': f"Workout: {workout.name}" # Added a title for the page
     }
 
-    return render(request, 'workout_detail.html', context)
+    # Check for device_type cookie to determine template
+    device_type = request.COOKIES.get('device_type')
+    template_name = 'workout_detail_mobile.html' if device_type == 'mobile' else 'workout_detail.html'
+
+    return render(request, template_name, context)
 
 def home(request):
     """Homepage view that redirects to the workout list or shows a welcome page"""
@@ -214,6 +232,7 @@ def exercise_list(request):
     search_query = request.GET.get('search_query', '')
     exercise_type_filter = request.GET.get('exercise_type', '')
     category_filter = request.GET.get('category', '')
+    custom_filter = request.GET.get('custom_filter', '')
 
     exercises = Exercise.objects.prefetch_related('categories').select_related('user').order_by('name')
 
@@ -229,7 +248,14 @@ def exercise_list(request):
     if category_filter:
         exercises = exercises.filter(categories__id=category_filter)
 
-    exercises = exercises.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user))
+    # Apply custom filter
+    if custom_filter == 'custom':
+        exercises = exercises.filter(is_custom=True, user=request.user)
+    elif custom_filter == 'non_custom':
+        exercises = exercises.filter(is_custom=False)
+    else:
+        # Default: show all exercises (non-custom and user's custom)
+        exercises = exercises.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user))
 
     exercises_by_category = {}
     uncategorized_exercises = []
@@ -257,6 +283,7 @@ def exercise_list(request):
         'current_search_query': search_query,
         'current_exercise_type': exercise_type_filter,
         'current_category': category_filter,
+        'current_custom_filter': custom_filter,
         'request': request
     }
 
@@ -786,141 +813,116 @@ def program_list(request):
     return render(request, 'program_list.html', context)
 
 @login_required
+def program_activate(request, program_id):
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+    program.is_active = True
+    program.save()
+    messages.success(request, f'"{program.name}" has been activated.')
+    return redirect('program-list')
+
+@login_required
+def program_deactivate(request, program_id):
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+    program.is_active = False
+    program.save()
+    messages.success(request, f'"{program.name}" has been deactivated.')
+    return redirect('program-list')
+
+@login_required
 def start_workout_from_routine(request, routine_id):
+    """
+    Directly creates a workout from a routine and redirects to the workout detail page.
+    Skips the intermediate form page.
+    """
     routine = get_object_or_404(Routine, id=routine_id, user=request.user)
-    routine_exercises_with_sets = []
     today = datetime.date.today()
-    prefilled_workout_name = None
 
-    if request.method == 'GET' and request.GET.get('source') == 'smart-start':
-        # Auto-generate workout name: "Routine Name #X"
-        completed_count = Workout.objects.filter(user=request.user, routine_source=routine).count()
-        prefilled_workout_name = f"{routine.name} #{completed_count + 1}"
+    # Auto-generate workout name: "Routine Name #X"
+    completed_count = Workout.objects.filter(user=request.user, routine_source=routine).count()
+    workout_name = f"{routine.name} #{completed_count + 1}"
 
-    for re in routine.exercises.prefetch_related('planned_sets', 'exercise').order_by('order'):
-        sets_data = []
-        for set_template in re.planned_sets.all().order_by('set_number'):
+    # Create the Workout instance
+    new_workout = Workout.objects.create(
+        user=request.user,
+        name=workout_name,
+        notes="",
+        date=datetime.datetime.now(),
+        routine_source=routine
+    )
+
+    # Process each routine exercise and create workout exercises with sets
+    for routine_exercise in routine.exercises.prefetch_related('planned_sets', 'exercise').order_by('order'):
+        # Create WorkoutExercise
+        workout_exercise = WorkoutExercise.objects.create(
+            workout=new_workout,
+            exercise=routine_exercise.exercise,
+            order=routine_exercise.order,
+            notes="",
+            routine_exercise_source=routine_exercise,
+            exercise_type=routine_exercise.routine_specific_exercise_type or routine_exercise.exercise.exercise_type
+        )
+
+        # Create sets based on planned sets with intelligent prefill
+        for set_template in routine_exercise.planned_sets.all().order_by('set_number'):
+            # Get intelligent prefill suggestions based on history
             prefill = get_prefill_data(request.user, set_template, today)
-            sets_data.append({
-                'template': set_template,
-                'prefill_reps': prefill.get('reps'),
-                'prefill_weight': prefill.get('weight'),
-            })
-        routine_exercises_with_sets.append({
-            'routine_exercise': re,
-            'exercise': re.exercise,
-            'sets': sets_data
-        })
+
+            # Use prefilled data or defaults
+            reps = prefill.get('reps', 0) or 0
+            weight = prefill.get('weight', 0) or 0
+
+            ExerciseSet.objects.create(
+                workout_exercise=workout_exercise,
+                set_number=set_template.set_number,
+                reps=reps,
+                weight=weight,
+                is_warmup=set_template.is_warmup if hasattr(set_template, 'is_warmup') else False
+            )
+
+    # Redirect to the workout detail page
+    return redirect('workout-detail', workout_id=new_workout.id)
+
+@login_required
+def start_empty_workout(request):
+    """
+    Creates an empty workout without any routine and redirects to the workout detail page.
+    Users can add exercises manually on the detail page.
+    """
+    # Count total workouts for naming
+    workout_count = Workout.objects.filter(user=request.user).count()
+
+    # Create empty workout
+    new_workout = Workout.objects.create(
+        user=request.user,
+        name=f"Workout #{workout_count + 1}",
+        notes="",
+        date=datetime.datetime.now(),
+        routine_source=None  # No routine source for freestyle workout
+    )
+
+    # Redirect to the workout detail page where user can add exercises
+    return redirect('workout-detail', workout_id=new_workout.id)
+
+@login_required
+def clear_workout(request, workout_id):
+    """
+    Removes all exercises from an existing workout.
+    """
+    workout = get_object_or_404(Workout, id=workout_id, user=request.user)
 
     if request.method == 'POST':
-        try:
-            with transaction.atomic():
-                workout_name = request.POST.get('workout_name', routine.name) # Default to routine name if not provided
-                workout_notes = request.POST.get('workout_notes', '')
+        # Delete all workout exercises (this will cascade delete all sets)
+        workout.exercises.all().delete()
 
-                # Create the Workout instance
-                new_workout = Workout.objects.create(
-                    user=request.user,
-                    name=workout_name,
-                    notes=workout_notes,
-                    date=datetime.datetime.now(), # Use current datetime
-                    routine_source=routine
-                )
+        # Clear the routine source to make it a freestyle workout
+        workout.routine_source = None
+        workout.save()
 
-                # Process each exercise and its sets
-                exercise_idx = 0
-                while True:
-                    # Check if the routine_exercise_id for the current index exists in POST
-                    # This also implicitly checks if there are more exercises to process based on form naming
-                    routine_exercise_id_key = f'routine_exercise_id_{exercise_idx}'
-                    if routine_exercise_id_key not in request.POST:
-                        break # No more exercises submitted
+        # Redirect back to the workout detail page
+        return redirect('workout-detail', workout_id=workout.id)
 
-                    routine_exercise_id = request.POST.get(routine_exercise_id_key)
-                    exercise_notes = request.POST.get(f'exercise_notes_{exercise_idx}', '')
-
-                    try:
-                        source_routine_exercise = RoutineExercise.objects.get(id=routine_exercise_id, routine=routine)
-                    except RoutineExercise.DoesNotExist:
-                        # This should ideally not happen if form is generated correctly
-                        # but good to handle. Maybe log an error or skip.
-                        exercise_idx += 1
-                        continue
-
-                    # Create WorkoutExercise
-                    workout_exercise_instance = WorkoutExercise.objects.create(
-                        workout=new_workout,
-                        exercise=source_routine_exercise.exercise,
-                        order=source_routine_exercise.order, # Use order from RoutineExercise
-                        notes=exercise_notes,
-                        routine_exercise_source=source_routine_exercise,
-                        exercise_type=source_routine_exercise.routine_specific_exercise_type or source_routine_exercise.exercise.exercise_type
-                    )
-
-                    # Process sets for this WorkoutExercise
-                    set_idx = 0
-                    while True:
-                        # Check for presence of a set field for this exercise_idx and set_idx
-                        # Using set_template_id as a key, assuming every submitted set will have it
-                        set_template_id_key = f'set_template_id_{exercise_idx}_{set_idx}'
-                        if set_template_id_key not in request.POST:
-                            break # No more sets for this exercise
-
-                        # We don't strictly need set_template_id for creating ExerciseSet,
-                        # but it confirms the set was part of the form submission for this loop.
-                        # set_template_id = request.POST.get(set_template_id_key)
-
-                        reps_str = request.POST.get(f'reps_{exercise_idx}_{set_idx}')
-                        weight_str = request.POST.get(f'weight_{exercise_idx}_{set_idx}')
-                        is_warmup = request.POST.get(f'is_warmup_{exercise_idx}_{set_idx}') == 'true'
-
-                        # Only save the set if reps and weight are provided
-                        if reps_str and weight_str:
-                            try:
-                                reps = int(reps_str)
-                                weight = float(weight_str)
-
-                                # Get the set number from the original template if possible, or just increment
-                                # For simplicity, we'll use the set_idx + 1 as set_number for the logged set.
-                                # The original template set_number is available via set_data.template.set_number in GET
-                                # but for POST, we need to be careful. We assume the order is maintained.
-                                # A more robust way would be to pass set_template.set_number in a hidden field for each set.
-                                # For now, using sequential set_number for logged sets.
-
-                                ExerciseSet.objects.create(
-                                    workout_exercise=workout_exercise_instance,
-                                    set_number=set_idx + 1, # Simple sequential set number for logged sets
-                                    reps=reps,
-                                    weight=weight,
-                                    is_warmup=is_warmup
-                                )
-                            except (ValueError, TypeError):
-                                # Invalid number for reps/weight, skip this set or log error
-                                pass # Silently skip malformed set data for now
-                        set_idx += 1
-                    exercise_idx += 1
-
-                return redirect('workout-detail', workout_id=new_workout.id)
-        except Exception as e:
-            # Log the error e
-            # Add a message to Django messages framework or pass error to context
-            # For now, re-rendering the form with a generic error might be complex
-            # as we need to reconstruct routine_exercises_with_sets with submitted data
-            # A simple redirect or a dedicated error page might be better initially.
-            # Or, for a more user-friendly approach, one would repopulate the form.
-            # For now, just printing error and re-rendering the initial GET version of the page.
-            print(f"Error processing start_workout_from_routine POST: {e}")
-            # This will lose user's input on error, which is not ideal.
-            # Consider adding Django messages framework for error feedback.
-
-    # GET request or if POST fails and we fall through (not ideal error handling yet)
-    context = {
-        'routine': routine,
-        'routine_exercises_with_sets': routine_exercises_with_sets,
-        'title': f'Start Workout: {routine.name}',
-        'prefilled_workout_name': prefilled_workout_name
-    }
-    return render(request, 'start_workout_from_routine.html', context)
+    # If not POST, redirect to workout detail
+    return redirect('workout-detail', workout_id=workout.id)
 
 @login_required
 def workout_update(request, workout_id):
