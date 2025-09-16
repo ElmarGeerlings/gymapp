@@ -55,7 +55,7 @@ class WorkoutTimer {
     formatTime(seconds) {
         const minutes = Math.floor(seconds / 60);
         const secs = seconds % 60;
-        return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
     }
 
     /**
@@ -720,7 +720,7 @@ class TimerManager {
     formatTimeStatic(seconds) {
         const minutes = Math.floor(seconds / 60);
         const secs = seconds % 60;
-        return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
     }
 
     /**
@@ -1780,15 +1780,8 @@ function escapeHtml(text) {
  */
 async function initializeTimerDisplays() {
     try {
-        // Skip initialization if we're in mobile view with exercise cards
-        // Mobile view handles its own timer initialization after fetching preferences
-        const isMobileView = document.querySelector('#exercise-card-container');
-        if (isMobileView) {
-            console.log('Skipping timer initialization for mobile view - handled by mobile template');
-            return;
-        }
-
         // Find all timer displays and set them to default values
+        // This is only called for desktop view (mobile check happens before calling)
         const timerDisplays = document.querySelectorAll('[data-timer-display][data-exercise-id]');
 
         for (const display of timerDisplays) {
@@ -1802,13 +1795,15 @@ async function initializeTimerDisplays() {
     }
 }
 
-// Initialize timer displays when page loads (with small delay for rendering)
-// This is the only DOMContentLoaded listener for timer initialization
+// Initialize timer displays when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    // Give a small delay to ensure all elements are rendered
-    setTimeout(() => {
+    // Only initialize for desktop view (mobile handles its own initialization)
+    const isMobileView = document.querySelector('#exercise-card-container');
+    if (!isMobileView) {
+        // Use MutationObserver to initialize timers when they appear in DOM
+        // This is more reliable than arbitrary timeouts
         initializeTimerDisplays();
-    }, 100);
+    }
 });
 
 // Also initialize when new content is dynamically added
