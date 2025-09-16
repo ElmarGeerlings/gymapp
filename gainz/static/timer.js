@@ -497,6 +497,9 @@ class TimerManager {
             // Load saved state for this exercise
             timer.loadFromStorage();
 
+            // Set up event callbacks for this timer
+            this.setupTimerCallbacks(timer, exerciseId);
+
             this.timers.set(exerciseId, timer);
         }
 
@@ -591,15 +594,28 @@ class TimerManager {
         const display = document.querySelector(`[data-timer-display][data-exercise-id="${exerciseId}"]`);
         if (display) {
             const timer = this.getTimer(exerciseId);
-            // Get the actual default duration from user settings
-            this.getDefaultDurationForExercise(exerciseId).then(defaultDuration => {
+
+            // First check if mobile view already set a default duration
+            const startBtn = document.querySelector(`[data-function*="startTimer"][data-exercise-id="${exerciseId}"]`);
+            const storedDuration = startBtn?.dataset?.duration;
+
+            if (storedDuration) {
+                // Use the duration that mobile view already determined
+                const defaultDuration = parseInt(storedDuration);
                 timer.duration = defaultDuration;
                 timer.remaining = defaultDuration;
                 display.textContent = timer.formatTime(defaultDuration);
-            }).catch(() => {
-                // Fallback to current duration
-                display.textContent = timer.formatTime(timer.duration);
-            });
+            } else {
+                // Fallback to fetching default duration (desktop view)
+                this.getDefaultDurationForExercise(exerciseId).then(defaultDuration => {
+                    timer.duration = defaultDuration;
+                    timer.remaining = defaultDuration;
+                    display.textContent = timer.formatTime(defaultDuration);
+                }).catch(() => {
+                    // Fallback to current duration
+                    display.textContent = timer.formatTime(timer.duration);
+                });
+            }
         }
         this.updateTimerDisplays();
 
@@ -623,15 +639,28 @@ class TimerManager {
         const display = document.querySelector(`[data-timer-display][data-exercise-id="${exerciseId}"]`);
         if (display) {
             const timer = this.getTimer(exerciseId);
-            // Get the actual default duration from user settings
-            this.getDefaultDurationForExercise(exerciseId).then(defaultDuration => {
+
+            // First check if mobile view already set a default duration
+            const startBtn = document.querySelector(`[data-function*="startTimer"][data-exercise-id="${exerciseId}"]`);
+            const storedDuration = startBtn?.dataset?.duration;
+
+            if (storedDuration) {
+                // Use the duration that mobile view already determined
+                const defaultDuration = parseInt(storedDuration);
                 timer.duration = defaultDuration;
                 timer.remaining = defaultDuration;
                 display.textContent = timer.formatTime(defaultDuration);
-            }).catch(() => {
-                // Fallback to current duration
-                display.textContent = timer.formatTime(timer.duration);
-            });
+            } else {
+                // Fallback to fetching default duration (desktop view)
+                this.getDefaultDurationForExercise(exerciseId).then(defaultDuration => {
+                    timer.duration = defaultDuration;
+                    timer.remaining = defaultDuration;
+                    display.textContent = timer.formatTime(defaultDuration);
+                }).catch(() => {
+                    // Fallback to current duration
+                    display.textContent = timer.formatTime(timer.duration);
+                });
+            }
         }
         this.updateTimerDisplays();
 
@@ -660,8 +689,13 @@ class TimerManager {
         try {
             // Get exercise type from DOM
             const exerciseCard = document.querySelector(`[data-exercise-id="${exerciseId}"]`);
-            const categoryContainer = exerciseCard?.closest('.exercise-category-container');
-            const exerciseType = categoryContainer?.dataset.category || 'accessory';
+            // First check if exercise card has the type directly (mobile view)
+            let exerciseType = exerciseCard?.dataset.exerciseType;
+            if (!exerciseType) {
+                // Fall back to checking category container (desktop view)
+                const categoryContainer = exerciseCard?.closest('.exercise-category-container');
+                exerciseType = categoryContainer?.dataset.category || 'accessory';
+            }
 
             // Fetch user preferences
             const preferencesResponse = await httpRequestHelper('/api/timer-preferences/', 'GET');
@@ -732,13 +766,17 @@ class TimerManager {
                     // Update timer control buttons for this exercise
                     this.updateTimerControls(exerciseId, state);
                 } else {
-                    // Show default duration instead of 00:00
-                    try {
-                        const defaultDuration = await this.getDefaultDurationForExercise(exerciseId);
-                        const formattedDefault = this.formatTimeStatic(defaultDuration);
-                        element.textContent = formattedDefault;
-                    } catch (error) {
-                        element.textContent = '01:30'; // Fallback to 90 seconds
+                    // For mobile view, don't override what's already displayed
+                    const isMobileView = document.querySelector('#exercise-card-container');
+                    if (!isMobileView) {
+                        // Show default duration instead of 00:00 (desktop only)
+                        try {
+                            const defaultDuration = await this.getDefaultDurationForExercise(exerciseId);
+                            const formattedDefault = this.formatTimeStatic(defaultDuration);
+                            element.textContent = formattedDefault;
+                        } catch (error) {
+                            element.textContent = '01:30'; // Fallback to 90 seconds
+                        }
                     }
 
                     this.updateTimerControls(exerciseId, {
@@ -777,57 +815,50 @@ class TimerManager {
     }
 
     /**
-     * Set up callbacks for all timers to update displays
+     * Set up callbacks for a specific timer
      */
-    setupCallbacks() {
-        // Set up callbacks for existing timers and any new ones
+    setupTimerCallbacks(timer, exerciseId) {
+        // Only set up callbacks once
+        if (timer._callbacksSetup) {
+            return;
+        }
+
         const updateDisplays = () => this.updateTimerDisplays();
 
-        // Override getTimer to set up callbacks for new timers
-        const originalGetTimer = this.getTimer.bind(this);
-        this.getTimer = (exerciseId) => {
-            const timer = originalGetTimer(exerciseId);
-
-            // Set up callbacks if not already done
-            if (!timer._callbacksSetup) {
-                timer.on('tick', updateDisplays);
-                timer.on('start', updateDisplays);
-                timer.on('pause', updateDisplays);
-                timer.on('stop', () => {
-                    if (this.activeTimerId === exerciseId) {
-                        this.activeTimerId = null;
-                    }
-                    updateDisplays();
-                });
-                timer.on('reset', () => {
-                    if (this.activeTimerId === exerciseId) {
-                        this.activeTimerId = null;
-                    }
-                    updateDisplays();
-                });
-                timer.on('complete', () => {
-                    if (this.activeTimerId === exerciseId) {
-                        this.activeTimerId = null;
-                    }
-                    updateDisplays();
-
-                    // Show completion message for this specific exercise
-                    const timerMessages = document.querySelectorAll(`[data-timer-message][data-exercise-id="${exerciseId}"]`);
-                    timerMessages.forEach(element => {
-                        element.textContent = 'Timer Complete!';
-                        element.classList.add('timer-complete');
-                        setTimeout(() => {
-                            element.classList.remove('timer-complete');
-                            element.textContent = '';
-                        }, 5000);
-                    });
-                });
-
-                timer._callbacksSetup = true;
+        timer.on('tick', updateDisplays);
+        timer.on('start', updateDisplays);
+        timer.on('pause', updateDisplays);
+        timer.on('stop', () => {
+            if (this.activeTimerId === exerciseId) {
+                this.activeTimerId = null;
             }
+            updateDisplays();
+        });
+        timer.on('reset', () => {
+            if (this.activeTimerId === exerciseId) {
+                this.activeTimerId = null;
+            }
+            updateDisplays();
+        });
+        timer.on('complete', () => {
+            if (this.activeTimerId === exerciseId) {
+                this.activeTimerId = null;
+            }
+            updateDisplays();
 
-            return timer;
-        };
+            // Show completion message for this specific exercise
+            const timerMessages = document.querySelectorAll(`[data-timer-message][data-exercise-id="${exerciseId}"]`);
+            timerMessages.forEach(element => {
+                element.textContent = 'Timer Complete!';
+                element.classList.add('timer-complete');
+                setTimeout(() => {
+                    element.classList.remove('timer-complete');
+                    element.textContent = '';
+                }, 5000);
+            });
+        });
+
+        timer._callbacksSetup = true;
     }
 }
 
@@ -835,9 +866,6 @@ class TimerManager {
  * Global timer manager instance
  */
 window.timerManager = new TimerManager();
-
-// Setup callbacks for timer manager
-window.timerManager.setupCallbacks();
 
 /**
  * Start timer with duration from data attributes or exercise type
@@ -1096,8 +1124,13 @@ async function determineTimerDuration(exerciseId, preferences) {
     try {
         // Get exercise type first (needed for all levels)
         const exerciseCard = document.querySelector(`[data-exercise-id="${exerciseId}"]`);
-        const categoryContainer = exerciseCard?.closest('.exercise-category-container');
-        const exerciseType = categoryContainer?.dataset.category || 'accessory';
+        // First check if exercise card has the type directly (mobile view)
+        let exerciseType = exerciseCard?.dataset.exerciseType;
+        if (!exerciseType) {
+            // Fall back to checking category container (desktop view)
+            const categoryContainer = exerciseCard?.closest('.exercise-category-container');
+            exerciseType = categoryContainer?.dataset.category || 'accessory';
+        }
 
         // Step 1: Check for program-specific setting (highest priority)
         const programTimerDuration = await getProgramTimerDuration(exerciseType);
@@ -1386,12 +1419,7 @@ function clearTimerPreferencesErrors() {
 // INITIALIZATION
 // ============================================================================
 
-/**
- * Initialize timer displays on page load
- */
-document.addEventListener('DOMContentLoaded', () => {
-    window.timerManager.updateTimerDisplays();
-});
+// Removed duplicate DOMContentLoaded - initialization handled by the one at line 1794
 
 // Make handleTimerAutoStart available globally for use in gainz.js
 window.handleTimerAutoStart = handleTimerAutoStart;
@@ -1752,6 +1780,14 @@ function escapeHtml(text) {
  */
 async function initializeTimerDisplays() {
     try {
+        // Skip initialization if we're in mobile view with exercise cards
+        // Mobile view handles its own timer initialization after fetching preferences
+        const isMobileView = document.querySelector('#exercise-card-container');
+        if (isMobileView) {
+            console.log('Skipping timer initialization for mobile view - handled by mobile template');
+            return;
+        }
+
         // Find all timer displays and set them to default values
         const timerDisplays = document.querySelectorAll('[data-timer-display][data-exercise-id]');
 
@@ -1766,7 +1802,8 @@ async function initializeTimerDisplays() {
     }
 }
 
-// Initialize timers when page loads
+// Initialize timer displays when page loads (with small delay for rendering)
+// This is the only DOMContentLoaded listener for timer initialization
 document.addEventListener('DOMContentLoaded', function() {
     // Give a small delay to ensure all elements are rendered
     setTimeout(() => {

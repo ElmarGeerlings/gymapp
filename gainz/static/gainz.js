@@ -1295,23 +1295,34 @@ window.fetchAndUpdateExerciseList = async function() {
         params.append('custom_filter', customFilter.value);
     }
 
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState({ path: newUrl }, '', newUrl);
-
+    // Don't update the URL - just make the AJAX request
     try {
-        const response = await fetch(`${form.action}?${params.toString()}`, {
+        // Use the exercises URL directly
+        const url = '/exercises/?' + params.toString();
+        console.log('Fetching exercises from:', url);  // Debug log
+
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest'
-            }
+            },
+            credentials: 'same-origin'  // Include cookies for authentication
         });
+
+        console.log('Response status:', response.status);  // Debug log
+
         if (!response.ok) {
-            console.error('Error fetching exercise list:', response.statusText);
+            console.error('Error fetching exercise list:', response.status, response.statusText);
+            const errorText = await response.text();
+            console.error('Error details:', errorText);
             listContainer.innerHTML = '<p class="text-danger">Error loading exercises. Please try again.</p>';
             return;
         }
+
         const html = await response.text();
         listContainer.innerHTML = html;
+
+        // Event listeners are automatically attached via MutationObserver and data-function attributes
     } catch (error) {
         console.error('Fetch error:', error);
         listContainer.innerHTML = '<p class="text-danger">Error loading exercises. Please try again.</p>';

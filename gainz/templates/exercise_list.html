@@ -19,14 +19,14 @@
             <div class="row g-2 align-items-end">
                 <div class="col-12 col-md-4">
                     <label for="exercise-search" class="form-label visually-hidden">Search Exercises</label>
-                    <input type="text" id="exercise-search" name="search_query" class="form-control" placeholder="Search exercises..." value="{{ request.GET.search_query }}" data-function="input->debouncedFetchExercises">
+                    <input type="text" id="exercise-search" name="search_query" class="form-control" placeholder="Search exercises..." value="" data-function="input->debouncedFetchExercises">
                 </div>
                 <div class="col-6 col-md-2">
                     <label for="custom-filter" class="form-label visually-hidden">Exercise Source</label>
                     <select name="custom_filter" id="custom-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
                         <option value="">All Exercises</option>
-                        <option value="custom" {% if request.GET.custom_filter == 'custom' %}selected{% endif %}>Custom Only</option>
-                        <option value="non_custom" {% if request.GET.custom_filter == 'non_custom' %}selected{% endif %}>Non-Custom Only</option>
+                        <option value="custom">Custom Only</option>
+                        <option value="non_custom">Non-Custom Only</option>
                     </select>
                 </div>
                 <div class="col-6 col-md-2">
@@ -34,7 +34,7 @@
                     <select name="exercise_type" id="exercise-type-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
                         <option value="">All Types</option>
                         {% for code, name in exercise_types_for_form %}
-                            <option value="{{ code }}" {% if code == request.GET.exercise_type %}selected{% endif %}>{{ name }}</option>
+                            <option value="{{ code }}">{{ name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -43,7 +43,7 @@
                     <select name="category" id="category-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
                         <option value="">All Categories</option>
                         {% for category in categories_for_form %}
-                            <option value="{{ category.id }}" {% if category.id|stringformat:"s" == request.GET.category %}selected{% endif %}>{{ category.name }}</option>
+                            <option value="{{ category.id }}">{{ category.name }}</option>
                         {% endfor %}
                     </select>
                 </div>

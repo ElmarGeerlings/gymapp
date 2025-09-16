@@ -46,12 +46,15 @@
         <!-- Single Exercise Card Container -->
         <div id="exercise-card-container" class="position-relative" style="min-height: 400px;">
             {% for exercise in all_exercises %}
-                <div class="exercise-card {% if not forloop.first %}d-none{% endif %}" data-exercise-index="{{ forloop.counter0 }}">
-                    <div class="card workout-exercise-card" data-exercise-id="{{ exercise.id }}" data-order="{{ exercise.order }}">
+                <div class="exercise-card d-none" data-exercise-index="{{ forloop.counter0 }}">
+                    <div class="card workout-exercise-card" data-exercise-id="{{ exercise.id }}" data-order="{{ exercise.order }}" data-exercise-type="{{ exercise.exercise_type|lower }}">
                         <!-- Card Header: Exercise Name and Delete Button -->
                         <div class="card-header">
                             <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">{{ exercise.exercise.name }}</h5>
+                                <h5 class="mb-0">
+                                    {{ exercise.exercise.name }}
+                                    <small class="text-muted">(Type: "{{ exercise.get_exercise_type }}")</small>
+                                </h5>
                                 <button class="btn btn-sm btn-outline-danger"
                                         data-function="click->removeExercise"
                                         data-exercise-id="{{ exercise.id }}"
@@ -72,24 +75,24 @@
                                 <div class="timer-display mb-3" data-timer-display data-exercise-id="{{ exercise.id }}" style="font-size: 2rem; font-weight: bold;">00:00</div>
                                 <div class="timer-message small text-muted mb-3" data-timer-message data-exercise-id="{{ exercise.id }}"></div>
                                 <div class="d-flex justify-content-center gap-2">
-                                    <button type="button" class="btn btn-success timer-start-btn"
+                                    <button type="button" class="btn btn-success btn-lg timer-start-btn"
                                             data-function="click->startTimer"
                                             data-exercise-id="{{ exercise.id }}"
-                                            data-exercise-type="{{ exercise.get_exercise_type }}"
+                                            data-exercise-type="{{ exercise.exercise_type|default:exercise.get_exercise_type }}"
                                             title="Start timer">
-                                        <i class="fas fa-play me-1"></i>Start
+                                        <i class="fas fa-play"></i>
                                     </button>
-                                    <button type="button" class="btn btn-warning timer-pause-btn"
+                                    <button type="button" class="btn btn-warning btn-lg timer-pause-btn"
                                             data-function="click->pauseTimer"
                                             data-exercise-id="{{ exercise.id }}"
                                             title="Pause timer">
-                                        <i class="fas fa-pause me-1"></i>Pause
+                                        <i class="fas fa-pause"></i>
                                     </button>
-                                    <button type="button" class="btn btn-danger timer-stop-btn"
+                                    <button type="button" class="btn btn-danger btn-lg timer-stop-btn"
                                             data-function="click->stopTimer"
                                             data-exercise-id="{{ exercise.id }}"
                                             title="Stop timer">
-                                        <i class="fas fa-stop me-1"></i>Stop
+                                        <i class="fas fa-stop"></i>
                                     </button>
                                 </div>
                             </div>
@@ -278,6 +281,54 @@ document.addEventListener('DOMContentLoaded', function() {
         // Show current card
         if (exerciseCards[index]) {
             exerciseCards[index].classList.remove('d-none');
+
+            // Update timer display for the current exercise if it's not running
+            const currentCard = exerciseCards[index];
+            const exerciseElement = currentCard.querySelector('.workout-exercise-card');
+            if (exerciseElement) {
+                const exerciseId = exerciseElement.dataset.exerciseId;
+                const startBtn = currentCard.querySelector('.timer-start-btn');
+                const timerDisplay = currentCard.querySelector('[data-timer-display]');
+
+                // Set timer display for the current exercise
+                if (timerDisplay && startBtn) {
+                    // Only update if timer is not actively running
+                    const isRunning = timerDisplay.classList.contains('active');
+
+                    if (!isRunning) {
+                        const exerciseType = startBtn.dataset.exerciseType;
+                        const cleanType = exerciseType ? exerciseType.toLowerCase().trim() : '';
+                        let defaultSeconds = 180;
+
+                        console.log('ShowExercise - Setting timer for exercise:', exerciseId, 'Type:', cleanType);
+
+                        // Use fetched preferences if available
+                        if (window.timerPreferences) {
+                            if (cleanType === 'primary') {
+                                defaultSeconds = window.timerPreferences.primary_timer_seconds || 180;
+                                console.log('Using PRIMARY time:', defaultSeconds);
+                            } else if (cleanType === 'secondary') {
+                                defaultSeconds = window.timerPreferences.secondary_timer_seconds || 120;
+                                console.log('Using SECONDARY time:', defaultSeconds);
+                            } else if (cleanType === 'accessory') {
+                                defaultSeconds = window.timerPreferences.accessory_timer_seconds || 90;
+                                console.log('Using ACCESSORY time:', defaultSeconds);
+                            } else {
+                                defaultSeconds = window.timerPreferences.primary_timer_seconds || 180;
+                                console.log('Using DEFAULT (primary) time:', defaultSeconds);
+                            }
+                        }
+
+                        const minutes = Math.floor(defaultSeconds / 60);
+                        const seconds = defaultSeconds % 60;
+                        timerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                        timerDisplay.setAttribute('data-default-seconds', defaultSeconds);
+
+                        // Also set the duration on the start button so it uses the correct time
+                        startBtn.setAttribute('data-duration', defaultSeconds);
+                    }
+                }
+            }
         }
         if (indicators[index]) {
             indicators[index].classList.add('active');
@@ -442,15 +493,57 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Initialize with first exercise visible
-    if (totalExercises > 0) {
-        showExercise(0);
-    }
+    // Fetch user timer preferences FIRST, then show exercise
+    fetch('/api/timer-preferences/')
+        .then(response => response.json())
+        .then(prefs => {
+            // Store preferences for use in showExercise function
+            window.timerPreferences = prefs;
+
+            // Don't initialize all timers here - let showExercise handle it
+            console.log('Timer preferences loaded:', prefs);
+
+            // NOW show the first exercise after preferences are loaded
+            if (totalExercises > 0) {
+                showExercise(0);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching timer preferences:', error);
+            // Use defaults if fetch fails
+            window.timerPreferences = {
+                primary_timer_seconds: 180,
+                secondary_timer_seconds: 120,
+                accessory_timer_seconds: 90
+            };
+
+            // Show first exercise even if fetch fails
+            if (totalExercises > 0) {
+                showExercise(0);
+            }
+        });
 });
 </script>
 
-<!-- Exercise Indicator Styles -->
+<!-- Mobile-specific Styles -->
 <style>
+/* Override desktop timer layout for mobile */
+.timer-section {
+    display: block !important;  /* Override flex to stack vertically */
+    text-align: center;
+}
+
+.timer-display {
+    display: block;
+    margin: 0 auto 1rem auto;
+    font-size: 2.5rem !important;  /* Larger on mobile */
+}
+
+.timer-message {
+    display: block;
+    margin-bottom: 1rem;
+}
+
 .exercise-indicators .indicator {
     width: 10px;
     height: 10px;
