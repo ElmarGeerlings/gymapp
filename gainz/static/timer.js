@@ -852,6 +852,16 @@ class TimerManager {
             }
             updateDisplays();
 
+            if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+                try {
+                    window.dispatchEvent(new CustomEvent('timer:complete', {
+                        detail: { exerciseId }
+                    }));
+                } catch (e) {
+                    console.warn('Unable to dispatch timer completion event:', e);
+                }
+            }
+
             // Show completion message for this specific exercise
             const timerMessages = document.querySelectorAll(`[data-timer-message][data-exercise-id="${exerciseId}"]`);
             timerMessages.forEach(element => {

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}
     {{ title|default:"Workout Details" }}
@@ -40,15 +41,11 @@
             </button>
         </div>
     {% else %}
-        <!-- Exercise Content -->
         {% with all_exercises=primary_exercises|add:secondary_exercises|add:accessory_exercises %}
-
-        <!-- Single Exercise Card Container -->
         <div id="exercise-card-container" class="position-relative" style="min-height: 400px;">
             {% for exercise in all_exercises %}
                 <div class="exercise-card d-none" data-exercise-index="{{ forloop.counter0 }}">
                     <div class="card workout-exercise-card" data-exercise-id="{{ exercise.id }}" data-order="{{ exercise.order }}" data-exercise-type="{{ exercise.exercise_type|lower }}">
-                        <!-- Card Header: Exercise Name and Delete Button -->
                         <div class="card-header">
                             <div class="d-flex justify-content-between align-items-center">
                                 <h5 class="mb-0">
@@ -63,12 +60,15 @@
                                 </button>
                             </div>
                         </div>
-
-                        <!-- Card Body -->
                         <div class="card-body">
                             {% if exercise.notes %}
                                 <p class="card-text text-muted mb-3"><em>{{ exercise.notes|linebreaksbr }}</em></p>
                             {% endif %}
+
+                            <!-- Progress Bar -->
+                            <div class="progress mobile-set-progress mb-3">
+                                <div class="progress-bar" role="progressbar" data-set-progress style="width: 0%;"></div>
+                            </div>
 
                             <!-- Timer Section -->
                             <div class="timer-section text-center mb-4 p-3 bg-light rounded">
@@ -136,12 +136,19 @@
                                                     <th width="100">Reps</th>
                                                     <th width="120">Weight (kg)</th>
                                                     <th width="80">Warmup</th>
+                                                    <th width="60">Done</th>
                                                     <th width="40"></th>
                                                 </tr>
                                             </thead>
                                             <tbody class="sets-tbody">
                                                 {% for set in exercise.sets.all %}
-                                                    <tr class="set-row" data-set-id="{{ set.id }}" data-reps="{{ set.reps }}" data-weight="{{ set.weight }}">
+                                                    <tr class="set-row {% if set.is_completed %}set-completed{% endif %}"
+                                                        data-set-id="{{ set.id }}"
+                                                        data-set-index="{{ forloop.counter0 }}"
+                                                        data-reps="{{ set.reps }}"
+                                                        data-weight="{{ set.weight }}"
+                                                        data-is-completed="{% if set.is_completed %}true{% else %}false{% endif %}"
+                                                        data-exercise-id="{{ exercise.id }}">
                                                         <td class="set-reps">
                                                             <input type="number" class="form-control form-control-sm set-reps-input"
                                                                    value="{{ set.reps }}" min="0" step="1"
@@ -162,6 +169,16 @@
                                                                    data-function="change->updateSet"
                                                                    data-set-id="{{ set.id }}"
                                                                    data-field="is_warmup">
+                                                        </td>
+                                                        <td class="text-center">
+                    <button type="button" class="btn btn-sm mark-set-btn {% if set.is_completed %}btn-success text-white{% else %}btn-outline-success{% endif %}"
+                            data-function="click->toggleSetCompletion"
+                            data-set-id="{{ set.id }}"
+                            data-exercise-id="{{ exercise.id }}"
+                            data-completed="{% if set.is_completed %}true{% else %}false{% endif %}"
+                                                                    title="Toggle completion">
+                                                                <i class="fas fa-check"></i>
+                                                            </button>
                                                         </td>
                                                         <td class="text-center">
                                                             <a href="#" class="text-danger"
@@ -223,7 +240,7 @@
         {% endwith %}
     {% endif %}
 
-    <!-- Add Exercise Form (shown when there are exercises or when toggled) -->
+    <!-- Add Exercise Form -->
     <div class="{% if not primary_exercises and not secondary_exercises and not accessory_exercises %}collapse{% endif %} mt-5 pt-4 border-top" id="add-exercise-form">
         <h5 class="mb-3">Add Exercise to This Workout</h5>
         <form id="add-exercise-to-workout-form-{{ workout.id }}" class="add-exercise-controls">
@@ -261,284 +278,332 @@
 
 <!-- Mobile Exercise Navigation Script -->
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const exerciseCards = document.querySelectorAll('.exercise-card');
-    const indicators = document.querySelectorAll('.indicator');
-    const prevBtn = document.getElementById('prev-exercise');
-    const nextBtn = document.getElementById('next-exercise');
-    const currentNumSpan = document.getElementById('current-exercise-num');
+(function() {
+    document.addEventListener('DOMContentLoaded', function() {
+        const exerciseCards = document.querySelectorAll('.exercise-card');
+        const indicators = document.querySelectorAll('.indicator');
+        const prevBtn = document.getElementById('prev-exercise');
+        const nextBtn = document.getElementById('next-exercise');
+        const currentNumSpan = document.getElementById('current-exercise-num');
+        const totalNumSpan = document.getElementById('total-exercises-num');
 
-    let currentIndex = 0;
-    const totalExercises = exerciseCards.length;
+        const setState = {};
+        let currentIndex = 0;
+        const totalExercises = exerciseCards.length;
 
-    if (totalExercises === 0) return; // No exercises to navigate
+        if (totalExercises === 0) return;
 
-    function showExercise(index) {
-        // Hide all cards
-        exerciseCards.forEach(card => card.classList.add('d-none'));
-        indicators.forEach(ind => ind.classList.remove('active'));
+        exerciseCards.forEach(card => initialiseCard(card));
+        updateTotalCounter();
 
-        // Show current card
-        if (exerciseCards[index]) {
-            exerciseCards[index].classList.remove('d-none');
+        function initialiseCard(card) {
+            const exerciseCard = card.querySelector('.workout-exercise-card');
+            if (!exerciseCard) return;
+            const exerciseId = exerciseCard.dataset.exerciseId;
+            if (!exerciseId) return;
 
-            // Update timer display for the current exercise if it's not running
-            const currentCard = exerciseCards[index];
-            const exerciseElement = currentCard.querySelector('.workout-exercise-card');
-            if (exerciseElement) {
-                const exerciseId = exerciseElement.dataset.exerciseId;
-                const startBtn = currentCard.querySelector('.timer-start-btn');
-                const timerDisplay = currentCard.querySelector('[data-timer-display]');
+            const setRows = card.querySelectorAll('.set-row');
+            setRows.forEach((row, index) => {
+                row.dataset.setIndex = index;
+                if (row.dataset.isCompleted === 'true') {
+                    row.classList.add('set-completed');
+                }
+            });
 
-                // Set timer display for the current exercise
-                if (timerDisplay && startBtn) {
-                    // Only update if timer is not actively running or paused
-                    const isRunning = timerDisplay.classList.contains('active');
-                    const isPaused = timerDisplay.classList.contains('paused');
+            if (typeof setState[exerciseId] === 'undefined') {
+                setState[exerciseId] = determineInitialSet(setRows);
+            }
 
-                    if (!isRunning && !isPaused) {
-                        const exerciseType = startBtn.dataset.exerciseType;
-                        const cleanType = exerciseType ? exerciseType.toLowerCase().trim() : '';
-                        let defaultSeconds = 180;
+            updateProgressBar(card);
+            applyHighlight(card, setState[exerciseId]);
+            applyTimerDefaults(card, exerciseCard);
+        }
 
-                        console.log('ShowExercise - Setting timer for exercise:', exerciseId, 'Type:', cleanType);
+        function determineInitialSet(rows) {
+            if (!rows.length) return null;
+            const firstIncomplete = Array.from(rows).find(row => row.dataset.isCompleted !== 'true');
+            return firstIncomplete ? firstIncomplete.dataset.setId : rows[rows.length - 1].dataset.setId;
+        }
 
-                        // Use fetched preferences if available
-                        if (window.timerPreferences) {
-                            if (cleanType === 'primary') {
-                                defaultSeconds = window.timerPreferences.primary_timer_seconds || 180;
-                                console.log('Using PRIMARY time:', defaultSeconds);
-                            } else if (cleanType === 'secondary') {
-                                defaultSeconds = window.timerPreferences.secondary_timer_seconds || 120;
-                                console.log('Using SECONDARY time:', defaultSeconds);
-                            } else if (cleanType === 'accessory') {
-                                defaultSeconds = window.timerPreferences.accessory_timer_seconds || 90;
-                                console.log('Using ACCESSORY time:', defaultSeconds);
-                            } else {
-                                defaultSeconds = window.timerPreferences.primary_timer_seconds || 180;
-                                console.log('Using DEFAULT (primary) time:', defaultSeconds);
-                            }
-                        }
+        function showExercise(index) {
+            exerciseCards.forEach(card => card.classList.add('d-none'));
+            indicators.forEach(ind => ind.classList.remove('active'));
 
-                        const minutes = Math.floor(defaultSeconds / 60);
-                        const seconds = defaultSeconds % 60;
-                        timerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                        timerDisplay.setAttribute('data-default-seconds', defaultSeconds);
-
-                        // Also set the duration on the start button so it uses the correct time
-                        startBtn.setAttribute('data-duration', defaultSeconds);
-                    }
+            if (exerciseCards[index]) {
+                const card = exerciseCards[index];
+                card.classList.remove('d-none');
+                initialiseCard(card);
+                const exerciseId = card.querySelector('.workout-exercise-card')?.dataset.exerciseId;
+                if (exerciseId) {
+                    ensureHighlight(card, exerciseId);
+                    applyTimerDefaults(card, card.querySelector('.workout-exercise-card'));
                 }
             }
-        }
-        if (indicators[index]) {
-            indicators[index].classList.add('active');
-        }
 
-        // Update navigation
-        currentNumSpan.textContent = index + 1;
-        if (prevBtn) {
-            prevBtn.disabled = index === 0;
-        }
-        if (nextBtn) {
-            nextBtn.disabled = index === totalExercises - 1;
-        }
-
-        currentIndex = index;
-    }
-
-
-    // Navigation event listeners
-    if (prevBtn) {
-        prevBtn.addEventListener('click', function() {
-            if (currentIndex > 0) {
-                showExercise(currentIndex - 1);
+            if (indicators[index]) {
+                indicators[index].classList.add('active');
             }
-        });
-    }
 
-    if (nextBtn) {
-        nextBtn.addEventListener('click', function() {
+            currentNumSpan.textContent = index + 1;
+            if (prevBtn) prevBtn.disabled = index === 0;
+            if (nextBtn) nextBtn.disabled = index === totalExercises - 1;
+            currentIndex = index;
+        }
+
+        function ensureHighlight(card, exerciseId) {
+            if (!card) return;
+            const rows = card.querySelectorAll('.set-row');
+            if (!rows.length) {
+                updateProgressBar(card);
+                return;
+            }
+            if (!setState[exerciseId]) {
+                setState[exerciseId] = determineInitialSet(rows);
+            }
+            applyHighlight(card, setState[exerciseId]);
+            updateProgressBar(card);
+        }
+
+        function applyHighlight(card, setId) {
+            const rows = card.querySelectorAll('.set-row');
+            rows.forEach(row => {
+                row.classList.remove('current-set-row');
+            });
+            if (!setId) return;
+            const target = card.querySelector('.set-row[data-set-id="' + setId + '"]');
+            if (target) {
+                target.classList.add('current-set-row');
+            }
+        }
+
+        function applyTimerDefaults(card, exerciseCard) {
+            if (!card) return;
+            const display = card.querySelector('[data-timer-display]');
+            const startBtn = card.querySelector('.timer-start-btn');
+            const pauseBtn = card.querySelector('.timer-pause-btn');
+            const stopBtn = card.querySelector('.timer-stop-btn');
+            if (!display || !startBtn || !exerciseCard) return;
+
+            const exerciseId = exerciseCard.dataset.exerciseId;
+            const exerciseType = (exerciseCard.dataset.exerciseType || '').toLowerCase();
+            const prefs = window.timerPreferences || {};
+
+            let defaultSeconds = 180;
+            if (exerciseType === 'primary') {
+                defaultSeconds = prefs.primary_timer_seconds || 180;
+            } else if (exerciseType === 'secondary') {
+                defaultSeconds = prefs.secondary_timer_seconds || 120;
+            } else if (exerciseType === 'accessory') {
+                defaultSeconds = prefs.accessory_timer_seconds || 90;
+            } else {
+                defaultSeconds = prefs.primary_timer_seconds || 180;
+            }
+
+            if (!display.classList.contains('active') && !display.classList.contains('paused')) {
+                const minutes = Math.floor(defaultSeconds / 60);
+                const seconds = defaultSeconds % 60;
+                display.textContent = minutes + ':' + String(seconds).padStart(2, '0');
+            }
+
+            display.dataset.exerciseId = exerciseId;
+            startBtn.dataset.exerciseId = exerciseId;
+            startBtn.dataset.exerciseType = exerciseType;
+            startBtn.dataset.duration = String(defaultSeconds);
+            if (pauseBtn) pauseBtn.dataset.exerciseId = exerciseId;
+            if (stopBtn) stopBtn.dataset.exerciseId = exerciseId;
+        }
+
+        function updateProgressBar(card) {
+            const bar = card.querySelector('[data-set-progress]');
+            if (!bar) return;
+            const rows = card.querySelectorAll('.set-row');
+            if (!rows.length) {
+                bar.style.width = '0%';
+                return;
+            }
+            const completed = Array.from(rows).filter(row => row.dataset.isCompleted === 'true').length;
+            const percent = Math.round((completed / rows.length) * 100);
+            bar.style.width = percent + '%';
+        }
+
+        function updateTotalCounter() {
+            if (totalNumSpan) {
+                totalNumSpan.textContent = String(totalExercises);
+            }
+        }
+
+        function advanceSet(exerciseId) {
+            const card = getCardByExerciseId(exerciseId);
+            if (!card) return false;
+            const rows = Array.from(card.querySelectorAll('.set-row'));
+            if (!rows.length) return false;
+
+            const currentSetId = setState[exerciseId];
+            let currentIndexInRows = rows.findIndex(row => row.dataset.setId === currentSetId);
+            if (currentIndexInRows === -1) {
+                currentIndexInRows = 0;
+            }
+
+            const nextIncomplete = rows.find((row, idx) => idx > currentIndexInRows && row.dataset.isCompleted !== 'true');
+            if (nextIncomplete) {
+                setState[exerciseId] = nextIncomplete.dataset.setId;
+                applyHighlight(card, setState[exerciseId]);
+                updateProgressBar(card);
+                return true;
+            }
+
+            const firstIncomplete = rows.find(row => row.dataset.isCompleted !== 'true');
+            if (firstIncomplete) {
+                setState[exerciseId] = firstIncomplete.dataset.setId;
+                applyHighlight(card, setState[exerciseId]);
+                updateProgressBar(card);
+                return true;
+            }
+
+            // All sets complete, move to next exercise if available
             if (currentIndex < totalExercises - 1) {
                 showExercise(currentIndex + 1);
+                return true;
             }
-        });
-    }
+            return false;
+        }
 
+        function getCardByExerciseId(exerciseId) {
+            return Array.from(exerciseCards).find(card => card.querySelector('.workout-exercise-card[data-exercise-id="' + exerciseId + '"]'));
+        }
 
-    // Indicator click handlers
-    indicators.forEach((indicator, index) => {
-        indicator.addEventListener('click', function() {
-            showExercise(index);
-        });
-    });
-
-    // Touch/swipe support (basic implementation)
-    let startX = 0;
-    let endX = 0;
-
-    const container = document.getElementById('exercise-card-container');
-    if (container) {
-        container.addEventListener('touchstart', function(e) {
-            startX = e.touches[0].clientX;
-        });
-
-        container.addEventListener('touchend', function(e) {
-            endX = e.changedTouches[0].clientX;
-            handleSwipe();
-        });
-
-        function handleSwipe() {
-            const threshold = 50; // Minimum distance for swipe
-            const diff = startX - endX;
-
-            if (Math.abs(diff) > threshold) {
-                if (diff > 0 && currentIndex < totalExercises - 1) {
-                    // Swipe left - next exercise
-                    showExercise(currentIndex + 1);
-                } else if (diff < 0 && currentIndex > 0) {
-                    // Swipe right - previous exercise
+        if (prevBtn) {
+            prevBtn.addEventListener('click', function() {
+                if (currentIndex > 0) {
                     showExercise(currentIndex - 1);
+                }
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function() {
+                if (currentIndex < totalExercises - 1) {
+                    showExercise(currentIndex + 1);
+                }
+            });
+        }
+
+        indicators.forEach((indicator, index) => {
+            indicator.addEventListener('click', function() {
+                showExercise(index);
+            });
+        });
+
+        let startX = 0;
+        let endX = 0;
+
+        const container = document.getElementById('exercise-card-container');
+        if (container) {
+            container.addEventListener('touchstart', function(e) {
+                startX = e.touches[0].clientX;
+            });
+
+            container.addEventListener('touchend', function(e) {
+                endX = e.changedTouches[0].clientX;
+                handleSwipe();
+            });
+
+            function handleSwipe() {
+                const threshold = 50;
+                const diff = startX - endX;
+
+                if (Math.abs(diff) > threshold) {
+                    if (diff > 0 && currentIndex < totalExercises - 1) {
+                        showExercise(currentIndex + 1);
+                    } else if (diff < 0 && currentIndex > 0) {
+                        showExercise(currentIndex - 1);
+                    }
                 }
             }
         }
-    }
 
-    // Mobile-specific add exercise handling
-    window.currentExerciseIndex = currentIndex;
-
-    // Override the default add exercise behavior for mobile
-    const addExerciseBtn = document.querySelector('[data-function="click->addExerciseToWorkout"]');
-    if (addExerciseBtn) {
-        // Remove the default handler
-        addExerciseBtn.removeAttribute('data-function');
-
-        // Add mobile-specific handler
-        addExerciseBtn.addEventListener('click', async function(event) {
-            event.preventDefault();
-
-            const button = event.target.closest('button');
-            const workoutId = button.dataset.workoutId;
-
-            if (!workoutId) {
-                console.error('Missing data-workout-id');
-                return;
-            }
-
-            // Find controls
-            const container = button.closest('.add-exercise-controls');
-            if (!container) {
-                console.error('Cannot find container for add exercise controls');
-                return;
-            }
-
-            const exerciseSelect = container.querySelector('select[name="exercise"]');
-            const typeSelect = container.querySelector('select[name="exercise_type"]');
-            const exerciseId = exerciseSelect?.value;
-            const exerciseType = typeSelect?.value;
-
-            if (!exerciseId) {
-                if (typeof send_toast === 'function') {
-                    send_toast('Please select an exercise', 'warning');
+        window.mobileSetController = {
+            handleSetCompletionChange({ exerciseId, setId, isCompleted }) {
+                const card = getCardByExerciseId(exerciseId);
+                if (!card) return;
+                const row = card.querySelector('.set-row[data-set-id="' + setId + '"]');
+                if (row) {
+                    row.dataset.isCompleted = isCompleted ? 'true' : 'false';
+                    row.classList.toggle('set-completed', isCompleted);
                 }
-                return;
-            }
-
-            // Calculate order based on the currently visible exercise's actual order
-            let newOrder = 1;
-            if (exerciseCards.length > 0 && currentIndex < exerciseCards.length) {
+                if (isCompleted && setState[exerciseId] === setId) {
+                    advanceSet(exerciseId);
+                } else if (!isCompleted) {
+                    setState[exerciseId] = setId;
+                    applyHighlight(card, setId);
+                }
+                updateProgressBar(card);
+            },
+            focusSet(exerciseId, setId) {
+                const card = getCardByExerciseId(exerciseId);
+                if (!card) return;
+                setState[exerciseId] = setId;
+                applyHighlight(card, setId);
+                updateProgressBar(card);
+            },
+            advanceSetForExercise(exerciseId) {
+                advanceSet(exerciseId);
+            },
+            getCurrentExerciseId() {
                 const currentCard = exerciseCards[currentIndex];
-                const innerCard = currentCard.querySelector('.workout-exercise-card');
-                const currentOrder = parseInt(innerCard?.dataset.order) || 0;
-                newOrder = currentOrder + 1;
+                return currentCard?.querySelector('.workout-exercise-card')?.dataset.exerciseId || null;
             }
+        };
 
-            // Add exercise via API
-            const url = `/api/workouts/${workoutId}/add_exercise/`;
-            const data = {
-                exercise: exerciseId,
-                exercise_type: exerciseType,
-                order: newOrder
-            };
-
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                    },
-                    body: JSON.stringify(data)
+        window.addEventListener('timer:complete', function(event) {
+            const exerciseId = event.detail?.exerciseId;
+            if (!exerciseId) return;
+            const currentExerciseId = window.mobileSetController.getCurrentExerciseId();
+            if (currentExerciseId !== exerciseId) return;
+            const card = getCardByExerciseId(exerciseId);
+            if (!card) return;
+            const currentRow = card.querySelector('.set-row.current-set-row');
+            const button = currentRow?.querySelector('.mark-set-btn');
+            if (button && button.dataset.completed !== 'true' && typeof toggleSetCompletion === 'function') {
+                toggleSetCompletion({
+                    preventDefault() {},
+                    currentTarget: button
                 });
-
-                if (response.ok) {
-                    if (typeof send_toast === 'function') {
-                        send_toast('Exercise added! Refreshing...', 'success');
-                    }
-
-                    // For now, reload the page to get the new exercise
-                    // In a future enhancement, we could add the card dynamically
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 500);
-                } else {
-                    if (typeof send_toast === 'function') {
-                        send_toast('Error adding exercise', 'danger');
-                    }
-                }
-            } catch (error) {
-                console.error('Error adding exercise:', error);
-                if (typeof send_toast === 'function') {
-                    send_toast('Error adding exercise', 'danger');
-                }
+            } else {
+                advanceSet(exerciseId);
             }
         });
-    }
 
-    // Fetch user timer preferences FIRST, then show exercise
-    fetch('/api/timer-preferences/')
-        .then(response => response.json())
-        .then(prefs => {
-            // Store preferences for use in showExercise function
-            window.timerPreferences = prefs;
-
-            // Don't initialize all timers here - let showExercise handle it
-            console.log('Timer preferences loaded:', prefs);
-
-            // NOW show the first exercise after preferences are loaded
-            if (totalExercises > 0) {
+        fetch('/api/timer-preferences/')
+            .then(response => response.json())
+            .then(prefs => {
+                window.timerPreferences = prefs;
                 showExercise(0);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching timer preferences:', error);
-            // Use defaults if fetch fails
-            window.timerPreferences = {
-                primary_timer_seconds: 180,
-                secondary_timer_seconds: 120,
-                accessory_timer_seconds: 90
-            };
-
-            // Show first exercise even if fetch fails
-            if (totalExercises > 0) {
+            })
+            .catch(error => {
+                console.error('Error fetching timer preferences:', error);
+                window.timerPreferences = {
+                    primary_timer_seconds: 180,
+                    secondary_timer_seconds: 120,
+                    accessory_timer_seconds: 90
+                };
                 showExercise(0);
-            }
-        });
-});
+            });
+    });
+})();
 </script>
 
 <!-- Mobile-specific Styles -->
 <style>
-/* Override desktop timer layout for mobile */
 .timer-section {
-    display: block !important;  /* Override flex to stack vertically */
+    display: block !important;
     text-align: center;
 }
 
 .timer-display {
     display: block;
     margin: 0 auto 1rem auto;
-    font-size: 2.5rem !important;  /* Larger on mobile */
+    font-size: 2.5rem !important;
 }
 
 .timer-message {

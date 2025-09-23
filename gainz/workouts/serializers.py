@@ -4,7 +4,7 @@ from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet
 class ExerciseSetSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExerciseSet
-        fields = ['id', 'set_number', 'reps', 'weight', 'is_warmup']
+        fields = ['id', 'set_number', 'reps', 'weight', 'is_warmup', 'is_completed']
 
 class WorkoutExerciseSerializer(serializers.ModelSerializer):
     sets = ExerciseSetSerializer(many=True, read_only=True)

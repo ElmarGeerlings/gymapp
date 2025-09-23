@@ -102,7 +102,17 @@
                                         {% if pr.assigned_day == day_val %}
                                             <div class="routine-chip" draggable="true" data-routine-id="{{ pr.routine.id }}" data-routine-name="{{ pr.routine.name }}">
                                                 <span>{{ pr.routine.name }}</span>
-                                                <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                                                <div class="d-flex align-items-center">
+                                                    <a href="{% url 'routine-detail' pr.routine.id %}"
+                                                       class="text-white me-2"
+                                                       draggable="false"
+                                                       target="_blank"
+                                                       rel="noopener"
+                                                       title="Open routine in a new tab">
+                                                        <i class="fas fa-external-link-alt"></i>
+                                                    </a>
+                                                    <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                                                </div>
                                                 <input type="hidden" name="weekly_day_{{ day_val }}_routines" value="{{ pr.routine.id }}">
                                             </div>
                                         {% endif %}
@@ -130,7 +140,15 @@
                                 <input type="hidden" name="program_routine_{{ forloop.counter0 }}_routine_id" value="{{ pr.routine.id }}">
                                 <div class="col-md-5">
                                     <label class="form-label visually-hidden">Routine</label>
-                                    <input type="text" class="form-control" value="{{ pr.routine.name }}" readonly>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="text" class="form-control" value="{{ pr.routine.name }}" readonly>
+                                        <a href="{% url 'routine-detail' pr.routine.id %}"
+                                           class="btn btn-sm btn-outline-primary"
+                                           target="_blank" rel="noopener"
+                                           title="Open routine in a new tab">
+                                            <i class="fas fa-external-link-alt"></i>
+                                        </a>
+                                    </div>
                                 </div>
                                 <div class="col-md-2">
                                     <label for="order_{{ forloop.counter0 }}" class="form-label visually-hidden">Order</label>
@@ -188,7 +206,12 @@
         <input type="hidden" name="program_routine___INDEX___routine_id" value="__ROUTINE_ID__">
         <div class="col-md-5">
             <label class="form-label visually-hidden">Routine</label>
-            <input type="text" class="form-control" value="__ROUTINE_NAME__" readonly>
+            <div class="d-flex align-items-center gap-2">
+                <input type="text" class="form-control" value="__ROUTINE_NAME__" readonly>
+                <a href="/routines/__ROUTINE_ID__/" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" title="Open routine in a new tab">
+                    <i class="fas fa-external-link-alt"></i>
+                </a>
+            </div>
         </div>
         <div class="col-md-2">
             <label for="order___INDEX__" class="form-label visually-hidden">Order</label>

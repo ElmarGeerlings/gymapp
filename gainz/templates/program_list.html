@@ -50,25 +50,27 @@
                                     <div class="row mt-1">
                                         {% for program_routine in program.program_routines.all %}
                                             <div class="col-md-6 mb-2">
-                                                <div class="card card-sm">
-                                                    <div class="card-body py-2 px-3">
-                                                        <h6 class="card-title mb-1 text-dark">{{ program_routine.routine.name }}</h6>
-                                                        <p class="card-text text-muted small mb-1">{{ program_routine.routine.description|truncatewords:10 }}</p>
-                                                        {% if program_routine.routine.exercises.all %}
-                                                            <div class="text-muted small">
-                                                                <strong>Exercises:</strong>
-                                                                {% for routine_exercise in program_routine.routine.exercises.all|slice:":3" %}
-                                                                    {{ routine_exercise.exercise.name }}{% if not forloop.last %}, {% endif %}
-                                                                {% endfor %}
-                                                                {% if program_routine.routine.exercises.count > 3 %}
-                                                                    <span class="text-muted">... +{{ program_routine.routine.exercises.count|add:"-3" }} more</span>
-                                                                {% endif %}
-                                                            </div>
-                                                        {% else %}
-                                                            <div class="text-danger small">No exercises</div>
-                                                        {% endif %}
+                                                <a href="{% url 'routine-detail' program_routine.routine.id %}" class="text-decoration-none text-reset d-block">
+                                                    <div class="card card-sm h-100">
+                                                        <div class="card-body py-2 px-3">
+                                                            <h6 class="card-title mb-1 text-dark">{{ program_routine.routine.name }}</h6>
+                                                            <p class="card-text text-muted small mb-1">{{ program_routine.routine.description|truncatewords:10 }}</p>
+                                                            {% if program_routine.routine.exercises.all %}
+                                                                <div class="text-muted small">
+                                                                    <strong>Exercises:</strong>
+                                                                    {% for routine_exercise in program_routine.routine.exercises.all|slice:":3" %}
+                                                                        {{ routine_exercise.exercise.name }}{% if not forloop.last %}, {% endif %}
+                                                                    {% endfor %}
+                                                                    {% if program_routine.routine.exercises.count > 3 %}
+                                                                        <span class="text-muted">... +{{ program_routine.routine.exercises.count|add:"-3" }} more</span>
+                                                                    {% endif %}
+                                                                </div>
+                                                            {% else %}
+                                                                <div class="text-danger small">No exercises</div>
+                                                            {% endif %}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                </a>
                                             </div>
                                         {% endfor %}
                                     </div>

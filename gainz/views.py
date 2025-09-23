@@ -297,17 +297,69 @@ def exercise_list(request):
 
 @login_required
 def routine_list(request):
-    """Display a list of the user's programs and routines."""
-    # Fetch programs with their routines prefetched
-    programs = Program.objects.filter(user=request.user).prefetch_related('routines').order_by('name')
+    """Display routines with optional filtering by program.
 
-    # Fetch standalone routines (those not assigned to any program)
-    routines = Routine.objects.filter(user=request.user).order_by('name')
+    Default: if a program is active, show routines from that program (and select it in the dropdown).
+    If no active program, show all routines and select "All Routines".
+    Supports `?program=all` or `?program=<id>` to filter explicitly.
+    """
+    programs = Program.objects.filter(user=request.user).order_by('name')
+    active_program = programs.filter(is_active=True).first()
+
+    program_param = request.GET.get('program')  # 'all' | <program_id>
+    selected_program = None
+
+    # Determine routines queryset
+    if program_param == 'all':
+        routines = Routine.objects.filter(user=request.user).order_by('name')
+        current_program_filter = 'all'
+    elif program_param and program_param.isdigit():
+        selected_program = programs.filter(id=int(program_param)).first()
+        if selected_program:
+            routines = Routine.objects.filter(
+                user=request.user,
+                program_associations__program=selected_program
+            ).distinct().order_by('name')
+            current_program_filter = str(selected_program.id)
+        else:
+            # Invalid program id: fall back to default logic
+            if active_program:
+                selected_program = active_program
+                routines = Routine.objects.filter(
+                    user=request.user,
+                    program_associations__program=selected_program
+                ).distinct().order_by('name')
+                current_program_filter = str(selected_program.id)
+            else:
+                routines = Routine.objects.filter(user=request.user).order_by('name')
+                current_program_filter = 'all'
+    else:
+        # Default: use active program if present; otherwise show all
+        if active_program:
+            selected_program = active_program
+            routines = Routine.objects.filter(
+                user=request.user,
+                program_associations__program=selected_program
+            ).distinct().order_by('name')
+            current_program_filter = str(selected_program.id)
+        else:
+            routines = Routine.objects.filter(user=request.user).order_by('name')
+            current_program_filter = 'all'
+
+    # Title hint
+    if selected_program:
+        title = f'Routines in: {selected_program.name}'
+    elif current_program_filter == 'all':
+        title = 'All Routines'
+    else:
+        title = 'Your Routines'
 
     context = {
         'programs': programs,
         'routines': routines,
-        'title': 'My Routines & Programs'
+        'selected_program': selected_program,
+        'current_program_filter': current_program_filter,
+        'title': title,
     }
     return render(request, 'routine_list.html', context)
 

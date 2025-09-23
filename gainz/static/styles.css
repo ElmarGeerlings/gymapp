@@ -1025,6 +1025,11 @@ html {
     }
 }
 
+/* ============================================
+   MOBILE WORKOUT VIEW (SET FOCUSED)
+   ============================================ */
+
+
 @media (min-width: 992px) {
     .responsive-text {
         font-size: 1.25rem;
@@ -1040,6 +1045,37 @@ html {
     display: flex;
     align-items: center;
     gap: 10px;
+}
+
+/* Mobile workout set helpers */
+.mobile-set-progress {
+    height: 6px;
+    background-color: #f1f3f5;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.mobile-set-progress .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #ffbf75 0%, #ff9933 100%);
+    transition: width 0.3s ease;
+}
+
+.set-row.current-set-row {
+    background-color: var(--bs-warning) !important;
+}
+
+.set-row.set-completed {
+    opacity: 0.6;
+}
+
+.set-row.current-set-row > td,
+.set-row.current-set-row > th {
+    background-color: var(--bs-warning) !important;
+}
+
+.set-row.set-completed.current-set-row {
+    opacity: 0.8;
 }
 
 /* Timer display styles */
@@ -1059,16 +1095,16 @@ html {
 
 /* Timer display active state */
 .timer-display.active {
-    background-color: #d4edda;
-    border-color: #c3e6cb;
-    color: #155724;
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+    color: #333;
 }
 
 /* Timer display paused state */
 .timer-display.paused {
-    background-color: #fff3cd;
-    border-color: #ffeaa7;
-    color: #856404;
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+    color: #333;
 }
 
 /* Timer controls button group */

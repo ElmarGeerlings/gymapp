@@ -220,6 +220,7 @@ class ExerciseSet(models.Model):
     reps = models.PositiveIntegerField()
     weight = models.DecimalField(max_digits=6, decimal_places=2)
     is_warmup = models.BooleanField(default=False)
+    is_completed = models.BooleanField(default=False)
 
     def __str__(self):
         # Adding a basic __str__ for ExerciseSet

@@ -179,7 +179,12 @@ function restoreProgramState(state) {
                 chip.dataset.routineName = routine.name;
                 chip.innerHTML = `
                     <span>${routine.name}</span>
-                    <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                    <div class="d-flex align-items-center">
+                        <a href="/routines/${routine.routine_id || routine.id}/" class="text-white me-2" draggable="false" target="_blank" rel="noopener" title="Open routine in a new tab">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                        <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                    </div>
                     <input type="hidden" name="weekly_day_${dayValue}_routines" value="${routine.routine_id || routine.id}">
                 `;
                 container.appendChild(chip);
@@ -355,7 +360,12 @@ async function toggleScheduleType() {
                     chip.dataset.routineName = routine.name;
                     chip.innerHTML = `
                         <span>${routine.name}</span>
-                        <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                        <div class="d-flex align-items-center">
+                            <a href="/routines/${routine.routine_id}/" class="text-white me-2" draggable="false" target="_blank" rel="noopener" title="Open routine in a new tab">
+                                <i class="fas fa-external-link-alt"></i>
+                            </a>
+                            <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                        </div>
                         <input type="hidden" name="weekly_day_${day}_routines" value="${routine.routine_id}">
                     `;
                     
@@ -1042,6 +1052,7 @@ async function addSet(event) {
                                 <th width="100">Reps</th>
                                 <th width="120">Weight (kg)</th>
                                 <th width="80">Warmup</th>
+                                <th width="60">Done</th>
                                 <th width="40"></th>
                             </tr>
                         </thead>
@@ -1064,7 +1075,7 @@ async function addSet(event) {
         // Add the new row
         const setData = response.data;
         const newRow = `
-            <tr class="set-row" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${setData.weight}">
+            <tr class="set-row${setData.is_completed ? ' set-completed' : ''}" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${setData.weight}" data-is-completed="${setData.is_completed ? 'true' : 'false'}" data-exercise-id="${exerciseId}">
                 <td class="set-reps">
                     <input type="number" class="form-control form-control-sm set-reps-input" 
                            value="${setData.reps}" min="0" step="1"
@@ -1087,6 +1098,16 @@ async function addSet(event) {
                            data-field="is_warmup">
                 </td>
                 <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-outline-success mark-set-btn"
+                            data-function="click->toggleSetCompletion"
+                            data-set-id="${setData.id}"
+                            data-exercise-id="${exerciseId}"
+                            data-completed="${setData.is_completed ? 'true' : 'false'}"
+                            title="Toggle completion">
+                        <i class="fas fa-check"></i>
+                    </button>
+                </td>
+                <td class="text-center">
                     <a href="#" class="text-danger"
                        data-function="click->deleteSet"
                        data-set-id="${setData.id}"
@@ -1097,9 +1118,16 @@ async function addSet(event) {
             </tr>
         `;
         tbody.insertAdjacentHTML('beforeend', newRow);
-        
-        // Re-register event handlers for the new elements
-        registerDataFunctionHandlers();
+
+        const insertedRow = tbody.querySelector(`.set-row[data-set-id="${setData.id}"]`);
+        if (insertedRow) {
+            const index = Array.from(tbody.querySelectorAll('.set-row')).indexOf(insertedRow);
+            insertedRow.dataset.setIndex = index;
+        }
+
+        if (window.mobileSetController && typeof window.mobileSetController.focusSet === 'function') {
+            window.mobileSetController.focusSet(exerciseId, String(setData.id));
+        }
     } else {
         console.error('Error adding set:', response);
         const errorMsg = response.data?.detail || response.data?.error || JSON.stringify(response.data) || 'Error adding set';
@@ -1127,6 +1155,7 @@ async function deleteSet(event) {
         send_toast('Set deleted', 'success');
         const row = element.closest('tr');
         const tbody = row.closest('tbody');
+        const exerciseId = row?.dataset?.exerciseId;
         row.remove();
         
         // No need to update set numbers since we removed that column
@@ -1142,8 +1171,61 @@ async function deleteSet(event) {
                 addButton.insertAdjacentHTML('beforebegin', '<p class="text-muted no-sets-message">No sets recorded for this exercise.</p>');
             }
         }
+
+        if (exerciseId && window.mobileSetController && typeof window.mobileSetController.advanceSetForExercise === 'function') {
+            window.mobileSetController.advanceSetForExercise(exerciseId);
+        }
     } else {
          send_toast(response.data?.detail || 'Error deleting set', 'danger');
+    }
+}
+
+// --- Toggle Set Completion ---
+// Triggered by data-function="click->toggleSetCompletion"
+// Toggles is_completed flag and updates UI state
+async function toggleSetCompletion(event) {
+    event.preventDefault();
+    const button = event.currentTarget;
+    const setId = button.dataset.setId;
+    const exerciseId = button.dataset.exerciseId;
+
+    if (!setId) {
+        console.error('Missing data-set-id on completion toggle button');
+        return;
+    }
+
+    const isCurrentlyCompleted = button.dataset.completed === 'true';
+    const url = `/api/workouts/sets/${setId}/`;
+    const response = await httpRequestHelper(url, 'PATCH', { is_completed: !isCurrentlyCompleted });
+
+    if (!response.ok) {
+        send_toast(response.data?.detail || 'Error updating set', 'danger');
+        return;
+    }
+
+    const row = button.closest('.set-row');
+    if (row) {
+        row.dataset.isCompleted = (!isCurrentlyCompleted).toString();
+        row.classList.toggle('set-completed', !isCurrentlyCompleted);
+    }
+
+    button.dataset.completed = (!isCurrentlyCompleted).toString();
+    if (!isCurrentlyCompleted) {
+        button.classList.remove('btn-outline-success');
+        button.classList.add('btn-success', 'text-white');
+        send_toast('Set marked complete', 'success');
+    } else {
+        button.classList.remove('btn-success', 'text-white');
+        button.classList.add('btn-outline-success');
+        send_toast('Set marked incomplete', 'info');
+    }
+
+    if (window.mobileSetController && typeof window.mobileSetController.handleSetCompletionChange === 'function') {
+        window.mobileSetController.handleSetCompletionChange({
+            exerciseId: exerciseId,
+            setId: setId,
+            isCompleted: !isCurrentlyCompleted
+        });
     }
 }
 
@@ -2658,7 +2740,12 @@ function handleAddRoutineToDay(event) {
     chip.dataset.routineName = routineName; // Store name for drag and drop
     chip.innerHTML = `
         <span>${routineName}</span>
-        <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+        <div class="d-flex align-items-center">
+            <a href="/routines/${routineId}/" class="text-white me-2" draggable="false" target="_blank" rel="noopener" title="Open routine in a new tab">
+                <i class="fas fa-external-link-alt"></i>
+            </a>
+            <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+        </div>
         <input type="hidden" name="weekly_day_${dayValue}_routines" value="${routineId}">
     `;
 
