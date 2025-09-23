@@ -241,38 +241,46 @@ class WorkoutTimer {
      * Play notification sound/alert when timer completes
      */
     playNotification() {
-        try {
-            // Try to play a notification sound
-            const audio = new Audio('data:audio/wav;base64,UklGRvIBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU4BAABBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBT2a2fLJcSMFLYPP89uKNwgZZ7zx5Z9NEQ1Vq+Xx');
-            audio.volume = 0.3;
-            audio.play().catch(() => {
-                // Fallback to browser notification if audio fails
-                this.showBrowserNotification();
-            });
-        } catch (e) {
-            // Fallback to browser notification
-            this.showBrowserNotification();
-        }
+        this.showBrowserNotification();
     }
 
     /**
      * Show browser notification when timer completes
      */
     showBrowserNotification() {
-        if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Timer Complete!', {
-                body: 'Your rest timer has finished.',
-                icon: '/static/favicon.ico'
-            });
-        } else if ('Notification' in window && Notification.permission === 'default') {
+        if (!('Notification' in window)) {
+            return;
+        }
+
+        if (Notification.permission === 'granted') {
+            this.dispatchTimerNotification();
+        } else if (Notification.permission === 'default') {
             Notification.requestPermission().then(permission => {
                 if (permission === 'granted') {
-                    new Notification('Timer Complete!', {
-                        body: 'Your rest timer has finished.',
-                        icon: '/static/favicon.ico'
-                    });
+                    this.dispatchTimerNotification();
                 }
             });
+        }
+    }
+
+    dispatchTimerNotification() {
+        const title = 'Rest timer complete';
+        const options = {
+            body: 'Time to start your next set.',
+            icon: '/static/favicon.ico',
+            tag: 'gainz-timer'
+        };
+
+        if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+            navigator.serviceWorker.ready.then(reg => {
+                reg.showNotification(title, options).catch(() => {
+                    new Notification(title, options);
+                });
+            }).catch(() => {
+                new Notification(title, options);
+            });
+        } else {
+            new Notification(title, options);
         }
     }
 
@@ -883,6 +891,22 @@ class TimerManager {
  */
 window.timerManager = new TimerManager();
 
+window.timerManager.requestNotificationPermission = function() {
+    if (!('Notification' in window)) {
+        return Promise.resolve('unsupported');
+    }
+
+    if (Notification.permission === 'granted' || Notification.permission === 'denied') {
+        return Promise.resolve(Notification.permission);
+    }
+
+    return Notification.requestPermission();
+};
+
+window.timerManager.ensureNotificationPermission = function() {
+    this.requestNotificationPermission().catch(() => {});
+};
+
 /**
  * Start timer with duration from data attributes or exercise type
  * Used by data-function="click->startTimer"
@@ -901,6 +925,8 @@ window.startTimer = async function(event) {
         console.error('No exercise ID found for timer');
         return false;
     }
+
+    window.timerManager.ensureNotificationPermission();
 
     // Prefer computed duration from user preferences and overrides; fallback to data attributes
     let seconds = null;
