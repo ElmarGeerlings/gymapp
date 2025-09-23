@@ -762,6 +762,9 @@ class TimerManager {
                 if (timer) {
                     const state = timer.getState();
                     element.textContent = state.formattedTime;
+                    // Reflect running/paused state via classes for styling and mobile checks
+                    element.classList.toggle('active', state.isRunning && !state.isPaused);
+                    element.classList.toggle('paused', !!state.isPaused);
 
                     // Update timer control buttons for this exercise
                     this.updateTimerControls(exerciseId, state);
@@ -778,6 +781,9 @@ class TimerManager {
                             element.textContent = '01:30'; // Fallback to 90 seconds
                         }
                     }
+                    // Ensure classes reflect idle state
+                    element.classList.remove('active');
+                    element.classList.remove('paused');
 
                     this.updateTimerControls(exerciseId, {
                         isRunning: false,
@@ -886,23 +892,23 @@ window.startTimer = async function(event) {
         return false;
     }
 
-    // Get duration from data attributes or determine from user preferences
-    let duration = element?.dataset?.duration || element?.dataset?.timer;
-
-    if (!duration) {
-        try {
-            // Get duration from user preferences instead of hardcoded values
-            duration = await window.timerManager.getDefaultDurationForExercise(exerciseId);
-        } catch (error) {
-            console.error('Failed to get user timer preferences, using fallback:', error);
-            // Only use hardcoded fallback if user preferences fail
+    // Prefer computed duration from user preferences and overrides; fallback to data attributes
+    let seconds = null;
+    try {
+        const computed = await window.timerManager.getDefaultDurationForExercise(exerciseId);
+        seconds = parseInt(computed, 10);
+    } catch (error) {
+        console.error('Failed to compute timer duration, checking data attributes:', error);
+        const fromAttr = element?.dataset?.duration || element?.dataset?.timer;
+        if (fromAttr) {
+            seconds = parseInt(fromAttr, 10);
+        } else {
             const exerciseType = element?.dataset?.exerciseType;
-            duration = getDefaultTimerDuration(exerciseType);
+            seconds = parseInt(getDefaultTimerDuration(exerciseType) || 60, 10);
         }
     }
 
-    const seconds = parseInt(duration || 60, 10);
-    return await window.timerManager.startTimer(exerciseId, seconds);
+    return await window.timerManager.startTimer(exerciseId, seconds || 60);
 };
 
 /**

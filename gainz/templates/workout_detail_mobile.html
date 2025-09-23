@@ -212,7 +212,7 @@
                 </button>
 
                 <div class="exercise-counter text-muted">
-                    <span id="current-exercise-num">1</span> of {{ all_exercises|length }}
+                    <span id="current-exercise-num">1</span> of <span id="total-exercises-num">{{ all_exercises|length }}</span>
                 </div>
 
                 <button class="btn btn-outline-secondary" id="next-exercise" style="min-width: 100px;" {% if all_exercises|length <= 1 %}disabled{% endif %}>
@@ -292,10 +292,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 // Set timer display for the current exercise
                 if (timerDisplay && startBtn) {
-                    // Only update if timer is not actively running
+                    // Only update if timer is not actively running or paused
                     const isRunning = timerDisplay.classList.contains('active');
+                    const isPaused = timerDisplay.classList.contains('paused');
 
-                    if (!isRunning) {
+                    if (!isRunning && !isPaused) {
                         const exerciseType = startBtn.dataset.exerciseType;
                         const cleanType = exerciseType ? exerciseType.toLowerCase().trim() : '';
                         let defaultSeconds = 180;
@@ -443,11 +444,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            // Calculate order based on current exercise
+            // Calculate order based on the currently visible exercise's actual order
             let newOrder = 1;
             if (exerciseCards.length > 0 && currentIndex < exerciseCards.length) {
                 const currentCard = exerciseCards[currentIndex];
-                const currentOrder = parseInt(currentCard.dataset.order) || 0;
+                const innerCard = currentCard.querySelector('.workout-exercise-card');
+                const currentOrder = parseInt(innerCard?.dataset.order) || 0;
                 newOrder = currentOrder + 1;
             }
 

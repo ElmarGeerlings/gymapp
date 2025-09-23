@@ -1167,16 +1167,15 @@ async function updateExerciseFeedback(event) {
     const response = await httpRequestHelper(url, 'PATCH', data);
     
     if (response.ok) {
-        // Update button states
-        const btnGroup = button.closest('.btn-group');
-        const allButtons = btnGroup.querySelectorAll('button');
-        
-        // Remove active class from all buttons
+        // Update button states (robust to both desktop and mobile markup)
+        // Scope to the current card if possible
+        const scope = button.closest('.exercise-card') || button.closest('.workout-exercise-card') || document;
+        const selector = `[data-function*="updateExerciseFeedback"][data-exercise-id="${exerciseId}"]`;
+        const allButtons = scope.querySelectorAll(selector);
+
         allButtons.forEach(btn => btn.classList.remove('active'));
-        
-        // Add active class to clicked button
         button.classList.add('active');
-        
+
         send_toast(`Feedback saved: ${feedback}`, 'success');
     } else {
         console.error('Error updating feedback:', response);
@@ -1202,15 +1201,197 @@ async function removeExercise(event) {
     
     const url = `/api/workouts/exercises/${exerciseId}/`;
     const response = await httpRequestHelper(url, 'DELETE');
-    
+
     if (response.ok) {
         send_toast('Exercise removed', 'success');
-        const card = button.closest('.workout-exercise-card');
-        card.remove();
+
+        // Stop and clear any timer state for this exercise
+        try {
+            if (window.timerManager) {
+                window.timerManager.stopTimer(exerciseId);
+            }
+        } catch (e) { /* noop */ }
+
+        // Prefer removing the full mobile wrapper if present
+        let wrapper = button.closest('.exercise-card');
+        let preferredIndex = null;
+        if (wrapper) {
+            // Remember index before removal
+            preferredIndex = parseInt(wrapper.dataset.exerciseIndex || '0', 10);
+            wrapper.remove();
+        } else {
+            // Desktop or fallback: remove the inner card
+            const innerCard = button.closest('.workout-exercise-card');
+            if (innerCard) innerCard.remove();
+        }
+
+        // If on mobile view, refresh navigation UI (dots, counter, prev/next)
+        if (document.getElementById('exercise-card-container')) {
+            if (typeof window.refreshMobileWorkoutUI === 'function') {
+                window.refreshMobileWorkoutUI(preferredIndex);
+            } else {
+                // Minimal fallback: update count text if present
+                const container = document.getElementById('exercise-card-container');
+                const cards = container ? container.querySelectorAll('.exercise-card') : [];
+                const currentNumSpan = document.getElementById('current-exercise-num');
+                if (currentNumSpan && cards.length > 0) {
+                    // Clamp to valid range
+                    const visibleIndex = Array.from(cards).findIndex(c => !c.classList.contains('d-none'));
+                    currentNumSpan.textContent = String(Math.max(1, (visibleIndex >= 0 ? visibleIndex : 0) + 1));
+                }
+            }
+        }
     } else {
         send_toast(response.data?.detail || 'Error removing exercise', 'danger');
     }
 }
+
+// Refresh the mobile workout navigation UI after dynamic changes (e.g., deletion)
+// Rebuilds indicators, reindexes cards, updates counter and prev/next handlers.
+window.refreshMobileWorkoutUI = function(preferredIndex = null) {
+    const container = document.getElementById('exercise-card-container');
+    if (!container) return;
+
+    // Remove any empty wrappers left behind (no inner workout card)
+    container.querySelectorAll('.exercise-card').forEach(card => {
+        if (!card.querySelector('.workout-exercise-card')) {
+            card.remove();
+        }
+    });
+
+    const cards = Array.from(container.querySelectorAll('.exercise-card'));
+    const total = cards.length;
+
+    const navBottom = document.querySelector('.exercise-navigation-bottom');
+    const indicatorsContainer = document.querySelector('.exercise-indicators');
+    const prevBtnOrig = document.getElementById('prev-exercise');
+    const nextBtnOrig = document.getElementById('next-exercise');
+    const currentNumSpan = document.getElementById('current-exercise-num');
+    const totalNumSpan = document.getElementById('total-exercises-num');
+
+    if (total === 0) {
+        if (navBottom) navBottom.style.display = 'none';
+        if (currentNumSpan) currentNumSpan.textContent = '0';
+        if (totalNumSpan) totalNumSpan.textContent = '0';
+        return;
+    }
+
+    // Re-index cards
+    cards.forEach((c, idx) => { c.dataset.exerciseIndex = idx; });
+
+    // Rebuild indicators
+    if (indicatorsContainer) {
+        indicatorsContainer.innerHTML = '';
+        for (let i = 0; i < total; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'indicator';
+            dot.dataset.exerciseIndex = i;
+            indicatorsContainer.appendChild(dot);
+        }
+    }
+
+    // Update total count text
+    if (totalNumSpan) totalNumSpan.textContent = String(total);
+
+    // Determine index to show
+    let currentIndex = preferredIndex;
+    if (currentIndex === null || Number.isNaN(currentIndex)) {
+        const visibleIndex = cards.findIndex(c => !c.classList.contains('d-none'));
+        currentIndex = visibleIndex >= 0 ? visibleIndex : 0;
+    }
+    if (currentIndex < 0) currentIndex = 0;
+    if (currentIndex > total - 1) currentIndex = total - 1;
+
+    function setTimerDefaultsForCard(card) {
+        try {
+            const exerciseElement = card.querySelector('.workout-exercise-card');
+            const startBtn = card.querySelector('.timer-start-btn');
+            const timerDisplay = card.querySelector('[data-timer-display]');
+            if (!exerciseElement || !startBtn || !timerDisplay) return;
+
+            // If timer isn't actively running, set default display and duration
+            const isRunning = timerDisplay.classList.contains('active');
+            if (isRunning) return;
+
+            const exerciseType = (startBtn.dataset.exerciseType || '').toLowerCase().trim();
+            let defaultSeconds = 180;
+            const prefs = window.timerPreferences || {
+                primary_timer_seconds: 180,
+                secondary_timer_seconds: 120,
+                accessory_timer_seconds: 90
+            };
+            if (exerciseType === 'primary') defaultSeconds = prefs.primary_timer_seconds || 180;
+            else if (exerciseType === 'secondary') defaultSeconds = prefs.secondary_timer_seconds || 120;
+            else if (exerciseType === 'accessory') defaultSeconds = prefs.accessory_timer_seconds || 90;
+            else defaultSeconds = prefs.primary_timer_seconds || 180;
+
+            const minutes = Math.floor(defaultSeconds / 60);
+            const seconds = defaultSeconds % 60;
+            timerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            timerDisplay.setAttribute('data-default-seconds', String(defaultSeconds));
+            startBtn.setAttribute('data-duration', String(defaultSeconds));
+        } catch (e) {
+            // Non-fatal
+        }
+    }
+
+    function showIndex(index) {
+        cards.forEach(c => c.classList.add('d-none'));
+        const target = cards[index];
+        if (target) {
+            target.classList.remove('d-none');
+            setTimerDefaultsForCard(target);
+        }
+        // Update indicators
+        document.querySelectorAll('.indicator').forEach((ind, i) => {
+            ind.classList.toggle('active', i === index);
+        });
+        // Update counter and buttons
+        if (currentNumSpan) currentNumSpan.textContent = String(index + 1);
+        const prevBtn = document.getElementById('prev-exercise');
+        const nextBtn = document.getElementById('next-exercise');
+        if (prevBtn) prevBtn.disabled = index === 0;
+        if (nextBtn) nextBtn.disabled = index === total - 1;
+    }
+
+    // Replace prev/next with clean clones to remove old listeners
+    function replaceWithClone(btn) {
+        if (!btn) return btn;
+        const clone = btn.cloneNode(true);
+        btn.replaceWith(clone);
+        return clone;
+    }
+    const prevBtn = replaceWithClone(prevBtnOrig);
+    const nextBtn = replaceWithClone(nextBtnOrig);
+
+    if (prevBtn) {
+        prevBtn.onclick = function(e) {
+            e.preventDefault();
+            const visible = cards.findIndex(c => !c.classList.contains('d-none'));
+            if (visible > 0) showIndex(visible - 1);
+        };
+    }
+    if (nextBtn) {
+        nextBtn.onclick = function(e) {
+            e.preventDefault();
+            const visible = cards.findIndex(c => !c.classList.contains('d-none'));
+            if (visible < total - 1) showIndex(visible + 1);
+        };
+    }
+
+    // Indicator click handlers
+    document.querySelectorAll('.indicator').forEach((indicator, idx) => {
+        indicator.addEventListener('click', function() {
+            showIndex(idx);
+        });
+    });
+
+    // Ensure nav visible
+    if (navBottom) navBottom.style.display = '';
+
+    // Finally, show the intended index
+    showIndex(currentIndex);
+};
 
 // --- Add Existing Exercise to Workout ---
 // Triggered by data-function="click->addExerciseToWorkout"
@@ -2749,4 +2930,3 @@ function initializeTouchDragSupport() {
         });
     }
 }
-

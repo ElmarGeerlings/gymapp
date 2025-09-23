@@ -1,0 +1,52 @@
+  Overview
+
+  - Goal: run Codex CLI using your OpenAI API key (no ChatGPT/Plus).
+  - Choose one setup: Global env (easiest) or per‑project .env (scoped).
+
+  npm install -g @openai/codex
+
+  Option A — Global Setup (recommended)
+
+  - Set user env vars (works in both cmd and PowerShell):
+      - setx OPENAI_API_KEY "sk-..."
+      - If your key starts with sk-proj-, also: setx OPENAI_PROJECT "proj_..."
+  - Fully restart your terminal/VS Code.
+  - Verify:
+      - cmd: echo %OPENAI_API_KEY%
+      - PowerShell: $env:OPENAI_API_KEY
+  - Launch Codex: codex
+  - In Codex:
+      - /logout (ensures it won’t use ChatGPT sign‑in)
+      - /model → pick an “OpenAI (API)” model (e.g., gpt-4o-mini)
+      - /status to confirm you’re not “Signed in with ChatGPT”.
+
+  Option B — Per‑Project .env (no global changes)
+
+  - In your project folder, create .env with:
+      - OPENAI_API_KEY=sk-...
+      - If using sk-proj-...: OPENAI_PROJECT=proj_...
+  - Add .env to .gitignore.
+  - Install dotenv once: py -m pip install -U python-dotenv
+  - Launch Codex with the .env loaded:
+      - If codex is on PATH: py -m dotenv -f .env run -- codex
+      - Or with full path: py -m dotenv -f .env run -- "%USERPROFILE%\AppData\Roaming\npm\codex.cmd"
+  - In Codex:
+      - /logout
+      - /model → choose an OpenAI API model
+      - /status to verify.
+  - Quick check the env is loaded: py -m dotenv -f .env run -- cmd /c "echo %OPENAI_API_KEY% & echo %OPENAI_PROJECT%"
+
+  Verification
+
+  - Codex should NOT show “Signed in with ChatGPT” in /status.
+  - Sending a message should not show the Plus banner.
+  - where codex shows where Codex is installed; use that path if needed.
+
+  Troubleshooting
+
+  - Plus banner appears: run /logout, then /model and pick an OpenAI API model; ensure the key is present in the launching shell (or via dotenv).
+  - Env var not seen after setx: fully close and reopen the terminal app; verify with echo %OPENAI_API_KEY% or $env:OPENAI_API_KEY.
+  - codex not found: where codex; use the shown path (e.g., "%USERPROFILE%\AppData\Roaming\npm\codex.cmd").
+  - Using WSL/Git Bash: set export OPENAI_API_KEY=... in ~/.bashrc or use direnv; verify with echo $OPENAI_API_KEY.
+
+  Want me to generate a tiny codex-env.cmd/codex-env.ps1 loader you can drop into any project to auto-load .env and start Codex?
