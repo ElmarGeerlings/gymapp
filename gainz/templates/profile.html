@@ -121,7 +121,7 @@
                                     </label>
                                     <div class="input-group">
                                         <input type="number" class="form-control" id="primary_timer_seconds" name="primary_timer_seconds" 
-                                               value="{{ timer_prefs.primary_timer_seconds }}" min="10" max="3600" step="5" required>
+                                               value="{{ timer_prefs.primary_timer_seconds }}" min="0" max="3600" step="1" data-timer-step="5" required>
                                         <span class="input-group-text">sec</span>
                                     </div>
                                     <div class="form-text">
@@ -138,7 +138,7 @@
                                     </label>
                                     <div class="input-group">
                                         <input type="number" class="form-control" id="secondary_timer_seconds" name="secondary_timer_seconds" 
-                                               value="{{ timer_prefs.secondary_timer_seconds }}" min="10" max="3600" step="5" required>
+                                               value="{{ timer_prefs.secondary_timer_seconds }}" min="0" max="3600" step="1" data-timer-step="5" required>
                                         <span class="input-group-text">sec</span>
                                     </div>
                                     <div class="form-text">
@@ -155,7 +155,7 @@
                                     </label>
                                     <div class="input-group">
                                         <input type="number" class="form-control" id="accessory_timer_seconds" name="accessory_timer_seconds" 
-                                               value="{{ timer_prefs.accessory_timer_seconds }}" min="10" max="3600" step="5" required>
+                                               value="{{ timer_prefs.accessory_timer_seconds }}" min="0" max="3600" step="1" data-timer-step="5" required>
                                         <span class="input-group-text">sec</span>
                                     </div>
                                     <div class="form-text">
@@ -336,5 +336,28 @@
     if (window.initExerciseTimerOverrides) {
         window.initExerciseTimerOverrides();
     }
+
+    // Custom arrow key handling so spinner jumps by 5 but any value is allowed
+    document.querySelectorAll('input[data-timer-step]').forEach(input => {
+        const step = parseInt(input.dataset.timerStep, 10) || 5;
+
+        const applyStep = delta => {
+            const current = parseInt(input.value || '0', 10) || 0;
+            const nextValue = Math.max(0, current + delta);
+            input.value = nextValue;
+            input.dispatchEvent(new Event('input'));
+            input.dispatchEvent(new Event('change'));
+        };
+
+        input.addEventListener('keydown', event => {
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                applyStep(step);
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                applyStep(-step);
+            }
+        });
+    });
 </script>
 {% endblock content %}

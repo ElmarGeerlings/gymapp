@@ -271,16 +271,21 @@ class WorkoutTimer {
             tag: 'gainz-timer'
         };
 
+        try {
+            new Notification(title, options);
+            return;
+        } catch (err) {
+            // Continue to service worker fallback below
+        }
+
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
             navigator.serviceWorker.ready.then(reg => {
-                reg.showNotification(title, options).catch(() => {
-                    new Notification(title, options);
+                reg.showNotification(title, options).catch(err => {
+                    console.warn('Service worker notification failed:', err);
                 });
-            }).catch(() => {
-                new Notification(title, options);
+            }).catch(err => {
+                console.warn('Service worker not ready for notifications:', err);
             });
-        } else {
-            new Notification(title, options);
         }
     }
 

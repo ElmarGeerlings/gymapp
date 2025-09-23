@@ -382,10 +382,12 @@
             const startBtn = card.querySelector('.timer-start-btn');
             const pauseBtn = card.querySelector('.timer-pause-btn');
             const stopBtn = card.querySelector('.timer-stop-btn');
-            if (!display || !startBtn || !exerciseCard) return;
 
-            const exerciseId = exerciseCard.dataset.exerciseId;
-            const exerciseType = (exerciseCard.dataset.exerciseType || '').toLowerCase();
+            if (!display || !startBtn) return;
+
+            const exerciseId = (exerciseCard && exerciseCard.dataset.exerciseId) || startBtn.dataset.exerciseId;
+            const exerciseTypeRaw = startBtn.dataset.exerciseType || exerciseCard?.dataset.exerciseType || '';
+            const exerciseType = exerciseTypeRaw ? exerciseTypeRaw.toLowerCase() : '';
             const prefs = window.timerPreferences || {};
 
             let defaultSeconds = 180;

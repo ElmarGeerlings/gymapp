@@ -1061,6 +1061,7 @@ html {
     transition: width 0.3s ease;
 }
 
+
 .set-row.current-set-row {
     background-color: var(--bs-warning) !important;
 }

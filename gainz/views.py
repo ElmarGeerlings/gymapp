@@ -1497,36 +1497,36 @@ def api_timer_preferences(request):
             # Validate and update fields
             errors = {}
             
-            # Validate primary_timer_seconds (10-3600 seconds)
+            # Validate primary_timer_seconds (0-3600 seconds)
             if 'primary_timer_seconds' in data:
                 try:
                     primary_timer = int(data['primary_timer_seconds'])
-                    if 10 <= primary_timer <= 3600:
+                    if 0 <= primary_timer <= 3600:
                         timer_prefs.primary_timer_seconds = primary_timer
                     else:
-                        errors['primary_timer_seconds'] = 'Must be between 10 and 3600 seconds'
+                        errors['primary_timer_seconds'] = 'Must be between 0 and 3600 seconds'
                 except (ValueError, TypeError):
                     errors['primary_timer_seconds'] = 'Must be a valid integer'
-            
-            # Validate secondary_timer_seconds (10-3600 seconds)
+
+            # Validate secondary_timer_seconds (0-3600 seconds)
             if 'secondary_timer_seconds' in data:
                 try:
                     secondary_timer = int(data['secondary_timer_seconds'])
-                    if 10 <= secondary_timer <= 3600:
+                    if 0 <= secondary_timer <= 3600:
                         timer_prefs.secondary_timer_seconds = secondary_timer
                     else:
-                        errors['secondary_timer_seconds'] = 'Must be between 10 and 3600 seconds'
+                        errors['secondary_timer_seconds'] = 'Must be between 0 and 3600 seconds'
                 except (ValueError, TypeError):
                     errors['secondary_timer_seconds'] = 'Must be a valid integer'
-            
-            # Validate accessory_timer_seconds (10-3600 seconds)
+
+            # Validate accessory_timer_seconds (0-3600 seconds)
             if 'accessory_timer_seconds' in data:
                 try:
                     accessory_timer = int(data['accessory_timer_seconds'])
-                    if 10 <= accessory_timer <= 3600:
+                    if 0 <= accessory_timer <= 3600:
                         timer_prefs.accessory_timer_seconds = accessory_timer
                     else:
-                        errors['accessory_timer_seconds'] = 'Must be between 10 and 3600 seconds'
+                        errors['accessory_timer_seconds'] = 'Must be between 0 and 3600 seconds'
                 except (ValueError, TypeError):
                     errors['accessory_timer_seconds'] = 'Must be a valid integer'
             
