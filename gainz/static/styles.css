@@ -1478,15 +1478,20 @@ html {
         min-width: 50px;
     }
 
+    .sets-container table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
     .sets-container table th,
     .sets-container table td {
         padding: 6px 4px;
     }
 
     .sets-container table th {
-        font-size: 0.75rem;
+        font-size: 0.78rem;
         white-space: normal;
-        line-height: 1.1;
+        line-height: 1.15;
     }
 
     .sets-container .form-control-sm {
@@ -1494,16 +1499,31 @@ html {
         font-size: 0.9rem;
     }
 
-    .sets-container .set-header-warmup,
-    .sets-container .set-header-done,
-    .sets-container .set-header-actions,
-    .sets-container td.set-warmup,
-    .sets-container td.text-center {
-        text-align: center;
-        width: 42px;
+    .sets-container th.set-header-reps,
+    .sets-container td.set-reps {
+        width: 22%;
     }
 
-    .sets-container .set-header-weight {
-        max-width: 62px;
+    .sets-container th.set-header-weight,
+    .sets-container td.set-weight {
+        width: 24%;
+    }
+
+    .sets-container th.set-header-warmup,
+    .sets-container td.set-warmup {
+        width: 21%;
+        text-align: center;
+    }
+
+    .sets-container th.set-header-done,
+    .sets-container td.set-done {
+        width: 18%;
+        text-align: center;
+    }
+
+    .sets-container th.set-header-actions,
+    .sets-container td.set-actions {
+        width: 15%;
+        text-align: center;
     }
 }

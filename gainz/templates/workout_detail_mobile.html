@@ -163,14 +163,14 @@
                                                                    data-set-id="{{ set.id }}"
                                                                    data-field="weight">
                                                         </td>
-                                                        <td class="set-warmup text-center">
+                                                    <td class="set-warmup text-center">
                                                             <input type="checkbox" class="form-check-input"
                                                                    {% if set.is_warmup %}checked{% endif %}
                                                                    data-function="change->updateSet"
                                                                    data-set-id="{{ set.id }}"
                                                                    data-field="is_warmup">
                                                         </td>
-                                                        <td class="text-center">
+                                                        <td class="set-done text-center">
                     <button type="button" class="btn btn-sm mark-set-btn {% if set.is_completed %}btn-success text-white{% else %}btn-outline-success{% endif %}"
                             data-function="click->toggleSetCompletion"
                             data-set-id="{{ set.id }}"
@@ -180,7 +180,7 @@
                                                                 <i class="fas fa-check"></i>
                                                             </button>
                                                         </td>
-                                                        <td class="text-center">
+                                                        <td class="set-actions text-center">
                                                             <a href="#" class="text-danger"
                                                                data-function="click->deleteSet"
                                                                data-set-id="{{ set.id }}"

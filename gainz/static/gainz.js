@@ -1101,7 +1101,7 @@ async function addSet(event) {
                            data-set-id="${setData.id}"
                            data-field="is_warmup">
                 </td>
-                <td class="text-center">
+                <td class="set-done text-center">
                     <button type="button" class="btn btn-sm btn-outline-success mark-set-btn"
                             data-function="click->toggleSetCompletion"
                             data-set-id="${setData.id}"
@@ -1111,7 +1111,7 @@ async function addSet(event) {
                         <i class="fas fa-check"></i>
                     </button>
                 </td>
-                <td class="text-center">
+                <td class="set-actions text-center">
                     <a href="#" class="text-danger"
                        data-function="click->deleteSet"
                        data-set-id="${setData.id}"
