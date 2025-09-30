@@ -1049,11 +1049,11 @@ async function addSet(event) {
                     <table class="table table-sm table-striped">
                         <thead>
                             <tr>
-                                <th width="100">Reps</th>
-                                <th width="120">Weight (kg)</th>
-                                <th width="80">Warmup</th>
-                                <th width="60">Done</th>
-                                <th width="40"></th>
+                                <th class="set-header-reps">Reps</th>
+                                <th class="set-header-weight">Weight</th>
+                                <th class="set-header-warmup">Warmup</th>
+                                <th class="set-header-done">Done</th>
+                                <th class="set-header-actions"></th>
                             </tr>
                         </thead>
                         <tbody class="sets-tbody"></tbody>

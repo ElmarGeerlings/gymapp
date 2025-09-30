@@ -566,7 +566,7 @@ footer {
         -webkit-user-select: none;
         cursor: grab;
     }
-    
+
     .exercise-routine-card[draggable="true"]:active,
     .workout-exercise-card[draggable="true"]:active,
     .routine-chip[draggable="true"]:active {
@@ -1193,14 +1193,14 @@ html {
         padding: 5px 8px;
         min-width: 50px;
     }
-    
+
     .timer-controls .btn {
         min-width: 32px;
         min-height: 32px;
         padding: 4px 6px;
         font-size: 0.75rem;
     }
-    
+
     /* Ensure text is hidden on mobile */
     .timer-controls .d-none.d-sm-inline {
         display: none !important;
@@ -1212,20 +1212,20 @@ html {
     .timer-section {
         gap: 12px;
     }
-    
+
     .timer-display {
         font-size: 1.2rem;
         padding: 8px 14px;
         min-width: 70px;
     }
-    
+
     .timer-controls .btn {
         min-height: 40px;
         min-width: 40px;
         padding: 8px 10px;
         font-size: 0.875rem;
     }
-    
+
     /* Show text labels on tablet and up */
     .timer-controls .d-none.d-sm-inline {
         display: inline !important;
@@ -1239,12 +1239,12 @@ html {
         padding: 10px 16px;
         min-width: 80px;
     }
-    
+
     .timer-controls .btn {
         padding: 10px 14px;
         font-size: 0.9rem;
     }
-    
+
     .timer-controls .btn span {
         margin-left: 6px;
     }
@@ -1396,34 +1396,34 @@ html {
         gap: 12px;
         padding: 16px 0;
     }
-    
+
     .override-actions {
         width: 100%;
         display: flex;
         justify-content: flex-end;
     }
-    
+
     .override-info .fw-semibold {
         font-size: 0.95rem;
     }
-    
+
     .override-info .text-muted {
         font-size: 0.8rem;
     }
-    
+
     /* Stack form fields on mobile */
     .row > .col-md-6,
     .row > .col-md-4,
     .row > .col-md-2 {
         margin-bottom: 15px;
     }
-    
+
     /* Make search select larger on mobile */
     #override_exercise_search {
         font-size: 16px; /* Prevents zoom on iOS */
         padding: 12px 14px;
     }
-    
+
     #override_timer_seconds {
         font-size: 16px; /* Prevents zoom on iOS */
         padding: 12px 14px;
@@ -1471,15 +1471,39 @@ html {
 /* Mobile adjustments for workout set inputs */
 @media (max-width: 575.98px) {
     .sets-container .set-reps-input {
-        min-width: 72px;
+        min-width: 40px;
     }
 
     .sets-container .set-weight-input {
-        min-width: 78px;
+        min-width: 50px;
     }
 
-    .sets-container table th:first-child,
-    .sets-container td.set-reps {
-        min-width: 90px;
+    .sets-container table th,
+    .sets-container table td {
+        padding: 6px 4px;
+    }
+
+    .sets-container table th {
+        font-size: 0.75rem;
+        white-space: normal;
+        line-height: 1.1;
+    }
+
+    .sets-container .form-control-sm {
+        padding: 4px 6px;
+        font-size: 0.9rem;
+    }
+
+    .sets-container .set-header-warmup,
+    .sets-container .set-header-done,
+    .sets-container .set-header-actions,
+    .sets-container td.set-warmup,
+    .sets-container td.text-center {
+        text-align: center;
+        width: 42px;
+    }
+
+    .sets-container .set-header-weight {
+        max-width: 62px;
     }
 }
