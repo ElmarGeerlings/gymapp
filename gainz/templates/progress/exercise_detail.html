@@ -91,9 +91,15 @@
                                 {% for set_data in recent_sets %}
                                 <tr>
                                     <td>{{ set_data.date|date:"M j" }}</td>
-                                    <td>{{ set_data.weight }} kg</td>
+                                    <td>{{ set_data.weight|floatformat:1 }} kg</td>
                                     <td>{{ set_data.reps }}</td>
-                                    <td>{{ set_data.estimated_1rm|floatformat:1 }} kg</td>
+                                    <td>
+                                        {% if set_data.estimated_1rm %}
+                                            {{ set_data.estimated_1rm|floatformat:1 }} kg
+                                        {% else %}
+                                            --
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 {% empty %}
                                 <tr>

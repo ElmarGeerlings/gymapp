@@ -52,6 +52,11 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/workouts"><i class="fas fa-calendar-alt me-1"></i>Workouts</a>
                     </li>
+                    {% if user.is_authenticated %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'progress-overview' %}"><i class="fas fa-chart-line me-1"></i>Progress</a>
+                    </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link" href="/exercises"><i class="fas fa-list me-1"></i>Exercises</a>
                     </li>

@@ -92,6 +92,30 @@ button:hover {
     background-color: #45a049;
 }
 
+/* Preserve Bootstrap navbar toggler appearance */
+.navbar-toggler {
+    background-color: transparent;
+    color: inherit;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 0.25rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.navbar-toggler:hover,
+.navbar-toggler:active,
+.navbar-toggler:not(.collapsed) {
+    background-color: transparent;
+    color: inherit;
+    border-color: rgba(0, 0, 0, 0.2);
+    box-shadow: none;
+}
+
+.navbar-toggler:focus,
+.navbar-toggler:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
 .delete-set-btn {
     background-color: #f44336;
 }
@@ -1442,4 +1466,20 @@ html {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+/* Mobile adjustments for workout set inputs */
+@media (max-width: 575.98px) {
+    .sets-container .set-reps-input {
+        min-width: 72px;
+    }
+
+    .sets-container .set-weight-input {
+        min-width: 78px;
+    }
+
+    .sets-container table th:first-child,
+    .sets-container td.set-reps {
+        min-width: 90px;
+    }
 }

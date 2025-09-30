@@ -20,6 +20,7 @@ from django.urls import reverse # Add import for reverse
 from django.contrib import messages # Added for messages
 from django.core.cache import cache # Added for Redis cache
 import json # Moved import json here
+from datetime import timedelta
 from django.contrib.auth.models import User
 from django.contrib.auth import login
 from django.core.management import call_command
@@ -2258,40 +2259,18 @@ def progress_overview(request):
     
     # Get filtering parameters
     period_days = int(request.GET.get('period', '30'))
-    exercise_filter = request.GET.get('exercise', '')
-    rep_range_filter = request.GET.get('rep_range', '')
-    
-    # Get basic metrics
-    recent_workouts = Workout.objects.filter(
-        user=request.user,
-        date__gte=timezone.now() - timedelta(days=period_days)
-    ).count()
-    
-    # Get top exercises by volume
-    top_exercises_data = []
-    exercises_with_data = Exercise.objects.filter(
-        workoutexercise__workout__user=request.user
-    ).distinct()[:6]
-    
-    for exercise in exercises_with_data:
-        sets = ExerciseSet.objects.filter(
-            workout_exercise__workout__user=request.user,
-            workout_exercise__exercise=exercise,
-            workout_exercise__workout__date__gte=timezone.now() - timedelta(days=period_days)
-        )
-        total_volume = sum(s.get_volume() for s in sets if s.is_valid_for_1rm())
-        if total_volume > 0:
-            top_exercises_data.append({
-                'exercise': exercise,
-                'total_volume': total_volume,
-                'set_count': sets.count()
-            })
-    
-    top_exercises_data.sort(key=lambda x: x['total_volume'], reverse=True)
-    
+
+    metrics = get_progress_metrics(request.user, period_days)
+    top_exercises = get_top_exercises_by_volume(
+        request.user,
+        period_days,
+        limit=6,
+        with_volume=True,
+    )
+
     context = {
-        'recent_workouts': recent_workouts,
-        'top_exercises': top_exercises_data[:6],
+        'metrics': metrics,
+        'top_exercises': top_exercises,
         'period_days': period_days,
         'title': 'Progress Overview'
     }
@@ -2330,6 +2309,8 @@ def exercise_progress_detail(request, exercise_id):
         sets_query = sets_query.filter(reps__gte=7)
     
     # Build chart data
+    progress_data = get_exercise_progress(request.user, exercise, period_days)
+
     chart_data = []
     for set_obj in sets_query.order_by('workout_exercise__workout__date'):
         if set_obj.is_valid_for_1rm():
@@ -2341,16 +2322,22 @@ def exercise_progress_detail(request, exercise_id):
                 'rep_range': set_obj.get_rep_range_category(),
                 'volume': float(set_obj.get_volume())
             })
-    
-    # Get best 1RM estimate
-    best_1rm = 0
-    if chart_data:
-        best_1rm = max(d['estimated_1rm'] for d in chart_data)
-    
+
+    recent_sets = []
+    for set_obj in sets_query.order_by('-workout_exercise__workout__date', '-set_number')[:10]:
+        estimated_1rm = set_obj.get_best_1rm_estimate() if set_obj.is_valid_for_1rm() else None
+        recent_sets.append({
+            'date': set_obj.workout_exercise.workout.date,
+            'weight': set_obj.weight,
+            'reps': set_obj.reps,
+            'estimated_1rm': estimated_1rm
+        })
+
     context = {
         'exercise': exercise,
         'chart_data': chart_data,
-        'best_1rm': best_1rm,
+        'progress_data': progress_data,
+        'recent_sets': recent_sets,
         'period_days': period_days,
         'rep_range': rep_range,
         'comparison_type': comparison_type,

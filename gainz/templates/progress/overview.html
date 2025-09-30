@@ -114,7 +114,7 @@
                                         <p class="card-text text-muted mb-1">
                                             <strong>{{ exercise.volume|floatformat:0 }} kg</strong>
                                         </p>
-                                        <small class="text-muted">Total Volume</small>
+                                        <small class="text-muted">{{ exercise.set_count }} sets logged</small>
                                     </div>
                                 </div>
                             </a>
@@ -124,7 +124,7 @@
                             <div class="text-center text-muted py-4">
                                 <i class="fas fa-info-circle fa-2x mb-3"></i>
                                 <p>No exercise data available.</p>
-                                <a href="{% url 'log-workout' %}" class="btn btn-primary">
+                                <a href="{% url 'start-empty-workout' %}" class="btn btn-primary">
                                     <i class="fas fa-plus me-1"></i>Log Your First Workout
                                 </a>
                             </div>

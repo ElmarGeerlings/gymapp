@@ -1074,8 +1074,12 @@ async function addSet(event) {
         
         // Add the new row
         const setData = response.data;
+        const formattedWeight =
+            setData.weight !== null && setData.weight !== undefined && setData.weight !== ''
+                ? parseFloat(setData.weight).toFixed(1)
+                : '';
         const newRow = `
-            <tr class="set-row${setData.is_completed ? ' set-completed' : ''}" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${setData.weight}" data-is-completed="${setData.is_completed ? 'true' : 'false'}" data-exercise-id="${exerciseId}">
+            <tr class="set-row${setData.is_completed ? ' set-completed' : ''}" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${formattedWeight}" data-is-completed="${setData.is_completed ? 'true' : 'false'}" data-exercise-id="${exerciseId}">
                 <td class="set-reps">
                     <input type="number" class="form-control form-control-sm set-reps-input" 
                            value="${setData.reps}" min="0" step="1"
@@ -1085,7 +1089,7 @@ async function addSet(event) {
                 </td>
                 <td class="set-weight">
                     <input type="number" class="form-control form-control-sm set-weight-input" 
-                           value="${setData.weight}" min="0" step="0.5"
+                           value="${formattedWeight}" min="0" step="0.5"
                            data-function="blur->updateSet"
                            data-set-id="${setData.id}"
                            data-field="weight">
@@ -1334,7 +1338,6 @@ window.refreshMobileWorkoutUI = function(preferredIndex = null) {
     const container = document.getElementById('exercise-card-container');
     if (!container) return;
 
-    // Remove any empty wrappers left behind (no inner workout card)
     container.querySelectorAll('.exercise-card').forEach(card => {
         if (!card.querySelector('.workout-exercise-card')) {
             card.remove();
@@ -1346,8 +1349,6 @@ window.refreshMobileWorkoutUI = function(preferredIndex = null) {
 
     const navBottom = document.querySelector('.exercise-navigation-bottom');
     const indicatorsContainer = document.querySelector('.exercise-indicators');
-    const prevBtnOrig = document.getElementById('prev-exercise');
-    const nextBtnOrig = document.getElementById('next-exercise');
     const currentNumSpan = document.getElementById('current-exercise-num');
     const totalNumSpan = document.getElementById('total-exercises-num');
 
@@ -1355,13 +1356,16 @@ window.refreshMobileWorkoutUI = function(preferredIndex = null) {
         if (navBottom) navBottom.style.display = 'none';
         if (currentNumSpan) currentNumSpan.textContent = '0';
         if (totalNumSpan) totalNumSpan.textContent = '0';
+        if (window.mobileWorkoutController && typeof window.mobileWorkoutController.refresh === 'function') {
+            window.mobileWorkoutController.refresh();
+        }
         return;
     }
 
-    // Re-index cards
-    cards.forEach((c, idx) => { c.dataset.exerciseIndex = idx; });
+    cards.forEach((card, idx) => {
+        card.dataset.exerciseIndex = idx;
+    });
 
-    // Rebuild indicators
     if (indicatorsContainer) {
         indicatorsContainer.innerHTML = '';
         for (let i = 0; i < total; i++) {
@@ -1372,107 +1376,30 @@ window.refreshMobileWorkoutUI = function(preferredIndex = null) {
         }
     }
 
-    // Update total count text
     if (totalNumSpan) totalNumSpan.textContent = String(total);
-
-    // Determine index to show
-    let currentIndex = preferredIndex;
-    if (currentIndex === null || Number.isNaN(currentIndex)) {
-        const visibleIndex = cards.findIndex(c => !c.classList.contains('d-none'));
-        currentIndex = visibleIndex >= 0 ? visibleIndex : 0;
-    }
-    if (currentIndex < 0) currentIndex = 0;
-    if (currentIndex > total - 1) currentIndex = total - 1;
-
-    function setTimerDefaultsForCard(card) {
-        try {
-            const exerciseElement = card.querySelector('.workout-exercise-card');
-            const startBtn = card.querySelector('.timer-start-btn');
-            const timerDisplay = card.querySelector('[data-timer-display]');
-            if (!exerciseElement || !startBtn || !timerDisplay) return;
-
-            // If timer isn't actively running, set default display and duration
-            const isRunning = timerDisplay.classList.contains('active');
-            if (isRunning) return;
-
-            const exerciseType = (startBtn.dataset.exerciseType || '').toLowerCase().trim();
-            let defaultSeconds = 180;
-            const prefs = window.timerPreferences || {
-                primary_timer_seconds: 180,
-                secondary_timer_seconds: 120,
-                accessory_timer_seconds: 90
-            };
-            if (exerciseType === 'primary') defaultSeconds = prefs.primary_timer_seconds || 180;
-            else if (exerciseType === 'secondary') defaultSeconds = prefs.secondary_timer_seconds || 120;
-            else if (exerciseType === 'accessory') defaultSeconds = prefs.accessory_timer_seconds || 90;
-            else defaultSeconds = prefs.primary_timer_seconds || 180;
-
-            const minutes = Math.floor(defaultSeconds / 60);
-            const seconds = defaultSeconds % 60;
-            timerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            timerDisplay.setAttribute('data-default-seconds', String(defaultSeconds));
-            startBtn.setAttribute('data-duration', String(defaultSeconds));
-        } catch (e) {
-            // Non-fatal
-        }
-    }
-
-    function showIndex(index) {
-        cards.forEach(c => c.classList.add('d-none'));
-        const target = cards[index];
-        if (target) {
-            target.classList.remove('d-none');
-            setTimerDefaultsForCard(target);
-        }
-        // Update indicators
-        document.querySelectorAll('.indicator').forEach((ind, i) => {
-            ind.classList.toggle('active', i === index);
-        });
-        // Update counter and buttons
-        if (currentNumSpan) currentNumSpan.textContent = String(index + 1);
-        const prevBtn = document.getElementById('prev-exercise');
-        const nextBtn = document.getElementById('next-exercise');
-        if (prevBtn) prevBtn.disabled = index === 0;
-        if (nextBtn) nextBtn.disabled = index === total - 1;
-    }
-
-    // Replace prev/next with clean clones to remove old listeners
-    function replaceWithClone(btn) {
-        if (!btn) return btn;
-        const clone = btn.cloneNode(true);
-        btn.replaceWith(clone);
-        return clone;
-    }
-    const prevBtn = replaceWithClone(prevBtnOrig);
-    const nextBtn = replaceWithClone(nextBtnOrig);
-
-    if (prevBtn) {
-        prevBtn.onclick = function(e) {
-            e.preventDefault();
-            const visible = cards.findIndex(c => !c.classList.contains('d-none'));
-            if (visible > 0) showIndex(visible - 1);
-        };
-    }
-    if (nextBtn) {
-        nextBtn.onclick = function(e) {
-            e.preventDefault();
-            const visible = cards.findIndex(c => !c.classList.contains('d-none'));
-            if (visible < total - 1) showIndex(visible + 1);
-        };
-    }
-
-    // Indicator click handlers
-    document.querySelectorAll('.indicator').forEach((indicator, idx) => {
-        indicator.addEventListener('click', function() {
-            showIndex(idx);
-        });
-    });
-
-    // Ensure nav visible
     if (navBottom) navBottom.style.display = '';
 
-    // Finally, show the intended index
-    showIndex(currentIndex);
+    let targetIndex = null;
+    if (Number.isInteger(preferredIndex)) {
+        targetIndex = preferredIndex;
+    }
+
+    if (window.mobileWorkoutController && typeof window.mobileWorkoutController.refresh === 'function') {
+        window.mobileWorkoutController.refresh(targetIndex);
+    } else {
+        const clampedIndex = targetIndex !== null ? Math.max(0, Math.min(targetIndex, total - 1)) : 0;
+        cards.forEach(card => card.classList.add('d-none'));
+        const targetCard = cards[clampedIndex];
+        if (targetCard) targetCard.classList.remove('d-none');
+        if (currentNumSpan) currentNumSpan.textContent = String(clampedIndex + 1);
+        const prevBtn = document.getElementById('prev-exercise');
+        const nextBtn = document.getElementById('next-exercise');
+        if (prevBtn) prevBtn.disabled = clampedIndex === 0;
+        if (nextBtn) nextBtn.disabled = clampedIndex === total - 1;
+        document.querySelectorAll('.indicator').forEach((indicator, idx) => {
+            indicator.classList.toggle('active', idx === clampedIndex);
+        });
+    }
 };
 
 // --- Add Existing Exercise to Workout ---

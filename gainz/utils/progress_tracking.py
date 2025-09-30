@@ -39,6 +39,9 @@ class ExerciseProgress:
     sessions_count: int
     last_performed: Optional[datetime]
     trend: str  # 'improving', 'declining', 'stable'
+    best_1rm: Optional[Decimal] = None
+    total_volume: Decimal = Decimal('0')
+    workout_count: int = 0
 
 
 @dataclass
@@ -231,10 +234,21 @@ def get_exercise_progress(user, exercise: Exercise, period_days: int = 90) -> Ex
         workout_exercise__exercise=exercise,
         workout_exercise__workout__date__range=[start_date, end_date],
         weight__isnull=False
-    )
-    
+    ).select_related('workout_exercise__workout', 'workout_exercise__exercise')
+
     current_max = current_exercise_sets.aggregate(Max('weight'))['weight__max'] if current_exercise_sets.exists() else None
     last_performed = workout_exercises.last().workout.date
+
+    total_volume = Decimal('0')
+    best_1rm = None
+    for exercise_set in current_exercise_sets:
+        if not exercise_set.is_warmup:
+            total_volume += exercise_set.get_volume()
+        if exercise_set.is_valid_for_1rm():
+            estimate = exercise_set.get_best_1rm_estimate()
+            if estimate is not None:
+                if best_1rm is None or estimate > best_1rm:
+                    best_1rm = estimate
     
     # Calculate previous max (from earlier period)
     previous_period_start = start_date - timedelta(days=period_days)
@@ -261,6 +275,8 @@ def get_exercise_progress(user, exercise: Exercise, period_days: int = 90) -> Ex
         elif improvement_percentage < -5:
             trend = 'declining'
     
+    workout_count = workout_exercises.values('workout_id').distinct().count()
+
     return ExerciseProgress(
         exercise_name=exercise.name,
         current_max=current_max,
@@ -269,7 +285,10 @@ def get_exercise_progress(user, exercise: Exercise, period_days: int = 90) -> Ex
         improvement_percentage=improvement_percentage,
         sessions_count=sessions_count,
         last_performed=last_performed,
-        trend=trend
+        trend=trend,
+        best_1rm=best_1rm,
+        total_volume=total_volume,
+        workout_count=workout_count
     )
 
 
@@ -325,7 +344,13 @@ def analyze_strength_trends(user, periods: List[int] = [7, 30, 90]) -> List[Stre
     return trends
 
 
-def get_top_exercises_by_volume(user, period_days: int = 30, limit: int = 5) -> List[str]:
+def get_top_exercises_by_volume(
+    user,
+    period_days: int = 30,
+    limit: int = 5,
+    *,
+    with_volume: bool = False,
+) -> List[Any]:
     """
     Get the top exercises by total volume over a period.
     
@@ -341,32 +366,52 @@ def get_top_exercises_by_volume(user, period_days: int = 30, limit: int = 5) -> 
     start_date = end_date - timedelta(days=period_days)
     
     # Calculate volume by exercise
-    exercise_volumes = {}
-    
+    exercise_stats: Dict[int, Dict[str, Any]] = {}
+
     exercise_sets = ExerciseSet.objects.filter(
         workout_exercise__workout__user=user,
         workout_exercise__workout__date__range=[start_date, end_date],
         weight__isnull=False,
         reps__isnull=False
-    )
-    
+    ).select_related('workout_exercise__exercise')
+
     for exercise_set in exercise_sets:
-        exercise_name = exercise_set.workout_exercise.exercise.name
-        volume = exercise_set.weight * exercise_set.reps
-        
-        if exercise_name in exercise_volumes:
-            exercise_volumes[exercise_name] += volume
-        else:
-            exercise_volumes[exercise_name] = volume
-    
-    # Sort by volume and return top exercises
+        exercise_obj = exercise_set.workout_exercise.exercise
+        if exercise_obj is None:
+            continue
+
+        if exercise_set.is_warmup:
+            continue
+
+        exercise_id = exercise_obj.id
+        if exercise_id not in exercise_stats:
+            exercise_stats[exercise_id] = {
+                'exercise': exercise_obj,
+                'volume': Decimal('0'),
+                'set_count': 0,
+            }
+
+        exercise_stats[exercise_id]['volume'] += exercise_set.get_volume()
+        exercise_stats[exercise_id]['set_count'] += 1
+
     sorted_exercises = sorted(
-        exercise_volumes.items(),
-        key=lambda x: x[1],
+        exercise_stats.values(),
+        key=lambda x: x['volume'],
         reverse=True
-    )
-    
-    return [exercise[0] for exercise in sorted_exercises[:limit]]
+    )[:limit]
+
+    if with_volume:
+        return [
+            {
+                'id': data['exercise'].id,
+                'name': data['exercise'].name,
+                'volume': data['volume'],
+                'set_count': data['set_count'],
+            }
+            for data in sorted_exercises
+        ]
+
+    return [data['exercise'].name for data in sorted_exercises]
 
 
 def calculate_consistency_score(user, period_days: int = 30) -> float:
