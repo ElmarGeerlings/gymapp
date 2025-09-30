@@ -73,20 +73,40 @@
         </div>
     </div>
 
-    <!-- Placeholder for Charts -->
+    <!-- Exercise Progress Chart -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">
-                        <i class="fas fa-chart-line me-2"></i>Progress Charts
+                        <i class="fas fa-chart-line me-2"></i>Exercise Progress
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="text-center py-5">
-                        <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
-                        <h5 class="text-muted">Charts Coming Soon</h5>
-                        <p class="text-muted">Interactive progress charts will be displayed here.</p>
+                    <div class="row align-items-end mb-3">
+                        <div class="col-md-6">
+                            <label for="overview-exercise-select" class="form-label fw-semibold">Exercise</label>
+                            <select id="overview-exercise-select" class="form-select">
+                                {% for option in exercise_options %}
+                                <option value="{{ option.id }}">{{ option.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6 text-md-end mt-3 mt-md-0">
+                            <small class="text-muted d-block">Displays estimated 1RM and logged weight</small>
+                        </div>
+                    </div>
+                    <div id="overview-chart-wrapper" class="position-relative" style="height: 220px;">
+                        <canvas id="overview-exercise-chart" height="220" class="w-100 h-100"></canvas>
+                        <div id="overview-chart-empty" class="text-center py-5 text-muted d-none">
+                            <i class="fas fa-info-circle fa-2x mb-3"></i>
+                            <h5>No data available</h5>
+                            <p class="mb-0">Select an exercise with logged sets to view its trend.</p>
+                        </div>
+                        <div id="overview-chart-loading" class="position-absolute top-0 bottom-0 start-0 end-0 d-flex flex-column justify-content-center align-items-center bg-white opacity-75 d-none">
+                            <div class="spinner-border text-primary mb-2" role="status"></div>
+                            <span class="text-muted">Loading chart…</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -136,4 +156,207 @@
         </div>
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+    {{ block.super }}
+    {% if exercise_options %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+            integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt"
+            crossorigin="anonymous"></script>
+    <script>
+        (function() {
+            const selectEl = document.getElementById('overview-exercise-select');
+            const canvas = document.getElementById('overview-exercise-chart');
+            const loadingEl = document.getElementById('overview-chart-loading');
+            const emptyEl = document.getElementById('overview-chart-empty');
+            const wrapper = document.getElementById('overview-chart-wrapper');
+
+            if (!selectEl || !canvas) {
+                return;
+            }
+
+            let chartInstance = null;
+
+            const ensureCanvasHeight = () => {
+                if (wrapper) {
+                    wrapper.style.height = '220px';
+                }
+                canvas.style.height = '220px';
+            };
+            ensureCanvasHeight();
+
+            const showLoading = () => {
+                loadingEl?.classList.remove('d-none');
+            };
+
+            const hideLoading = () => {
+                loadingEl?.classList.add('d-none');
+            };
+
+            const showEmpty = (message) => {
+                if (!emptyEl) {
+                    return;
+                }
+                emptyEl.classList.remove('d-none');
+                emptyEl.querySelector('h5').textContent = message || 'No data available';
+            };
+
+            const hideEmpty = () => {
+                emptyEl?.classList.add('d-none');
+            };
+
+            const formatDate = (isoString) => {
+                const date = new Date(isoString);
+                if (Number.isNaN(date.valueOf())) {
+                    return '';
+                }
+                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            };
+
+            const renderChart = (data) => {
+                const labels = data.map((point) => point.x || point.date);
+                const weightData = data.map((point) => point.weight ?? null);
+                const oneRmData = data.map((point) => point.estimated_1rm ?? point.y ?? null);
+
+                if (chartInstance) {
+                    chartInstance.destroy();
+                }
+
+                const ctx = canvas.getContext('2d');
+                ensureCanvasHeight();
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'Estimated 1RM',
+                                data: oneRmData,
+                                borderColor: '#0d6efd',
+                                backgroundColor: 'rgba(13, 110, 253, 0.15)',
+                                borderWidth: 2,
+                                pointRadius: 3,
+                                tension: 0.3,
+                                spanGaps: true
+                            },
+                            {
+                                label: 'Logged Weight',
+                                data: weightData,
+                                borderColor: '#20c997',
+                                backgroundColor: 'rgba(32, 201, 151, 0.1)',
+                                borderDash: [6, 4],
+                                borderWidth: 2,
+                                pointRadius: 3,
+                                tension: 0.3,
+                                spanGaps: true
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    title: (items) => items.map((item) => formatDate(labels[item.dataIndex])).join('\n'),
+                                    label: (item) => {
+                                        const value = item.dataset.data[item.dataIndex];
+                                        if (value == null) {
+                                            return `${item.dataset.label}: --`;
+                                        }
+                                        return `${item.dataset.label}: ${parseFloat(value).toFixed(1)} kg`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    callback: (value, index) => formatDate(labels[index])
+                                },
+                                grid: {
+                                    display: false
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Weight (kg)'
+                                },
+                                grid: {
+                                    color: 'rgba(0,0,0,0.05)'
+                                }
+                            }
+                        }
+                    }
+                });
+                ensureCanvasHeight();
+            };
+
+            const loadChartData = async (exerciseId) => {
+                showLoading();
+                hideEmpty();
+
+                try {
+                    const response = await fetch(`/api/progress/exercise/${exerciseId}/chart-data/?chart_type=1rm`);
+                    if (!response.ok) {
+                        throw new Error('Failed to load chart data');
+                    }
+                    const payload = await response.json();
+                    const data = payload?.data || [];
+
+                    if (!data.length) {
+                        showEmpty('No data available for this exercise');
+                        if (chartInstance) {
+                            chartInstance.destroy();
+                            chartInstance = null;
+                        }
+                        canvas.classList.add('d-none');
+                        ensureCanvasHeight();
+                    } else {
+                        canvas.classList.remove('d-none');
+                        ensureCanvasHeight();
+                        renderChart(data);
+                    }
+                } catch (error) {
+                    console.error('Error loading overview chart:', error);
+                    showEmpty('Unable to load chart data');
+                    canvas.classList.add('d-none');
+                    ensureCanvasHeight();
+                } finally {
+                    hideLoading();
+                }
+            };
+
+            selectEl.addEventListener('change', (event) => {
+                const exerciseId = event.target.value;
+                if (exerciseId) {
+                    loadChartData(exerciseId);
+                }
+            });
+
+            // Kick off initial load with first option
+            const initialOption = selectEl.value;
+            if (initialOption) {
+                loadChartData(initialOption);
+            } else {
+                showEmpty('Log workouts to view progress charts');
+                canvas.classList.add('d-none');
+            }
+
+            window.addEventListener('beforeunload', () => {
+                if (chartInstance) {
+                    chartInstance.destroy();
+                }
+            });
+        })();
+    </script>
+    {% endif %}
 {% endblock %}

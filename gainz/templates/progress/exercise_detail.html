@@ -51,19 +51,26 @@
         </div>
     </div>
 
-    <!-- Chart Placeholder -->
+    <!-- Progress Chart -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="card">
-                <div class="card-header">
+                <div class="card-header d-flex flex-column flex-md-row align-items-md-center justify-content-between">
                     <h5 class="mb-0">Progress Chart</h5>
+                    {% if chart_data %}
+                    <small class="text-muted">Showing estimated 1RM alongside logged weight</small>
+                    {% endif %}
                 </div>
                 <div class="card-body">
-                    <div class="text-center py-5">
-                        <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
-                        <h5 class="text-muted">Chart Coming Soon</h5>
-                        <p class="text-muted">Interactive progress chart for {{ exercise.name }} will be displayed here.</p>
+                    {% if chart_data %}
+                    <canvas id="exercise-progress-chart" height="280" aria-label="Progress chart for {{ exercise.name }}" role="img"></canvas>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-info-circle fa-2x mb-3"></i>
+                        <h5>No chart data yet</h5>
+                        <p class="mb-0">Log a few sets with reps and weight to see trends for this exercise.</p>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -116,4 +123,135 @@
         </div>
     </div>
 </div>
+{% if chart_data %}
+    {{ chart_data|json_script:"exercise-chart-data" }}
+{% endif %}
+{% block extra_js %}
+    {{ block.super }}
+    {% if chart_data %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+            integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt"
+            crossorigin="anonymous"></script>
+    <script>
+        (function() {
+            const container = document.getElementById('exercise-progress-chart');
+            if (!container) {
+                return;
+            }
+
+            const rawData = JSON.parse(document.getElementById('exercise-chart-data').textContent || '[]');
+            if (!rawData.length) {
+                return;
+            }
+
+            const labels = rawData.map((entry) => entry.date);
+            const weightData = rawData.map((entry) => entry.weight);
+            const oneRmData = rawData.map((entry) => entry.estimated_1rm);
+
+            const parseDate = (value) => {
+                const date = new Date(value);
+                if (Number.isNaN(date.valueOf())) {
+                    return null;
+                }
+                return date;
+            };
+
+            const formatDate = (value) => {
+                const date = parseDate(value);
+                if (!date) {
+                    return '';
+                }
+                return date.toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric'
+                });
+            };
+
+            const ctx = container.getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Estimated 1RM',
+                            data: oneRmData,
+                            borderColor: '#0d6efd',
+                            backgroundColor: 'rgba(13, 110, 253, 0.15)',
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Logged Weight',
+                            data: weightData,
+                            borderColor: '#20c997',
+                            backgroundColor: 'rgba(32, 201, 151, 0.1)',
+                            borderDash: [6, 4],
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => items.map((item) => formatDate(labels[item.dataIndex])).join('\n'),
+                                label: (item) => {
+                                    const value = item.dataset.data[item.dataIndex];
+                                    if (value == null) {
+                                        return `${item.dataset.label}: --`;
+                                    }
+                                    return `${item.dataset.label}: ${value.toFixed(1)} kg`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'category',
+                            ticks: {
+                                callback: (value, index) => {
+                                    const labelValue = labels[index];
+                                    return formatDate(labelValue);
+                                }
+                            },
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Weight (kg)'
+                            },
+                            grid: {
+                                color: 'rgba(0,0,0,0.05)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            window.addEventListener('beforeunload', () => {
+                chart.destroy();
+            });
+        })();
+    </script>
+    {% endif %}
+{% endblock %}
 {% endblock %}

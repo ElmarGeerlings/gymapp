@@ -29,8 +29,9 @@ from gainz.workouts.utils import WorkoutParser
 from decimal import Decimal
 from django.db.models import F, Sum, Min, Max, Avg
 from .utils.progress_tracking import (
-    get_progress_metrics, analyze_strength_trends, 
-    get_top_exercises_by_volume, get_exercise_progress
+    get_progress_metrics, analyze_strength_trends,
+    get_top_exercises_by_volume, get_exercise_progress,
+    get_personal_records_summary, get_personal_records
 )
 
 # Make Redis optional for deployments without Redis
@@ -2268,9 +2269,20 @@ def progress_overview(request):
         with_volume=True,
     )
 
+    exercise_options = list(
+        Exercise.objects.filter(
+            workoutexercise__workout__user=request.user,
+            workoutexercise__sets__isnull=False
+        )
+        .distinct()
+        .order_by('name')
+        .values('id', 'name')
+    )
+
     context = {
         'metrics': metrics,
         'top_exercises': top_exercises,
+        'exercise_options': exercise_options,
         'period_days': period_days,
         'title': 'Progress Overview'
     }
@@ -2314,11 +2326,12 @@ def exercise_progress_detail(request, exercise_id):
     chart_data = []
     for set_obj in sets_query.order_by('workout_exercise__workout__date'):
         if set_obj.is_valid_for_1rm():
+            estimated = set_obj.get_best_1rm_estimate()
             chart_data.append({
                 'date': set_obj.workout_exercise.workout.date.isoformat(),
                 'weight': float(set_obj.weight),
                 'reps': set_obj.reps,
-                'estimated_1rm': float(set_obj.get_best_1rm_estimate() or 0),
+                'estimated_1rm': float(estimated) if estimated is not None else None,
                 'rep_range': set_obj.get_rep_range_category(),
                 'volume': float(set_obj.get_volume())
             })
@@ -2462,3 +2475,27 @@ def api_progress_filter_options(request):
         
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def progress_pr_history(request):
+    period_days = int(request.GET.get('period', '365'))
+    exercise_id = request.GET.get('exercise')
+    exercise = None
+    if exercise_id:
+        exercise = get_object_or_404(Exercise, id=exercise_id)
+        if exercise.is_custom and exercise.user != request.user:
+            raise Http404('Exercise not found')
+
+    summary = get_personal_records_summary(request.user, period_days)
+    records = get_personal_records(request.user, period_days, exercise)
+
+    context = {
+        'summary': summary,
+        'records': records,
+        'selected_period': period_days,
+        'selected_exercise': exercise,
+        'exercises': Exercise.objects.filter(workoutexercise__workout__user=request.user).distinct().order_by('name'),
+        'title': 'Personal Records'
+    }
+    return render(request, 'progress/pr_history.html', context)
+

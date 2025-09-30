@@ -501,5 +501,21 @@ def get_personal_records_summary(user, period_days: int = 90) -> Dict[str, Any]:
         key=lambda x: x[1],
         reverse=True
     )[:3]
-    
+
     return summary
+
+
+def get_personal_records(user, period_days: int = 365, exercise: Optional[Exercise] = None) -> List[PersonalRecord]:
+    """Return personal records within the given period, optionally filtered by exercise."""
+    end_date = timezone.now()
+    start_date = end_date - timedelta(days=period_days)
+
+    records = PersonalRecord.objects.filter(
+        user=user,
+        date_achieved__range=[start_date, end_date]
+    ).select_related('exercise').order_by('-date_achieved')
+
+    if exercise is not None:
+        records = records.filter(exercise=exercise)
+
+    return list(records)
