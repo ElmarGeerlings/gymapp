@@ -2427,7 +2427,6 @@ def api_exercise_chart_data(request, exercise_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-
 @login_required
 def api_progress_filter_options(request):
     """Get available filtering options for progress views"""
@@ -2487,7 +2486,7 @@ def progress_pr_history(request):
             raise Http404('Exercise not found')
 
     summary = get_personal_records_summary(request.user, period_days)
-    records = get_personal_records(request.user, period_days, exercise)
+    records = get_personal_records(request.user, period_days, exercise)[:50]
 
     context = {
         'summary': summary,
@@ -2498,4 +2497,3 @@ def progress_pr_history(request):
         'title': 'Personal Records'
     }
     return render(request, 'progress/pr_history.html', context)
-

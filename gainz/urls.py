@@ -50,6 +50,7 @@ from gainz.views import (
     exercise_progress_detail, # Add exercise progress detail view
     api_exercise_chart_data, # Add exercise chart data API view
     api_progress_filter_options, # Add progress filter options API view
+    progress_pr_history, # Add personal records history view
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -181,6 +182,7 @@ urlpatterns = [
     # Progress Views
     path('progress/', progress_overview, name='progress-overview'),
     path('progress/exercise/<int:exercise_id>/', exercise_progress_detail, name='exercise-progress-detail'),
+    path('progress/records/', progress_pr_history, name='progress-pr-history'),
 
     # Progress API Endpoints
     path('api/progress/filter-options/', api_progress_filter_options, name='api-progress-filter-options'),
