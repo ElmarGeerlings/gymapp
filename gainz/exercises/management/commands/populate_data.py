@@ -214,17 +214,23 @@ class Command(BaseCommand):
                 ]
 
             for idx, we_data in enumerate(exercises_for_this_workout):
+                base_exercise = we_data['exercise_model']
+                exercise_type = base_exercise.exercise_type or 'accessory'
                 wo_exercise, created = WorkoutExercise.objects.get_or_create(
                     workout=workout_instance,
-                    exercise=we_data['exercise_model'],
+                    exercise=base_exercise,
                     order=idx, # use current index for order
                     defaults={
-                        'notes': f'Performed {we_data["exercise_model"].name}',
-                        'routine_exercise_source': we_data.get('routine_exercise_source')
+                        'notes': f'Performed {base_exercise.name}',
+                        'routine_exercise_source': we_data.get('routine_exercise_source'),
+                        'exercise_type': exercise_type,
                     }
                 )
+                if not created and wo_exercise.exercise_type != exercise_type:
+                    wo_exercise.exercise_type = exercise_type
+                    wo_exercise.save(update_fields=['exercise_type'])
                 if created:
-                    self.stdout.write(self.style.SUCCESS(f'Added {we_data["exercise_model"].name} to workout {workout_instance.name}'))
+                    self.stdout.write(self.style.SUCCESS(f'Added {base_exercise.name} to workout {workout_instance.name}'))
 
                     # Add 3 sets for each WorkoutExercise
                     for i in range(1, 4):

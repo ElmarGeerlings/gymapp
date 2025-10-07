@@ -10,7 +10,7 @@ from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
 from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet, ProgramRoutine, UserTimerPreference, ExerciseTimerOverride, ProgramTimerPreference, RoutineTimerPreference
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
-from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
+from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404, FileResponse
 from django.template.loader import render_to_string
 from django.db.models import Q
 import datetime # Add datetime import
@@ -19,6 +19,10 @@ from django.utils import timezone # Added for timezone.now()
 from django.urls import reverse # Add import for reverse
 from django.contrib import messages # Added for messages
 from django.core.cache import cache # Added for Redis cache
+import statistics
+from collections import defaultdict
+from django.contrib.staticfiles import finders
+from django.contrib.staticfiles.storage import staticfiles_storage
 import json # Moved import json here
 from datetime import timedelta
 from django.contrib.auth.models import User
@@ -2254,12 +2258,111 @@ def api_routine_timer_preferences(request, routine_id):
             return JsonResponse({'error': str(e)}, status=500)
     
     return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+
+def normalize_rep_range(rep_range, min_reps=None, max_reps=None):
+    """Return sanitized rep range selector and optional min/max bounds."""
+
+    valid_ranges = {'', 'low', 'mid', 'high', 'custom'}
+    normalized = (rep_range or '').strip().lower()
+    if normalized not in valid_ranges:
+        normalized = ''
+
+    min_value = max_value = None
+    if normalized == 'custom':
+        try:
+            min_value = int(min_reps)
+        except (TypeError, ValueError):
+            min_value = 1
+        try:
+            max_value = int(max_reps)
+        except (TypeError, ValueError):
+            max_value = min_value
+
+        min_value = max(1, min_value)
+        min_value = min(30, min_value)
+        max_value = max(1, max_value)
+        max_value = min(30, max_value)
+        if max_value < min_value:
+            max_value = min_value
+
+    return normalized, min_value, max_value
+
+
+def aggregate_exercise_sets_for_chart(sets, chart_type='1rm', comparison_type='average'):
+    """Aggregate exercise sets to a single data point per workout."""
+    chart_type = (chart_type or '1rm').lower()
+    comparison_type = (comparison_type or 'average').lower()
+
+    workouts = defaultdict(lambda: {
+        'date': None,
+        'estimates': [],
+        'weights': [],
+        'volumes': [],
+    })
+
+    for set_obj in sets:
+        if getattr(set_obj, 'is_warmup', False):
+            continue
+
+        if set_obj.weight is None or set_obj.reps is None:
+            continue
+
+        workout = set_obj.workout_exercise.workout
+        entry = workouts[workout.id]
+        if entry['date'] is None:
+            entry['date'] = workout.date
+
+        volume_value = float(set_obj.get_volume())
+        entry['volumes'].append(volume_value)
+        entry['weights'].append(float(set_obj.weight))
+
+        if set_obj.is_valid_for_1rm():
+            estimate = set_obj.get_best_1rm_estimate()
+            if estimate is not None:
+                entry['estimates'].append(float(estimate))
+
+    points = []
+    for workout_id, entry in sorted(
+        workouts.items(),
+        key=lambda item: item[1]['date'] or timezone.now(),
+    ):
+        estimates = entry['estimates']
+        weights = entry['weights']
+        volumes = entry['volumes']
+
+        if comparison_type in ('peak', 'heaviest'):
+            estimate_value = max(estimates) if estimates else None
+            weight_value = max(weights) if weights else None
+        else:
+            estimate_value = statistics.mean(estimates) if estimates else None
+            weight_value = statistics.mean(weights) if weights else None
+
+        volume_total = sum(volumes) if volumes else 0
+        y_value = volume_total if chart_type == 'volume' else estimate_value
+        iso_date = (entry['date'] or timezone.now()).isoformat()
+        points.append({
+            'x': iso_date,
+            'date': iso_date,
+            'y': float(y_value) if y_value is not None else None,
+            'estimated_1rm': float(estimate_value) if estimate_value is not None else None,
+            'weight': float(weight_value) if weight_value is not None else None,
+            'volume': float(volume_total),
+            'workout_id': workout_id,
+        })
+
+    return points
+
 @login_required
 def progress_overview(request):
     """Dashboard showing exercise progress trends and statistics"""
     
     # Get filtering parameters
     period_days = int(request.GET.get('period', '30'))
+    selected_rep_range = request.GET.get('rep_range', '')
+    selected_chart_type = request.GET.get('chart_type', '1rm')
+    custom_min_reps = request.GET.get('min_reps', '')
+    custom_max_reps = request.GET.get('max_reps', '')
 
     metrics = get_progress_metrics(request.user, period_days)
     top_exercises = get_top_exercises_by_volume(
@@ -2279,11 +2382,18 @@ def progress_overview(request):
         .values('id', 'name')
     )
 
+    selected_exercise_id = request.GET.get('exercise', '')
+
     context = {
         'metrics': metrics,
         'top_exercises': top_exercises,
         'exercise_options': exercise_options,
         'period_days': period_days,
+        'selected_exercise_id': selected_exercise_id,
+        'selected_rep_range': selected_rep_range,
+        'selected_chart_type': selected_chart_type,
+        'custom_min_reps': custom_min_reps,
+        'custom_max_reps': custom_max_reps,
         'title': 'Progress Overview'
     }
     
@@ -2293,25 +2403,46 @@ def progress_overview(request):
 @login_required
 def exercise_progress_detail(request, exercise_id):
     """Detailed progress view for a specific exercise"""
-    
+
     exercise = get_object_or_404(Exercise, id=exercise_id)
-    
+
     # Verify user can access this exercise
     if exercise.is_custom and exercise.user != request.user:
         raise Http404("Exercise not found")
-    
+
     # Get filtering parameters
-    period_days = int(request.GET.get('period', '90'))
-    rep_range = request.GET.get('rep_range', '')
-    comparison_type = request.GET.get('comparison', 'heaviest')
-    
+    try:
+        period_days = max(1, int(request.GET.get('period', '90')))
+    except (TypeError, ValueError):
+        period_days = 90
+
+    raw_rep_range = request.GET.get('rep_range', '')
+    rep_range, min_reps_value, max_reps_value = normalize_rep_range(
+        raw_rep_range,
+        request.GET.get('min_reps'),
+        request.GET.get('max_reps'),
+    )
+
+    comparison_type = (request.GET.get('comparison', 'average') or 'average').lower()
+    if comparison_type == 'heaviest':
+        comparison_type = 'peak'
+    if comparison_type not in ('average', 'peak'):
+        comparison_type = 'average'
+
+    chart_type = (request.GET.get('chart_type', '1rm') or '1rm').lower()
+    if chart_type not in ('1rm', 'volume'):
+        chart_type = '1rm'
+
+    custom_min_reps = str(min_reps_value) if min_reps_value is not None else ''
+    custom_max_reps = str(max_reps_value) if max_reps_value is not None else ''
+
     # Get exercise sets with filtering
     sets_query = ExerciseSet.objects.filter(
         workout_exercise__workout__user=request.user,
         workout_exercise__exercise=exercise,
         workout_exercise__workout__date__gte=timezone.now() - timedelta(days=period_days)
     ).select_related('workout_exercise__workout')
-    
+
     # Apply rep range filtering
     if rep_range == 'low':
         sets_query = sets_query.filter(reps__range=(1, 3))
@@ -2319,31 +2450,35 @@ def exercise_progress_detail(request, exercise_id):
         sets_query = sets_query.filter(reps__range=(4, 6))
     elif rep_range == 'high':
         sets_query = sets_query.filter(reps__gte=7)
-    
+    elif rep_range == 'custom' and min_reps_value is not None and max_reps_value is not None:
+        sets_query = sets_query.filter(reps__range=(min_reps_value, max_reps_value))
+
+    ordered_sets = list(sets_query.order_by('workout_exercise__workout__date', 'set_number'))
+
     # Build chart data
     progress_data = get_exercise_progress(request.user, exercise, period_days)
+    chart_data = aggregate_exercise_sets_for_chart(ordered_sets, chart_type, comparison_type)
 
-    chart_data = []
-    for set_obj in sets_query.order_by('workout_exercise__workout__date'):
-        if set_obj.is_valid_for_1rm():
-            estimated = set_obj.get_best_1rm_estimate()
-            chart_data.append({
-                'date': set_obj.workout_exercise.workout.date.isoformat(),
-                'weight': float(set_obj.weight),
-                'reps': set_obj.reps,
-                'estimated_1rm': float(estimated) if estimated is not None else None,
-                'rep_range': set_obj.get_rep_range_category(),
-                'volume': float(set_obj.get_volume())
-            })
-
+    non_warmup_sets = [
+        s for s in ordered_sets
+        if not getattr(s, 'is_warmup', False)
+    ]
     recent_sets = []
-    for set_obj in sets_query.order_by('-workout_exercise__workout__date', '-set_number')[:10]:
+    for set_obj in sorted(
+        non_warmup_sets,
+        key=lambda s: (
+            s.workout_exercise.workout.date,
+            s.workout_exercise.workout.id,
+            getattr(s, 'set_number', 0),
+        ),
+        reverse=True,
+    )[:10]:
         estimated_1rm = set_obj.get_best_1rm_estimate() if set_obj.is_valid_for_1rm() else None
         recent_sets.append({
             'date': set_obj.workout_exercise.workout.date,
             'weight': set_obj.weight,
             'reps': set_obj.reps,
-            'estimated_1rm': estimated_1rm
+            'estimated_1rm': estimated_1rm,
         })
 
     context = {
@@ -2354,9 +2489,12 @@ def exercise_progress_detail(request, exercise_id):
         'period_days': period_days,
         'rep_range': rep_range,
         'comparison_type': comparison_type,
+        'chart_type': chart_type,
+        'custom_min_reps': custom_min_reps,
+        'custom_max_reps': custom_max_reps,
         'title': f'{exercise.name} Progress'
     }
-    
+
     return render(request, 'progress/exercise_detail.html', context)
 
 
@@ -2375,9 +2513,26 @@ def api_exercise_chart_data(request, exercise_id):
             return JsonResponse({'error': 'Access denied'}, status=403)
         
         # Get parameters
-        period_days = int(request.GET.get('period', '90'))
-        rep_range = request.GET.get('rep_range', '')
-        chart_type = request.GET.get('chart_type', '1rm')
+        try:
+            period_days = max(1, int(request.GET.get('period', '90')))
+        except (TypeError, ValueError):
+            period_days = 90
+
+        rep_range, min_reps_value, max_reps_value = normalize_rep_range(
+            request.GET.get('rep_range', ''),
+            request.GET.get('min_reps'),
+            request.GET.get('max_reps'),
+        )
+
+        comparison_type = (request.GET.get('comparison', 'average') or 'average').lower()
+        if comparison_type == 'heaviest':
+            comparison_type = 'peak'
+        if comparison_type not in ('average', 'peak'):
+            comparison_type = 'average'
+
+        chart_type = (request.GET.get('chart_type', '1rm') or '1rm').lower()
+        if chart_type not in ('1rm', 'volume'):
+            chart_type = '1rm'
         
         # Query sets with filtering
         sets_query = ExerciseSet.objects.filter(
@@ -2394,26 +2549,11 @@ def api_exercise_chart_data(request, exercise_id):
         elif rep_range == 'high':
             sets_query = sets_query.filter(reps__gte=7)
         elif rep_range == 'custom':
-            min_reps = int(request.GET.get('min_reps', 1))
-            max_reps = int(request.GET.get('max_reps', 20))
-            sets_query = sets_query.filter(reps__range=(min_reps, max_reps))
-        
-        # Build chart data
-        chart_data = []
-        for set_obj in sets_query.order_by('workout_exercise__workout__date'):
-            if set_obj.is_valid_for_1rm():
-                if chart_type == '1rm':
-                    value = float(set_obj.get_best_1rm_estimate() or 0)
-                else:  # volume
-                    value = float(set_obj.get_volume())
-                
-                chart_data.append({
-                    'x': set_obj.workout_exercise.workout.date.isoformat(),
-                    'y': value,
-                    'weight': float(set_obj.weight),
-                    'reps': set_obj.reps,
-                    'rep_range': set_obj.get_rep_range_category()
-                })
+            if min_reps_value is not None and max_reps_value is not None:
+                sets_query = sets_query.filter(reps__range=(min_reps_value, max_reps_value))
+
+        ordered_sets = list(sets_query.order_by('workout_exercise__workout__date', 'set_number'))
+        chart_data = aggregate_exercise_sets_for_chart(ordered_sets, chart_type, comparison_type)
         
         return JsonResponse({
             'success': True,
@@ -2421,7 +2561,8 @@ def api_exercise_chart_data(request, exercise_id):
             'exercise_name': exercise.name,
             'chart_type': chart_type,
             'period_days': period_days,
-            'rep_range': rep_range
+            'rep_range': rep_range,
+            'comparison_type': comparison_type,
         })
         
     except Exception as e:
@@ -2497,3 +2638,26 @@ def progress_pr_history(request):
         'title': 'Personal Records'
     }
     return render(request, 'progress/pr_history.html', context)
+
+def service_worker(request):
+    """Serve the service worker JavaScript for background timer notifications.
+
+    Served at '/service-worker.js' so the worker can control the root scope.
+    Uses staticfiles finders so this works in development without collectstatic.
+    """
+    # Try to locate the file via staticfiles finders (works in DEBUG without collectstatic)
+    path = finders.find('service-worker.js')
+    if not path:
+        # Fallback to storage (e.g., after collectstatic)
+        try:
+            file_handle = staticfiles_storage.open('service-worker.js', mode='rb')
+        except FileNotFoundError:
+            raise Http404('Service worker file not found.')
+    else:
+        file_handle = open(path, 'rb')
+
+    response = FileResponse(file_handle, content_type='application/javascript')
+    response['Cache-Control'] = 'no-cache'
+    response['Service-Worker-Allowed'] = '/'
+    return response
+

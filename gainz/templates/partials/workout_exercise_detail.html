@@ -91,14 +91,14 @@
                                     <td class="set-reps">
                                         <input type="number" class="form-control form-control-sm set-reps-input" 
                                                value="{{ set.reps }}" min="0" step="1"
-                                               data-function="blur->updateSet"
+                                               data-function="focus->captureWorkoutSetOriginalValue blur->handleWorkoutSetChange"
                                                data-set-id="{{ set.id }}"
                                                data-field="reps">
                                     </td>
                                     <td class="set-weight">
                                         <input type="number" class="form-control form-control-sm set-weight-input" 
                                                value="{{ set.weight }}" min="0" step="0.5"
-                                               data-function="blur->updateSet"
+                                               data-function="focus->captureWorkoutSetOriginalValue blur->handleWorkoutSetChange"
                                                data-set-id="{{ set.id }}"
                                                data-field="weight">
                                     </td>

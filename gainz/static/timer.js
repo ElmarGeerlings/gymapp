@@ -22,6 +22,19 @@
  * WorkoutTimer class for handling workout rest timers
  * Provides functionality for starting, pausing, stopping, and managing workout rest periods
  */
+// Register the Gainz service worker so timer notifications work in the background
+(function registerGainzServiceWorker() {
+    if (!('serviceWorker' in navigator)) {
+        return;
+    }
+
+    const swPath = '/service-worker.js';
+
+    navigator.serviceWorker.register(swPath, { scope: '/' }).catch(err => {
+        console.warn('Service worker registration failed:', err);
+    });
+})();
+
 class WorkoutTimer {
     constructor() {
         this.currentTimer = null;
@@ -268,25 +281,68 @@ class WorkoutTimer {
         const options = {
             body: 'Time to start your next set.',
             icon: '/static/favicon.ico',
-            tag: 'gainz-timer'
+            tag: 'gainz-timer',
+            renotify: true,
+            data: {
+                url: typeof window !== 'undefined' ? window.location.href : '/'
+            }
+        };
+
+        const fallbackNotification = () => {
+            try {
+                new Notification(title, options);
+            } catch (error) {
+                if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                    navigator.serviceWorker.ready.then(reg => {
+                        reg.showNotification(title, options).catch(err => {
+                            console.warn('Service worker notification failed:', err);
+                        });
+                    }).catch(err => {
+                        console.warn('Service worker not ready for notifications:', err);
+                    });
+                }
+            }
+        };
+
+        if (!('serviceWorker' in navigator)) {
+            fallbackNotification();
+            return;
+        }
+
+        const payload = {
+            type: 'timer-complete',
+            title,
+            options
         };
 
         try {
-            new Notification(title, options);
+            if (navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage(payload);
+                return;
+            }
+        } catch (error) {
+            console.warn('Posting timer notification to service worker failed:', error);
+            fallbackNotification();
             return;
-        } catch (err) {
-            // Continue to service worker fallback below
         }
 
-        if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-            navigator.serviceWorker.ready.then(reg => {
+        navigator.serviceWorker.ready.then(reg => {
+            if (reg.active) {
+                reg.active.postMessage(payload);
+                return;
+            }
+            if (typeof reg.showNotification === 'function') {
                 reg.showNotification(title, options).catch(err => {
                     console.warn('Service worker notification failed:', err);
+                    fallbackNotification();
                 });
-            }).catch(err => {
-                console.warn('Service worker not ready for notifications:', err);
-            });
-        }
+                return;
+            }
+            fallbackNotification();
+        }).catch(err => {
+            console.warn('Service worker not ready for notifications:', err);
+            fallbackNotification();
+        });
     }
 
     /**

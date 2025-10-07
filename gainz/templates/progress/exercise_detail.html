@@ -15,13 +15,65 @@
         </h1>
     </div>
 
+    <form id="exercise-filter-form" method="get" class="row g-3 align-items-end mb-4">
+        <div class="col-lg-3 col-md-4">
+            <label for="exercise-period-select" class="form-label fw-semibold">Period</label>
+            <select id="exercise-period-select" name="period" class="form-select">
+                <option value="30" {% if period_days == 30 %}selected{% endif %}>Last 30 days</option>
+                <option value="90" {% if period_days == 90 %}selected{% endif %}>Last 90 days</option>
+                <option value="180" {% if period_days == 180 %}selected{% endif %}>Last 6 months</option>
+                <option value="365" {% if period_days == 365 %}selected{% endif %}>Last 12 months</option>
+                <option value="730" {% if period_days == 730 %}selected{% endif %}>Last 24 months</option>
+            </select>
+        </div>
+        <div class="col-lg-3 col-md-4">
+            <label for="exercise-rep-range-select" class="form-label fw-semibold">Rep Range</label>
+            <select id="exercise-rep-range-select" name="rep_range" class="form-select">
+                <option value="" {% if rep_range == '' %}selected{% endif %}>All rep ranges</option>
+                <option value="low" {% if rep_range == 'low' %}selected{% endif %}>Low reps (1-3)</option>
+                <option value="mid" {% if rep_range == 'mid' %}selected{% endif %}>Mid reps (4-6)</option>
+                <option value="high" {% if rep_range == 'high' %}selected{% endif %}>High reps (7+)</option>
+                <option value="custom" {% if rep_range == 'custom' %}selected{% endif %}>Custom range</option>
+            </select>
+        </div>
+        <div class="col-lg-3 col-md-4">
+            <label for="exercise-chart-type" class="form-label fw-semibold">Chart Metric</label>
+            <select id="exercise-chart-type" name="chart_type" class="form-select">
+                <option value="1rm" {% if chart_type == '1rm' %}selected{% endif %}>Estimated 1RM</option>
+                <option value="volume" {% if chart_type == 'volume' %}selected{% endif %}>Set volume</option>
+            </select>
+        </div>
+        <div class="col-lg-3 col-md-4">
+            <label for="exercise-comparison-select" class="form-label fw-semibold">Workout Aggregation</label>
+            <select id="exercise-comparison-select" name="comparison" class="form-select">
+                <option value="average" {% if comparison_type == 'average' %}selected{% endif %}>Average of sets</option>
+                <option value="peak" {% if comparison_type == 'peak' %}selected{% endif %}>Best set (peak)</option>
+            </select>
+        </div>
+        <div id="exercise-custom-range" class="col-12 {% if rep_range != 'custom' %}d-none{% endif %}">
+            <div class="row g-3">
+                <div class="col-sm-3 col-md-2">
+                    <label for="exercise-custom-min-reps" class="form-label small text-uppercase text-muted mb-1">Min reps</label>
+                    <input type="number" id="exercise-custom-min-reps" name="min_reps" class="form-control" min="1" max="30" value="{{ custom_min_reps|default_if_none:''|default:'3' }}">
+                </div>
+                <div class="col-sm-3 col-md-2">
+                    <label for="exercise-custom-max-reps" class="form-label small text-uppercase text-muted mb-1">Max reps</label>
+                    <input type="number" id="exercise-custom-max-reps" name="max_reps" class="form-control" min="1" max="30" value="{{ custom_max_reps|default_if_none:''|default:'12' }}">
+                </div>
+                <div class="col-12">
+                    <small id="exercise-custom-range-feedback" class="text-danger d-none">Min reps must be less than or equal to max reps.</small>
+                </div>
+            </div>
+        </div>
+    </form>
+
     <!-- Stats Cards -->
     <div class="row mb-4">
         <div class="col-lg-3 col-md-6 mb-3">
             <div class="card">
                 <div class="card-body text-center">
                     <h5 class="card-title">Current Max</h5>
-                    <h3 class="text-primary">{{ progress_data.current_max|floatformat:1|default:"--" }} kg</h3>
+                    <h3 class="text-primary"><span data-progress-current-max>{{ progress_data.current_max|floatformat:1|default:"--" }}</span> kg</h3>
                 </div>
             </div>
         </div>
@@ -29,7 +81,7 @@
             <div class="card">
                 <div class="card-body text-center">
                     <h5 class="card-title">Best 1RM Estimate</h5>
-                    <h3 class="text-success">{{ progress_data.best_1rm|floatformat:1|default:"--" }} kg</h3>
+                    <h3 class="text-success"><span data-progress-best-1rm>{{ progress_data.best_1rm|floatformat:1|default:"--" }}</span> kg</h3>
                 </div>
             </div>
         </div>
@@ -37,7 +89,7 @@
             <div class="card">
                 <div class="card-body text-center">
                     <h5 class="card-title">Total Volume</h5>
-                    <h3 class="text-info">{{ progress_data.total_volume|floatformat:0|default:"--" }} kg</h3>
+                    <h3 class="text-info"><span data-progress-total-volume>{{ progress_data.total_volume|floatformat:0|default:"--" }}</span> kg</h3>
                 </div>
             </div>
         </div>
@@ -45,7 +97,7 @@
             <div class="card">
                 <div class="card-body text-center">
                     <h5 class="card-title">Workouts</h5>
-                    <h3 class="text-warning">{{ progress_data.workout_count|default:"--" }}</h3>
+                    <h3 class="text-warning"><span data-progress-workout-count>{{ progress_data.workout_count|default:"--" }}</span></h3>
                 </div>
             </div>
         </div>
@@ -57,24 +109,25 @@
             <div class="card">
                 <div class="card-header d-flex flex-column flex-md-row align-items-md-center justify-content-between">
                     <h5 class="mb-0">Progress Chart</h5>
-                    {% if chart_data %}
-                    <small class="text-muted">Showing estimated 1RM alongside logged weight</small>
-                    {% endif %}
+                    <small class="text-muted">Visualize {{ exercise.name }} trends across your selected filters</small>
                 </div>
                 <div class="card-body">
-                    {% if chart_data %}
-                    <canvas id="exercise-progress-chart" height="280" aria-label="Progress chart for {{ exercise.name }}" role="img"></canvas>
-                    {% else %}
-                    <div class="text-center py-5 text-muted">
-                        <i class="fas fa-info-circle fa-2x mb-3"></i>
-                        <h5>No chart data yet</h5>
-                        <p class="mb-0">Log a few sets with reps and weight to see trends for this exercise.</p>
+                    <div id="exercise-chart-wrapper" class="position-relative" style="height: 280px;">
+                        <canvas id="exercise-progress-chart" height="280" class="w-100 h-100" aria-label="Progress chart for {{ exercise.name }}" role="img"></canvas>
+                        <div id="exercise-chart-empty" class="position-absolute top-0 bottom-0 start-0 end-0 d-flex flex-column justify-content-center align-items-center d-none" style="background-color: rgba(255, 255, 255, 0.85);">
+                            <i class="fas fa-info-circle fa-2x mb-2 text-muted"></i>
+                            <span class="text-muted" data-empty-text>Unable to load chart data.</span>
+                        </div>
+                        <div id="exercise-chart-loading" class="position-absolute top-0 bottom-0 start-0 end-0 d-flex flex-column justify-content-center align-items-center bg-white opacity-75 d-none">
+                            <div class="spinner-border text-primary mb-2" role="status"></div>
+                            <span class="text-muted">Loading chart...</span>
+                        </div>
                     </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
+
 
     <!-- Recent Sets Table -->
     <div class="row">
@@ -123,135 +176,60 @@
         </div>
     </div>
 </div>
-{% if chart_data %}
-    {{ chart_data|json_script:"exercise-chart-data" }}
-{% endif %}
+{{ chart_data|json_script:"exercise-chart-data" }}
 {% block extra_js %}
     {{ block.super }}
-    {% if chart_data %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
             integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt"
             crossorigin="anonymous"></script>
+    <script src="{% static 'progress_charts.js' %}"></script>
     <script>
-        (function() {
-            const container = document.getElementById('exercise-progress-chart');
-            if (!container) {
+        document.addEventListener('DOMContentLoaded', function () {
+            const module = window.ProgressCharts;
+            if (!module) {
                 return;
             }
-
-            const rawData = JSON.parse(document.getElementById('exercise-chart-data').textContent || '[]');
-            if (!rawData.length) {
-                return;
-            }
-
-            const labels = rawData.map((entry) => entry.date);
-            const weightData = rawData.map((entry) => entry.weight);
-            const oneRmData = rawData.map((entry) => entry.estimated_1rm);
-
-            const parseDate = (value) => {
-                const date = new Date(value);
-                if (Number.isNaN(date.valueOf())) {
-                    return null;
-                }
-                return date;
-            };
-
-            const formatDate = (value) => {
-                const date = parseDate(value);
-                if (!date) {
-                    return '';
-                }
-                return date.toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric'
-                });
-            };
-
-            const ctx = container.getContext('2d');
-            const chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels,
-                    datasets: [
-                        {
-                            label: 'Estimated 1RM',
-                            data: oneRmData,
-                            borderColor: '#0d6efd',
-                            backgroundColor: 'rgba(13, 110, 253, 0.15)',
-                            borderWidth: 2,
-                            pointRadius: 3,
-                            tension: 0.3,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: 'Logged Weight',
-                            data: weightData,
-                            borderColor: '#20c997',
-                            backgroundColor: 'rgba(32, 201, 151, 0.1)',
-                            borderDash: [6, 4],
-                            borderWidth: 2,
-                            pointRadius: 3,
-                            tension: 0.3,
-                            yAxisID: 'y'
-                        }
-                    ]
+            module.initExerciseDetail({
+                exerciseId: {{ exercise.id }},
+                form: '#exercise-filter-form',
+                periodSelect: '#exercise-period-select',
+                repRangeSelect: '#exercise-rep-range-select',
+                chartTypeSelect: '#exercise-chart-type',
+                comparisonSelect: '#exercise-comparison-select',
+                customRange: {
+                    container: '#exercise-custom-range',
+                    minInput: '#exercise-custom-min-reps',
+                    maxInput: '#exercise-custom-max-reps',
+                    feedback: '#exercise-custom-range-feedback'
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    },
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        },
-                        tooltip: {
-                            callbacks: {
-                                title: (items) => items.map((item) => formatDate(labels[item.dataIndex])).join('\n'),
-                                label: (item) => {
-                                    const value = item.dataset.data[item.dataIndex];
-                                    if (value == null) {
-                                        return `${item.dataset.label}: --`;
-                                    }
-                                    return `${item.dataset.label}: ${value.toFixed(1)} kg`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            type: 'category',
-                            ticks: {
-                                callback: (value, index) => {
-                                    const labelValue = labels[index];
-                                    return formatDate(labelValue);
-                                }
-                            },
-                            grid: {
-                                display: false
-                            }
-                        },
-                        y: {
-                            beginAtZero: false,
-                            title: {
-                                display: true,
-                                text: 'Weight (kg)'
-                            },
-                            grid: {
-                                color: 'rgba(0,0,0,0.05)'
-                            }
-                        }
+                chart: {
+                    canvas: '#exercise-progress-chart',
+                    loading: '#exercise-chart-loading',
+                    empty: '#exercise-chart-empty'
+                },
+                defaults: {
+                    period: '{{ period_days }}',
+                    repRange: '{{ rep_range|default_if_none:"" }}',
+                    chartType: '{{ chart_type|default_if_none:"1rm" }}',
+                    comparisonType: '{{ comparison_type|default_if_none:"average" }}',
+                    minReps: '{{ custom_min_reps|default_if_none:"" }}',
+                    maxReps: '{{ custom_max_reps|default_if_none:"" }}'
+                },
+                initialData: (function() {
+                    const el = document.getElementById('exercise-chart-data');
+                    if (!el) {
+                        return [];
                     }
-                }
+                    try {
+                        return JSON.parse(el.textContent || '[]');
+                    } catch (error) {
+                        console.error('Unable to parse initial exercise chart data:', error);
+                        return [];
+                    }
+                })()
             });
-
-            window.addEventListener('beforeunload', () => {
-                chart.destroy();
-            });
-        })();
+        });
     </script>
-    {% endif %}
 {% endblock %}
 {% endblock %}
+

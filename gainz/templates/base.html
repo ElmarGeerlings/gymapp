@@ -119,6 +119,16 @@
     <!-- Custom JS -->
     <script src="{% static 'gainz.js' %}"></script>
     <script src="{% static 'timer.js' %}"></script>
+    <script>
+        // Register service worker for background notifications (Android)
+        (function() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(function(err) {
+                    console.warn('Service worker registration failed:', err);
+                });
+            }
+        })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

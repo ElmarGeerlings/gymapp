@@ -51,6 +51,7 @@ from gainz.views import (
     api_exercise_chart_data, # Add exercise chart data API view
     api_progress_filter_options, # Add progress filter options API view
     progress_pr_history, # Add personal records history view
+    service_worker, # Serve service worker script
 )
 from django.contrib import admin
 from django.contrib.auth import views as auth_views  # Import auth views
@@ -67,6 +68,7 @@ router.register(r'workouts/sets', ExerciseSetViewSet, basename='exercise-set')
 urlpatterns = [
     # Health check for Railway
     path('health/', health_check, name='health-check'),
+    path('service-worker.js', service_worker, name='service-worker'),
 
     # Homepage
     path('', home, name='home'),

@@ -9,6 +9,24 @@
         </h1>
     </div>
 
+    <form id="overview-filter-form" method="get" class="row g-3 align-items-end mb-4">
+        <div class="col-md-3">
+            <label for="overview-period-select" class="form-label fw-semibold">Period</label>
+            <select id="overview-period-select" name="period" class="form-select">
+                <option value="7" {% if period_days == 7 %}selected{% endif %}>Last 7 days</option>
+                <option value="30" {% if period_days == 30 %}selected{% endif %}>Last 30 days</option>
+                <option value="90" {% if period_days == 90 %}selected{% endif %}>Last 90 days</option>
+                <option value="180" {% if period_days == 180 %}selected{% endif %}>Last 6 months</option>
+                <option value="365" {% if period_days == 365 %}selected{% endif %}>Last 12 months</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="fas fa-sync-alt me-1"></i>Update Stats
+            </button>
+        </div>
+    </form>
+
     <!-- Progress Metrics Cards -->
     <div class="row mb-4">
         <div class="col-lg-3 col-md-6 mb-3">
@@ -88,35 +106,63 @@
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="row align-items-end mb-3">
-                        <div class="col-md-6">
+                    <div class="row g-3 align-items-end mb-3">
+                        <div class="col-lg-4 col-md-6">
                             <label for="overview-exercise-select" class="form-label fw-semibold">Exercise</label>
-                            <select id="overview-exercise-select" class="form-select">
+                            <select id="overview-exercise-select" name="exercise" class="form-select" form="overview-filter-form">
                                 {% for option in exercise_options %}
-                                <option value="{{ option.id }}">{{ option.name }}</option>
+                                <option value="{{ option.id }}" {% if option.id|stringformat:"s" == selected_exercise_id|stringformat:"s" %}selected{% endif %}>{{ option.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-6 text-md-end mt-3 mt-md-0">
-                            <small class="text-muted d-block">Displays estimated 1RM and logged weight</small>
+                        <div class="col-lg-4 col-md-6">
+                            <label for="overview-rep-range" class="form-label fw-semibold">Rep Range</label>
+                            <select id="overview-rep-range" name="rep_range" class="form-select" form="overview-filter-form">
+                                <option value="" {% if selected_rep_range == '' %}selected{% endif %}>All rep ranges</option>
+                                <option value="low" {% if selected_rep_range == 'low' %}selected{% endif %}>Low reps (1-3)</option>
+                                <option value="mid" {% if selected_rep_range == 'mid' %}selected{% endif %}>Mid reps (4-6)</option>
+                                <option value="high" {% if selected_rep_range == 'high' %}selected{% endif %}>High reps (7+)</option>
+                                <option value="custom" {% if selected_rep_range == 'custom' %}selected{% endif %}>Custom range</option>
+                            </select>
+                        </div>
+                        <div class="col-lg-4 col-md-6">
+                            <label for="overview-chart-type" class="form-label fw-semibold">Chart Metric</label>
+                            <select id="overview-chart-type" name="chart_type" class="form-select" form="overview-filter-form">
+                                <option value="1rm" {% if selected_chart_type == '1rm' %}selected{% endif %}>Estimated 1RM</option>
+                                <option value="volume" {% if selected_chart_type == 'volume' %}selected{% endif %}>Set volume</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="overview-custom-range" class="row g-3 mb-3 {% if selected_rep_range != 'custom' %}d-none{% endif %}">
+                        <div class="col-sm-3 col-md-2">
+                            <label for="overview-custom-min-reps" class="form-label small text-uppercase text-muted mb-1">Min reps</label>
+                            <input type="number" id="overview-custom-min-reps" name="min_reps" form="overview-filter-form" class="form-control" min="1" max="30" value="{{ custom_min_reps|default_if_none:''|default:'3' }}">
+                        </div>
+                        <div class="col-sm-3 col-md-2">
+                            <label for="overview-custom-max-reps" class="form-label small text-uppercase text-muted mb-1">Max reps</label>
+                            <input type="number" id="overview-custom-max-reps" name="max_reps" form="overview-filter-form" class="form-control" min="1" max="30" value="{{ custom_max_reps|default_if_none:''|default:'12' }}">
+                        </div>
+                        <div class="col-12">
+                            <small id="overview-custom-range-feedback" class="text-danger d-none">Min reps must be less than or equal to max reps.</small>
                         </div>
                     </div>
                     <div id="overview-chart-wrapper" class="position-relative" style="height: 220px;">
                         <canvas id="overview-exercise-chart" height="220" class="w-100 h-100"></canvas>
                         <div id="overview-chart-empty" class="text-center py-5 text-muted d-none">
                             <i class="fas fa-info-circle fa-2x mb-3"></i>
-                            <h5>No data available</h5>
+                            <h5 data-empty-text>No data available</h5>
                             <p class="mb-0">Select an exercise with logged sets to view its trend.</p>
                         </div>
                         <div id="overview-chart-loading" class="position-absolute top-0 bottom-0 start-0 end-0 d-flex flex-column justify-content-center align-items-center bg-white opacity-75 d-none">
                             <div class="spinner-border text-primary mb-2" role="status"></div>
-                            <span class="text-muted">Loading chart…</span>
+                            <span class="text-muted">Loading chart...</span>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+
 
     <!-- Top Exercises Section -->
     <div class="row">
@@ -164,204 +210,42 @@
 {% endblock %}
 {% block extra_js %}
     {{ block.super }}
-    {% if exercise_options %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
             integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt"
             crossorigin="anonymous"></script>
+    <script src="{% static 'progress_charts.js' %}"></script>
     <script>
-        (function() {
-            const selectEl = document.getElementById('overview-exercise-select');
-            const canvas = document.getElementById('overview-exercise-chart');
-            const loadingEl = document.getElementById('overview-chart-loading');
-            const emptyEl = document.getElementById('overview-chart-empty');
-            const wrapper = document.getElementById('overview-chart-wrapper');
-
-            if (!selectEl || !canvas) {
+        document.addEventListener('DOMContentLoaded', function () {
+            const module = window.ProgressCharts;
+            if (!module) {
                 return;
             }
-
-            let chartInstance = null;
-
-            const ensureCanvasHeight = () => {
-                if (wrapper) {
-                    wrapper.style.height = '220px';
-                }
-                canvas.style.height = '220px';
-            };
-            ensureCanvasHeight();
-
-            const showLoading = () => {
-                loadingEl?.classList.remove('d-none');
-            };
-
-            const hideLoading = () => {
-                loadingEl?.classList.add('d-none');
-            };
-
-            const showEmpty = (message) => {
-                if (!emptyEl) {
-                    return;
-                }
-                emptyEl.classList.remove('d-none');
-                emptyEl.querySelector('h5').textContent = message || 'No data available';
-            };
-
-            const hideEmpty = () => {
-                emptyEl?.classList.add('d-none');
-            };
-
-            const formatDate = (isoString) => {
-                const date = new Date(isoString);
-                if (Number.isNaN(date.valueOf())) {
-                    return '';
-                }
-                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            };
-
-            const renderChart = (data) => {
-                const labels = data.map((point) => point.x || point.date);
-                const weightData = data.map((point) => point.weight ?? null);
-                const oneRmData = data.map((point) => point.estimated_1rm ?? point.y ?? null);
-
-                if (chartInstance) {
-                    chartInstance.destroy();
-                }
-
-                const ctx = canvas.getContext('2d');
-                ensureCanvasHeight();
-                chartInstance = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels,
-                        datasets: [
-                            {
-                                label: 'Estimated 1RM',
-                                data: oneRmData,
-                                borderColor: '#0d6efd',
-                                backgroundColor: 'rgba(13, 110, 253, 0.15)',
-                                borderWidth: 2,
-                                pointRadius: 3,
-                                tension: 0.3,
-                                spanGaps: true
-                            },
-                            {
-                                label: 'Logged Weight',
-                                data: weightData,
-                                borderColor: '#20c997',
-                                backgroundColor: 'rgba(32, 201, 151, 0.1)',
-                                borderDash: [6, 4],
-                                borderWidth: 2,
-                                pointRadius: 3,
-                                tension: 0.3,
-                                spanGaps: true
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: {
-                            intersect: false,
-                            mode: 'index'
-                        },
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    title: (items) => items.map((item) => formatDate(labels[item.dataIndex])).join('\n'),
-                                    label: (item) => {
-                                        const value = item.dataset.data[item.dataIndex];
-                                        if (value == null) {
-                                            return `${item.dataset.label}: --`;
-                                        }
-                                        return `${item.dataset.label}: ${parseFloat(value).toFixed(1)} kg`;
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: {
-                                ticks: {
-                                    callback: (value, index) => formatDate(labels[index])
-                                },
-                                grid: {
-                                    display: false
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Weight (kg)'
-                                },
-                                grid: {
-                                    color: 'rgba(0,0,0,0.05)'
-                                }
-                            }
-                        }
-                    }
-                });
-                ensureCanvasHeight();
-            };
-
-            const loadChartData = async (exerciseId) => {
-                showLoading();
-                hideEmpty();
-
-                try {
-                    const response = await fetch(`/api/progress/exercise/${exerciseId}/chart-data/?chart_type=1rm`);
-                    if (!response.ok) {
-                        throw new Error('Failed to load chart data');
-                    }
-                    const payload = await response.json();
-                    const data = payload?.data || [];
-
-                    if (!data.length) {
-                        showEmpty('No data available for this exercise');
-                        if (chartInstance) {
-                            chartInstance.destroy();
-                            chartInstance = null;
-                        }
-                        canvas.classList.add('d-none');
-                        ensureCanvasHeight();
-                    } else {
-                        canvas.classList.remove('d-none');
-                        ensureCanvasHeight();
-                        renderChart(data);
-                    }
-                } catch (error) {
-                    console.error('Error loading overview chart:', error);
-                    showEmpty('Unable to load chart data');
-                    canvas.classList.add('d-none');
-                    ensureCanvasHeight();
-                } finally {
-                    hideLoading();
-                }
-            };
-
-            selectEl.addEventListener('change', (event) => {
-                const exerciseId = event.target.value;
-                if (exerciseId) {
-                    loadChartData(exerciseId);
+            module.initOverview({
+                exerciseSelect: '#overview-exercise-select',
+                periodSelect: '#overview-period-select',
+                repRangeSelect: '#overview-rep-range',
+                chartTypeSelect: '#overview-chart-type',
+                customRange: {
+                    container: '#overview-custom-range',
+                    minInput: '#overview-custom-min-reps',
+                    maxInput: '#overview-custom-max-reps',
+                    feedback: '#overview-custom-range-feedback'
+                },
+                chart: {
+                    canvas: '#overview-exercise-chart',
+                    loading: '#overview-chart-loading',
+                    empty: '#overview-chart-empty'
+                },
+                defaults: {
+                    exerciseId: '{{ selected_exercise_id|default_if_none:"" }}',
+                    period: '{{ period_days }}',
+                    repRange: '{{ selected_rep_range|default_if_none:"" }}',
+                    chartType: '{{ selected_chart_type|default_if_none:"1rm" }}',
+                    minReps: '{{ custom_min_reps|default_if_none:"" }}',
+                    maxReps: '{{ custom_max_reps|default_if_none:"" }}'
                 }
             });
-
-            // Kick off initial load with first option
-            const initialOption = selectEl.value;
-            if (initialOption) {
-                loadChartData(initialOption);
-            } else {
-                showEmpty('Log workouts to view progress charts');
-                canvas.classList.add('d-none');
-            }
-
-            window.addEventListener('beforeunload', () => {
-                if (chartInstance) {
-                    chartInstance.destroy();
-                }
-            });
-        })();
+        });
     </script>
-    {% endif %}
 {% endblock %}
+
