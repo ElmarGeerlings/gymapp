@@ -1414,7 +1414,16 @@ async function toggleSetCompletion(event) {
         return;
     }
 
-    const isCurrentlyCompleted = button.dataset.completed === 'true';
+    // Be robust: infer completion from multiple sources
+    let isCurrentlyCompleted = button.dataset.completed === 'true';
+    const row = button.closest('.set-row');
+    if (typeof button.dataset.completed === 'undefined' && row) {
+        if (typeof row.dataset.isCompleted !== 'undefined') {
+            isCurrentlyCompleted = row.dataset.isCompleted === 'true';
+        } else if (row.classList.contains('set-completed')) {
+            isCurrentlyCompleted = true;
+        }
+    }
     const url = `/api/workouts/sets/${setId}/`;
     const response = await httpRequestHelper(url, 'PATCH', { is_completed: !isCurrentlyCompleted });
 
@@ -1423,7 +1432,6 @@ async function toggleSetCompletion(event) {
         return;
     }
 
-    const row = button.closest('.set-row');
     if (row) {
         row.dataset.isCompleted = (!isCurrentlyCompleted).toString();
         row.classList.toggle('set-completed', !isCurrentlyCompleted);
