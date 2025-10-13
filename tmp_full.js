@@ -326,19 +326,14 @@ async function toggleScheduleType() {
                     })
                 });
 
-                // Try to parse response, but proceed with UI update regardless of API result
-                try {
-                    const data = await response.json();
-                    if (!data.success) {
-                        console.warn('Non-fatal: update-scheduling weekly failed:', data.error);
-                    }
-                } catch (e) {
-                    // Non-JSON or other issue; ignore and continue
-                    console.warn('Non-fatal: update-scheduling weekly parse error');
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('Error updating scheduling type:', data.error);
+                    return;
                 }
             } catch (error) {
-                // Network or endpoint error; log and continue UI update
-                console.warn('Non-fatal: update-scheduling weekly request error:', error);
+                console.error('Error updating scheduling type:', error);
+                return;
             }
         }
 
@@ -417,19 +412,14 @@ async function toggleScheduleType() {
                     })
                 });
 
-                // Try to parse response, but proceed with UI update regardless of API result
-                try {
-                    const data = await response.json();
-                    if (!data.success) {
-                        console.warn('Non-fatal: update-scheduling sequential failed:', data.error);
-                    }
-                } catch (e) {
-                    // Non-JSON or other issue; ignore and continue
-                    console.warn('Non-fatal: update-scheduling sequential parse error');
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('Error updating scheduling type:', data.error);
+                    return;
                 }
             } catch (error) {
-                // Network or endpoint error; log and continue UI update
-                console.warn('Non-fatal: update-scheduling sequential request error:', error);
+                console.error('Error updating scheduling type:', error);
+                return;
             }
         }
 
@@ -465,9 +455,6 @@ async function toggleScheduleType() {
         sequentialAdder.style.display = 'block';
     }
 }
-
-// Expose for data-function or manual binding
-window.toggleScheduleType = toggleScheduleType;
 
 // ======================================
 //      HTTP REQUEST HELPER (Optional)
@@ -626,11 +613,6 @@ function getCsrfToken() {
 }
 
 function send_toast(body, status = 'default', title = '', delete_time = 3000) {
-    // Suppress toasts in mobile workout view
-    try {
-        const isMobile = !!document.getElementById('exercise-card-container');
-        if (isMobile) return;
-    } catch (e) { /* ignore */ }
     const alertConfigs = {
         success: { icon: 'fas fa-check-circle', alertClass: 'alert-success' },
         danger: { icon: 'fas fa-exclamation-triangle', alertClass: 'alert-danger' },
@@ -970,19 +952,7 @@ async function updateSet(eventOrElement, overrideValue) {
         if (field === 'reps' || field === 'weight') {
             const row = element.closest('.set-row');
             if (row) {
-                if (field === 'weight') {
-                    const num = Number(value);
-                    if (Number.isFinite(num)) {
-                        const formatted = num.toFixed(1);
-                        row.dataset.weight = formatted;
-                        // Update the input's visible value to ensure .0 is shown
-                        element.value = formatted;
-                    } else {
-                        row.dataset.weight = value;
-                    }
-                } else {
-                    row.dataset[field] = value;
-                }
+                row.dataset[field] = value;
             }
         }
         return true;
@@ -1030,146 +1000,40 @@ async function handleWorkoutSetChange(event) {
     const originalValueRaw = element.dataset.originalValue ?? (field === 'is_warmup' ? (element.checked ? 'true' : 'false') : element.value ?? '');
     const normalizedOriginal = normalizeWorkoutSetValue(originalValueRaw, field);
 
-    // Helpers
-    const tolZero = (field === 'weight') ? 0.1 : 0;
-    const setsContainer = element.closest('.sets-container');
-    const editedRow = element.closest('.set-row');
-    if (!setsContainer || !editedRow) {
-        // Still update the edited value and return
-        await updateSet(element);
+    const success = await updateSet(element);
+    if (!success) {
         return;
     }
-    const getRows = () => Array.from(setsContainer.querySelectorAll('.set-row'));
-    const isWarmupRow = (row) => {
-        const cb = row.querySelector('[data-field="is_warmup"]');
-        return !!(cb && cb.checked);
-    };
-    const isCompletedRow = (row) => {
-        if (row.dataset && typeof row.dataset.isCompleted !== 'undefined') {
-            return row.dataset.isCompleted === 'true';
-        }
-        return row.classList.contains('set-completed');
-    };
-    const readValue = (row) => {
-        if (field === 'weight') {
-            const v = row.dataset && row.dataset.weight ? Number(row.dataset.weight) : Number(row.querySelector('[data-field="weight"]')?.value || 0);
-            return Number.isFinite(v) ? v : 0;
-        }
-        if (field === 'reps') {
-            const v = row.dataset && row.dataset.reps ? parseInt(row.dataset.reps, 10) : parseInt(row.querySelector('[data-field="reps"]')?.value || '0', 10);
-            return Number.isFinite(v) ? v : 0;
-        }
-        return null;
-    };
-    const formatValue = (val) => {
-        if (field === 'weight') {
-            const num = Number(val);
-            return Number.isFinite(num) ? num.toFixed(1) : val;
-        }
-        if (field === 'reps') {
-            return String(parseInt(val, 10));
-        }
-        return val;
-    };
-    const diffs = (arr) => arr.slice(1).map((v, i) => v - arr[i]);
 
-    // Build segment rows starting at edited row (inclusive), skipping warmups, stopping on completed (barrier)
-    const allRows = getRows();
-    const startIdx = allRows.indexOf(editedRow);
-    const segment = [];
-    for (let i = startIdx; i < allRows.length; i++) {
-        const row = allRows[i];
-        if (row !== editedRow && isCompletedRow(row)) break; // barrier at first completed under edited
-        if (isWarmupRow(row)) continue; // exclude warmups
-        segment.push(row);
-    }
-
-    // Pre-update values: use original value for edited row
-    const originalFirstVal = (function() {
-        if (field === 'weight') {
-            const n = Number(normalizedOriginal);
-            return Number.isFinite(n) ? n : Number(element.value || 0);
-        } else if (field === 'reps') {
-            return parseInt(normalizedOriginal || '0', 10);
-        }
-        return null;
-    })();
-    const preValues = segment.map(row => row === editedRow ? originalFirstVal : readValue(row));
-
-    // Detect pattern from preValues
-    let pattern = 'none';
-    let originalDiffs = [];
-    let zeroMask = [];
-    let trendMagnitude = 0;
-    let trendSign = 0;
-    if (preValues.length >= 2) {
-        const isFlat = preValues.every(v => Math.abs(v - preValues[0]) <= tolZero);
-        if (isFlat) {
-            pattern = 'flat';
-        } else {
-            originalDiffs = diffs(preValues);
-            zeroMask = originalDiffs.map(d => Math.abs(d) <= tolZero);
-            const nonZero = originalDiffs.filter(d => Math.abs(d) > tolZero);
-            if (nonZero.length === 0) {
-                pattern = 'flat';
-            } else {
-                const sPos = nonZero.every(d => d > 0);
-                const sNeg = nonZero.every(d => d < 0);
-                const sameSign = sPos || sNeg;
-                const mag0 = Math.abs(nonZero[0]);
-                const sameMag = nonZero.every(d => Math.abs(Math.abs(d) - mag0) <= tolZero);
-                if (sameSign && sameMag) {
-                    pattern = 'trend';
-                    trendMagnitude = mag0;
-                    trendSign = sPos ? 1 : -1;
-                }
-            }
-        }
-    }
-
-    // Update edited set first
-    const success = await updateSet(element);
-    if (!success) return;
-
-    if (field === 'weight') {
-        const num = Number(element.value);
-        if (Number.isFinite(num)) element.value = num.toFixed(1);
-    }
     const newValueRaw = field === 'is_warmup' ? (element.checked ? 'true' : 'false') : element.value ?? '';
     element.dataset.originalValue = newValueRaw;
 
-    if (pattern === 'none') return;
-
-    // Apply to subsequent rows only
-    const editedNewNumeric = (field === 'weight') ? Number(element.value) : parseInt(element.value || '0', 10);
-    let applied = 0;
-    if (pattern === 'flat') {
-        for (let i = 1; i < segment.length; i++) {
-            const row = segment[i];
-            const input = row.querySelector(`[data-field="${field}"]`);
-            if (!input) continue;
-            input.value = formatValue(editedNewNumeric);
-            const ok = await updateSet(input, input.value);
-            if (ok) applied++;
-        }
-    } else if (pattern === 'trend') {
-        let prev = editedNewNumeric;
-        for (let i = 1; i < segment.length; i++) {
-            const row = segment[i];
-            const input = row.querySelector(`[data-field="${field}"]`);
-            if (!input) continue;
-            const stepIsZero = zeroMask[i - 1] === true; // preserve plateaus
-            const next = stepIsZero ? prev : (prev + trendSign * trendMagnitude);
-            input.value = formatValue(next);
-            const ok = await updateSet(input, input.value);
-            if (ok) {
-                applied++;
-                prev = (field === 'weight') ? Number(input.value) : parseInt(input.value || '0', 10);
-            }
-        }
+    if ((field !== 'reps' && field !== 'weight') || normalizeWorkoutSetValue(newValueRaw, field) === normalizedOriginal) {
+        return;
     }
-    if (applied > 0 && typeof send_toast === 'function') {
-        send_toast(`Applied to ${applied} set${applied === 1 ? '' : 's'}`, 'success');
+
+    const setsContainer = element.closest('.sets-container');
+    if (!setsContainer) {
+        return;
+    }
+
+    const inputs = setsContainer.querySelectorAll('[data-field="' + field + '"]');
+    for (const other of inputs) {
+        if (other === element) {
+            continue;
+        }
+        const otherOriginalValue = other.value ?? '';
+        if (normalizeWorkoutSetValue(otherOriginalValue, field) !== normalizedOriginal) {
+            continue;
+        }
+
+        other.value = element.value;
+        const updated = await updateSet(other, element.value);
+        if (updated) {
+            other.dataset.originalValue = newValueRaw;
+        } else {
+            other.value = otherOriginalValue;
+        }
     }
 }
 
@@ -1342,9 +1206,7 @@ async function addSet(event) {
             insertedRow.dataset.setIndex = index;
         }
 
-        // Only trigger mobile focus logic when on mobile workout view
-        if (document.getElementById('exercise-card-container') &&
-            window.mobileSetController && typeof window.mobileSetController.focusSet === 'function') {
+        if (window.mobileSetController && typeof window.mobileSetController.focusSet === 'function') {
             window.mobileSetController.focusSet(exerciseId, String(setData.id));
         }
     } else {
@@ -1391,8 +1253,7 @@ async function deleteSet(event) {
             }
         }
 
-        if (exerciseId && document.getElementById('exercise-card-container') &&
-            window.mobileSetController && typeof window.mobileSetController.advanceSetForExercise === 'function') {
+        if (exerciseId && window.mobileSetController && typeof window.mobileSetController.advanceSetForExercise === 'function') {
             window.mobileSetController.advanceSetForExercise(exerciseId);
         }
     } else {
@@ -1440,8 +1301,7 @@ async function toggleSetCompletion(event) {
         send_toast('Set marked incomplete', 'info');
     }
 
-    if (document.getElementById('exercise-card-container') &&
-        window.mobileSetController && typeof window.mobileSetController.handleSetCompletionChange === 'function') {
+    if (window.mobileSetController && typeof window.mobileSetController.handleSetCompletionChange === 'function') {
         window.mobileSetController.handleSetCompletionChange({
             exerciseId: exerciseId,
             setId: setId,
@@ -1827,15 +1687,21 @@ window.removeRoutineExerciseCard = function(event) {
         updateRoutineFormCount();
         updateRoutineExerciseOrderNumbers();
         if (container && !container.querySelector('.exercise-routine-card')) {
+            const nav = document.getElementById('routine-exercise-mobile-nav');
+            if (nav) nav.remove();
+            if (container.dataset) {
+                delete container.dataset.routineMobileInit;
+                delete container.dataset.routineCurrentIndex;
             }
             const emptyMessage = document.createElement('p');
             emptyMessage.className = 'text-muted routine-empty-message';
             emptyMessage.textContent = 'No exercises added yet. Use "Add Exercise" to get started.';
             container.appendChild(emptyMessage);
         } else {
+            initializeRoutineMobileView();
         }
-}
-
+    }
+};
 
 
 window.handleRoutineExerciseMove = function(event) {
@@ -1860,6 +1726,7 @@ window.handleRoutineExerciseMove = function(event) {
     }
 
     updateRoutineExerciseOrderNumbers();
+    bindRoutineSetSyncHandlers(newCard);
 };
 
 // --- Routine Form Modal Functions ---
@@ -2005,6 +1872,7 @@ function handleDrop(event) {
     }
 
     updateRoutineExerciseOrderNumbers();
+    bindRoutineSetSyncHandlers(newCard);
     // draggedItem is reset in dragend
 }
 
@@ -2199,6 +2067,7 @@ function appendExerciseCardToRoutine(exerciseId, exerciseName, defaultTypeDispla
     updateRoutineExerciseOrderNumbers();
     updateRoutineFormCount();
     updateSetRowFieldVisibility();
+    bindRoutineSetSyncHandlers(newCard);`n    initializeRoutineMobileView();
 
     return newCard;
 }
@@ -2283,8 +2152,7 @@ function addSetToExerciseCard(eventOrCardElement) {
     tbody.appendChild(newRow);
     updateSetNumbers(exerciseCard);
     updateSetRowFieldVisibility();
-    bindRoutineSetSyncHandlers(exerciseCard);
-    return newRow;
+    bindRoutineSetSyncHandlers(exerciseCard);`n    return newRow;
 }
 function removeSetFromExerciseCard(event) {
     if (event) {
@@ -2539,6 +2407,7 @@ function initializeRoutineForm() {
     updateRoutineExerciseOrderNumbers();
     updateRoutineFormCount();
     updateSetRowFieldVisibility();
+    bindRoutineSetSyncHandlers(newCard);`n    initializeRoutineMobileView();
 }
 
 window.updateRoutineSpecificTypeLabel = updateRoutineSpecificTypeLabel;
@@ -3311,6 +3180,7 @@ function handleTouchEnd(event) {
         switch (touchDragData.dragType) {
             case 'routine-exercises':
                 updateRoutineExerciseOrderNumbers();
+    bindRoutineSetSyncHandlers(newCard);
                 break;
             case 'workout-exercises':
                 const container = touchDragData.draggedElement.closest('.exercise-category-container');
@@ -3428,42 +3298,7 @@ function bootstrapGainzApp() {
     initializeWorkoutExercisesDragDrop();
     initializeProgramRoutinesDragDrop();
     initializeTouchDragSupport();
-
-    // Initialize Program Scheduling UI (edit/create program page)
-    try {
-        const weeklyRadio = document.getElementById('scheduling-weekly');
-        const sequentialRadio = document.getElementById('scheduling-sequential');
-        const weeklyContainer = document.getElementById('weekly-schedule-container');
-        const sequentialContainer = document.getElementById('sequential-schedule-container');
-        const sequentialAdder = document.getElementById('sequential-routine-adder');
-
-        if ((weeklyRadio || sequentialRadio) && weeklyContainer && sequentialContainer) {
-            const showWeekly = weeklyRadio ? weeklyRadio.checked : false;
-            if (showWeekly) {
-                weeklyContainer.style.display = 'block';
-                sequentialContainer.style.display = 'none';
-                if (sequentialAdder) sequentialAdder.style.display = 'none';
-                // Ensure drag/drop is active for visible chips
-                initializeProgramRoutinesDragDrop();
-            } else {
-                weeklyContainer.style.display = 'none';
-                sequentialContainer.style.display = 'block';
-                if (sequentialAdder) sequentialAdder.style.display = 'block';
-            }
-
-            // Bind change events for toggling (idempotent on re-run)
-            if (weeklyRadio && !weeklyRadio.dataset.toggleBound) {
-                weeklyRadio.addEventListener('change', window.toggleScheduleType);
-                weeklyRadio.dataset.toggleBound = 'true';
-            }
-            if (sequentialRadio && !sequentialRadio.dataset.toggleBound) {
-                sequentialRadio.addEventListener('change', window.toggleScheduleType);
-                sequentialRadio.dataset.toggleBound = 'true';
-            }
-        }
-    } catch (e) {
-        console.warn('Program scheduling UI init failed (non-fatal):', e);
-    }
+    window.addEventListener('resize', initializeRoutineMobileView);
 }
 
 if (document.readyState === 'loading') {
@@ -3496,71 +3331,117 @@ function bindWorkoutSetSyncHandlers(root) {
         input.dataset.workoutSyncBound = 'true';
     });
 }
-
-
-
-// --- Global Workout Delete Modal Handling ---
-(function() {
-    const modalEl = document.getElementById('confirmWorkoutDeleteModal');
-    const confirmBtn = document.getElementById('confirmDeleteWorkoutBtn');
-    const textEl = document.getElementById('confirmDeleteWorkoutText');
-
-    if (!modalEl || !confirmBtn) return;
-
-    // When any trigger opens the modal, populate its state
-    modalEl.addEventListener('show.bs.modal', function(event) {
-        const trigger = event.relatedTarget;
-        if (!trigger) return;
-        const workoutName = trigger.getAttribute('data-workout-name') || 'this workout';
-        const workoutId = trigger.getAttribute('data-workout-id') || '';
-        const deleteUrl = trigger.getAttribute('data-delete-url') || '';
-        if (textEl) textEl.textContent = `Are you sure you want to delete "${workoutName}"?`;
-        confirmBtn.setAttribute('data-workout-id', workoutId);
-        confirmBtn.setAttribute('data-delete-url', deleteUrl);
-        confirmBtn.disabled = false;
-    });
-
-    async function postDelete(url) {
-        const csrfTokenMeta = document.querySelector('meta[name="csrf-token"]');
-        const csrfToken = csrfTokenMeta ? csrfTokenMeta.getAttribute('content') : '';
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': csrfToken,
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-            },
-            body: new URLSearchParams({ ajax: '1' })
-        });
-        try { return { ok: resp.ok, data: await resp.json() }; }
-        catch { return { ok: resp.ok, data: {} }; }
+function initializeRoutineMobileView() {
+    const container = document.getElementById('routine-exercises-container');
+    if (!container) return;
+    if (!window.matchMedia('(max-width: 767px)').matches) {
+        // Clear mobile wrappers if any
+        if (container.dataset.routineMobileInit === 'true') {
+            container.querySelectorAll('.routine-mobile-card').forEach(wrapper => {
+                const inner = wrapper.querySelector('.exercise-routine-card');
+                if (inner) container.insertBefore(inner, wrapper);
+                wrapper.remove();
+            });
+            const nav = document.getElementById('routine-exercise-mobile-nav');
+            if (nav) nav.remove();
+            delete container.dataset.routineMobileInit;
+        }
+        return;
     }
+    refreshMobileRoutineUI();
+}
 
-    confirmBtn.addEventListener('click', async function() {
-        const url = confirmBtn.getAttribute('data-delete-url');
-        const workoutId = confirmBtn.getAttribute('data-workout-id');
-        if (!url) return;
-        confirmBtn.disabled = true;
-        const result = await postDelete(url);
-        const hideModal = () => {
-            try {
-                const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
-                modal.hide();
-            } catch (e) {}
-        };
-        if (result.ok && result.data?.status === 'success') {
-            // Try to remove card if present (list view)
-            const card = workoutId ? document.querySelector(`.workout-card[data-workout-id="${workoutId}"]`) : null;
-            if (card) card.remove();
-            hideModal();
-            if (typeof send_toast === 'function') send_toast('Workout deleted', 'success');
-            if (!card) {
-                // Not on list page; redirect to workouts
-                window.location.href = '/workouts/';
-            }
-        } else {
-            if (typeof send_toast === 'function') send_toast('Error deleting workout', 'danger');
-            confirmBtn.disabled = false;
+function refreshMobileRoutineUI(preferredIndex = null) {
+    const container = document.getElementById('routine-exercises-container');
+    if (!container) return;
+
+    // Wrap cards if not already
+    const cards = Array.from(container.querySelectorAll(':scope > .exercise-routine-card'));
+    cards.forEach((card, idx) => {
+        if (!card.parentElement.classList.contains('routine-mobile-card')) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'exercise-card routine-mobile-card d-none';
+            wrapper.dataset.exerciseIndex = String(idx);
+            container.insertBefore(wrapper, card);
+            wrapper.appendChild(card);
         }
     });
-})();
+
+    const wrappers = Array.from(container.querySelectorAll(':scope > .routine-mobile-card'));
+    wrappers.forEach((w, i) => w.dataset.exerciseIndex = String(i));
+
+    // Build nav if missing
+    if (!document.getElementById('routine-exercise-mobile-nav')) {
+        const nav = document.createElement('div');
+        nav.id = 'routine-exercise-mobile-nav';
+        nav.className = 'exercise-navigation-bottom d-flex justify-content-between align-items-center mt-3';
+        nav.innerHTML = `
+            <button class="btn btn-outline-secondary" id="routine-prev-exercise"><i class="fas fa-chevron-left"></i></button>
+            <div class="d-flex align-items-center gap-3">
+                <div class="exercise-indicators" id="routine-exercise-indicators"></div>
+                <div class="exercise-counter"><span id="routine-current-exercise-num">1</span>/<span id="routine-total-exercises-num">${wrappers.length}</span></div>
+            </div>
+            <button class="btn btn-outline-secondary" id="routine-next-exercise"><i class="fas fa-chevron-right"></i></button>
+        `;
+        container.parentElement.appendChild(nav);
+
+        nav.querySelector('#routine-prev-exercise').addEventListener('click', () => stepRoutineMobile(-1));
+        nav.querySelector('#routine-next-exercise').addEventListener('click', () => stepRoutineMobile(1));
+    }
+
+    // Rebuild indicators
+    const indicators = document.getElementById('routine-exercise-indicators');
+    if (indicators) {
+        indicators.innerHTML = '';
+        wrappers.forEach((_, i) => {
+            const dot = document.createElement('div');
+            dot.className = 'indicator';
+            dot.dataset.index = String(i);
+            dot.addEventListener('click', () => showRoutineMobileIndex(i));
+            indicators.appendChild(dot);
+        });
+    }
+
+    const totalSpan = document.getElementById('routine-total-exercises-num');
+    if (totalSpan) totalSpan.textContent = String(wrappers.length);
+
+    let target = 0;
+    const current = Number(container.dataset.routineCurrentIndex || '0');
+    if (preferredIndex !== null && Number.isFinite(preferredIndex)) {
+        target = Math.max(0, Math.min(preferredIndex, wrappers.length - 1));
+    } else if (current >= 0 && current < wrappers.length) {
+        target = current;
+    }
+    showRoutineMobileIndex(target);
+    container.dataset.routineMobileInit = 'true';
+}
+
+function showRoutineMobileIndex(idx) {
+    const container = document.getElementById('routine-exercises-container');
+    if (!container) return;
+    const wrappers = Array.from(container.querySelectorAll(':scope > .routine-mobile-card'));
+    if (!wrappers.length) return;
+    const clamped = Math.max(0, Math.min(idx, wrappers.length - 1));
+    wrappers.forEach(w => w.classList.add('d-none'));
+    wrappers[clamped].classList.remove('d-none');
+    container.dataset.routineCurrentIndex = String(clamped);
+
+    const prev = document.getElementById('routine-prev-exercise');
+    const next = document.getElementById('routine-next-exercise');
+    const curSpan = document.getElementById('routine-current-exercise-num');
+    document.querySelectorAll('#routine-exercise-indicators .indicator').forEach((dot, i) => dot.classList.toggle('active', i === clamped));
+    if (prev) prev.disabled = clamped === 0;
+    if (next) next.disabled = clamped === wrappers.length - 1;
+    if (curSpan) curSpan.textContent = String(clamped + 1);
+}
+
+function stepRoutineMobile(delta) {
+    const container = document.getElementById('routine-exercises-container');
+    if (!container) return;
+    const current = Number(container.dataset.routineCurrentIndex || '0');
+    showRoutineMobileIndex(current + delta);
+}
+
+
+
+

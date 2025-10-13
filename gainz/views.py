@@ -224,9 +224,26 @@ def workout_list(request):
     """Display a list of the user's workouts"""
     workouts = Workout.objects.filter(user=request.user).order_by('-date')
 
+    # Build routine options for "Choose" modal
+    active_program = Program.objects.filter(user=request.user, is_active=True).first()
+    active_program_routines = []
+    if active_program:
+        active_program_routines = [
+            pr.routine for pr in ProgramRoutine.objects.filter(program=active_program)
+            .select_related('routine').order_by('order')
+        ]
+
+    # All user routines
+    all_user_routines = Routine.objects.filter(user=request.user).order_by('name')
+    # Routines not in active program (if any)
+    other_routines = all_user_routines.exclude(id__in=[r.id for r in active_program_routines])
+
     context = {
         'workouts': workouts,
-        'title': 'My Workouts'
+        'title': 'My Workouts',
+        'active_program': active_program,
+        'active_program_routines': active_program_routines,
+        'other_routines': other_routines,
     }
 
     return render(request, 'workout_list.html', context)
@@ -899,6 +916,12 @@ def start_workout_from_routine(request, routine_id):
     completed_count = Workout.objects.filter(user=request.user, routine_source=routine).count()
     workout_name = f"{routine.name} #{completed_count + 1}"
 
+    # Determine last workout for this routine (to clone if present)
+    last_workout = Workout.objects.filter(
+        user=request.user,
+        routine_source=routine
+    ).order_by('-date').first()
+
     # Create the Workout instance
     new_workout = Workout.objects.create(
         user=request.user,
@@ -908,37 +931,55 @@ def start_workout_from_routine(request, routine_id):
         routine_source=routine
     )
 
-    # Process each routine exercise and create workout exercises with sets
-    for routine_exercise in routine.exercises.prefetch_related('planned_sets', 'exercise').order_by('order'):
-        # Create WorkoutExercise
-        workout_exercise = WorkoutExercise.objects.create(
-            workout=new_workout,
-            exercise=routine_exercise.exercise,
-            order=routine_exercise.order,
-            notes="",
-            routine_exercise_source=routine_exercise,
-            exercise_type=routine_exercise.routine_specific_exercise_type or routine_exercise.exercise.exercise_type
-        )
-
-        # Create sets based on planned sets with intelligent prefill
-        for set_template in routine_exercise.planned_sets.all().order_by('set_number'):
-            # Get intelligent prefill suggestions based on history
-            prefill = get_prefill_data(request.user, set_template, today)
-
-            # Use prefilled data or defaults
-            reps = prefill.get('reps', 0) or 0
-            weight = prefill.get('weight', 0) or 0
-
-            ExerciseSet.objects.create(
-                workout_exercise=workout_exercise,
-                set_number=set_template.set_number,
-                reps=reps,
-                weight=weight,
-                is_warmup=set_template.is_warmup if hasattr(set_template, 'is_warmup') else False
+    if last_workout:
+        # Clone last session structure: exercises and sets, preserving order and links
+        for prev_we in last_workout.exercises.prefetch_related('sets', 'exercise').order_by('order'):
+            new_we = WorkoutExercise.objects.create(
+                workout=new_workout,
+                exercise=prev_we.exercise,
+                order=prev_we.order,
+                notes="",  # do not copy notes
+                routine_exercise_source=prev_we.routine_exercise_source,
+                exercise_type=prev_we.exercise_type,
+                performance_feedback=prev_we.performance_feedback
+            )
+            for prev_set in prev_we.sets.all().order_by('set_number'):
+                ExerciseSet.objects.create(
+                    workout_exercise=new_we,
+                    set_number=prev_set.set_number,
+                    reps=prev_set.reps,
+                    weight=prev_set.weight,
+                    is_warmup=prev_set.is_warmup
+                )
+        return redirect('workout-detail', workout_id=new_workout.id)
+    else:
+        # First time with this routine: use planned template + prefill
+        for routine_exercise in routine.exercises.prefetch_related('planned_sets', 'exercise').order_by('order'):
+            # Create WorkoutExercise based on routine exercise
+            workout_exercise = WorkoutExercise.objects.create(
+                workout=new_workout,
+                exercise=routine_exercise.exercise,
+                order=routine_exercise.order,
+                notes="",
+                routine_exercise_source=routine_exercise,
+                exercise_type=routine_exercise.routine_specific_exercise_type or routine_exercise.exercise.exercise_type
             )
 
-    # Redirect to the workout detail page
-    return redirect('workout-detail', workout_id=new_workout.id)
+            # Create sets based on planned sets with intelligent prefill
+            for set_template in routine_exercise.planned_sets.all().order_by('set_number'):
+                prefill = get_prefill_data(request.user, set_template, today)
+                reps = prefill.get('reps', 0) or 0
+                weight = prefill.get('weight', 0) or 0
+
+                ExerciseSet.objects.create(
+                    workout_exercise=workout_exercise,
+                    set_number=set_template.set_number,
+                    reps=reps,
+                    weight=weight,
+                    is_warmup=set_template.is_warmup if hasattr(set_template, 'is_warmup') else False
+                )
+
+        return redirect('workout-detail', workout_id=new_workout.id)
 
 @login_required
 def start_empty_workout(request):
@@ -1029,7 +1070,11 @@ def workout_delete(request, workout_id):
     workout = get_object_or_404(Workout, id=workout_id, user=request.user)
     if request.method == 'POST':
         workout.delete()
-        # Optionally, add a success message using Django's messages framework
+        # If AJAX request, return JSON instead of redirect
+        is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.POST.get('ajax') == '1'
+        if is_ajax:
+            return JsonResponse({'status': 'success'})
+        # Fallback to redirect for non-AJAX
         return redirect('workout-list')
 
     context = {

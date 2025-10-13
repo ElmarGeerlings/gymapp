@@ -466,6 +466,7 @@ footer {
     text-align: center;
     vertical-align: middle;
     cursor: pointer;
+    -webkit-user-select: none;
     user-select: none;
     background-color: transparent;
     border: 1px solid transparent;
@@ -1067,6 +1068,15 @@ html {
     gap: 10px;
 }
 
+/* Desktop alignment for Warmup and Done columns in sets table */
+.sets-container th.set-header-warmup,
+.sets-container th.set-header-done,
+.sets-container td.set-warmup,
+.sets-container td.set-done {
+    text-align: center;
+    vertical-align: middle;
+}
+
 /* Mobile workout set helpers */
 .mobile-set-progress {
     height: 6px;
@@ -1522,4 +1532,48 @@ html {
         width: 15%;
         text-align: center;
     }
+}
+
+/* Routine mobile navigation */
+.exercise-navigation-bottom {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  z-index: 2;
+}
+.exercise-indicators {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.exercise-indicators .indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cfd4da;
+}
+.exercise-indicators .indicator.active {
+  background: #0d6efd;
+}
+@media (min-width: 768px) {
+  #routine-exercise-mobile-nav {
+    display: none !important;
+  }
+}@media (max-width: 767px) {
+  /* Keep workout header actions inline next to title on mobile */
+  .workout-header .workout-header-row {
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+  .workout-header .workout-actions-group {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    width: auto !important;
+    gap: 6px;
+  }
+  .workout-header .workout-actions-group .btn {
+    margin-bottom: 0 !important;
+  }
 }

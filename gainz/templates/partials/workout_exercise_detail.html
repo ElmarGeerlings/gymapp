@@ -79,15 +79,20 @@
                     <table class="table table-sm table-striped">
                         <thead>
                             <tr>
-                                <th width="100">Reps</th>
-                                <th width="120">Weight (kg)</th>
-                                <th width="80">Warmup</th>
-                                <th width="40"></th>
+                                <th class="set-header-reps" width="100">Reps</th>
+                                <th class="set-header-weight" width="120">Weight (kg)</th>
+                                <th class="set-header-warmup" width="80">Warmup</th>
+                                <th class="set-header-done" width="80">Done</th>
+                                <th class="set-header-actions" width="40"></th>
                             </tr>
                         </thead>
                         <tbody class="sets-tbody">
                             {% for set in workout_exercise.sets.all %}
-                                <tr class="set-row" data-set-id="{{ set.id }}" data-reps="{{ set.reps }}" data-weight="{{ set.weight }}">
+                                <tr class="set-row{% if set.is_completed %} set-completed{% endif %}"
+                                    data-set-id="{{ set.id }}"
+                                    data-reps="{{ set.reps }}"
+                                    data-weight="{{ set.weight|floatformat:1 }}"
+                                    data-is-completed="{% if set.is_completed %}true{% else %}false{% endif %}">
                                     <td class="set-reps">
                                         <input type="number" class="form-control form-control-sm set-reps-input" 
                                                value="{{ set.reps }}" min="0" step="1"
@@ -97,7 +102,7 @@
                                     </td>
                                     <td class="set-weight">
                                         <input type="number" class="form-control form-control-sm set-weight-input" 
-                                               value="{{ set.weight }}" min="0" step="0.5"
+                                               value="{{ set.weight|floatformat:1 }}" min="0" step="0.5"
                                                data-function="focus->captureWorkoutSetOriginalValue blur->handleWorkoutSetChange"
                                                data-set-id="{{ set.id }}"
                                                data-field="weight">
@@ -108,6 +113,16 @@
                                                data-function="change->updateSet"
                                                data-set-id="{{ set.id }}"
                                                data-field="is_warmup">
+                                    </td>
+                                    <td class="set-done text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-success mark-set-btn"
+                                                data-function="click->toggleSetCompletion"
+                                                data-set-id="{{ set.id }}"
+                                                data-exercise-id="{{ workout_exercise.id }}"
+                                                data-completed="{% if set.is_completed %}true{% else %}false{% endif %}"
+                                                title="Toggle completion">
+                                            <i class="fas fa-check"></i>
+                                        </button>
                                     </td>
                                     <td class="text-center">
                                         <a href="#" class="text-danger"

@@ -141,6 +141,11 @@ function sendWsRequest(endpoint, element) {
 }
 
 function send_toast(body, status = 'default', title = '', delete_time = 2000) {
+    // Suppress toasts in mobile workout view
+    try {
+        const isMobile = !!document.getElementById('exercise-card-container');
+        if (isMobile) return;
+    } catch (e) { /* ignore */ }
     const alertConfigs = {
         success: { icon: 'fas fa-check-circle', alertClass: 'alert-success' },
         danger: { icon: 'fas fa-exclamation-triangle', alertClass: 'alert-danger' },

@@ -11,14 +11,30 @@
             <a href="{% url 'start-empty-workout' %}" class="btn btn-outline-primary ms-2">
                 <i class="fas fa-plus me-1"></i><span class="d-none d-sm-inline">Empty Workout</span><span class="d-sm-none">Empty</span>
             </a>
+            <button type="button" class="btn btn-outline-secondary ms-2" data-bs-toggle="modal" data-bs-target="#chooseWorkoutModal">
+                <i class="fas fa-list me-1"></i><span class="d-none d-sm-inline">Choose Workout</span><span class="d-sm-none">Choose</span>
+            </button>
         </div>
     </div>
 
     <div class="workouts-list">
         {% if workouts %}
             {% for workout in workouts %}
-                <div class="workout-card">
-                    <h2><a href="{% url 'workout-detail' workout.id %}">{{ workout.name }}</a></h2>
+                <div class="workout-card" data-workout-id="{{ workout.id }}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h2 class="h4 mb-2"><a href="{% url 'workout-detail' workout.id %}">{{ workout.name }}</a></h2>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger"
+                                title="Delete workout"
+                                data-bs-toggle="modal"
+                                data-bs-target="#confirmWorkoutDeleteModal"
+                                data-workout-id="{{ workout.id }}"
+                                data-workout-name="{{ workout.name }}"
+                                data-delete-url="{% url 'workout-delete' workout.id %}">
+                            <i class="fas fa-trash"></i>
+                            <span class="d-none d-sm-inline ms-1">Delete</span>
+                        </button>
+                    </div>
                     <div class="workout-meta">
                         <span class="workout-date">{{ workout.date|date:"F j, Y" }}</span>
                         {% if workout.duration %}
@@ -43,4 +59,77 @@
     </div>
 </div>
 
+<!-- Choose Workout Modal -->
+<div class="modal fade" id="chooseWorkoutModal" tabindex="-1" aria-labelledby="chooseWorkoutModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chooseWorkoutModalLabel">Choose Workout</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                {% if active_program_routines or other_routines %}
+                    <label for="chooseRoutineSelect" class="form-label">Select a workout (routine)</label>
+                    <select id="chooseRoutineSelect" class="form-select" required>
+                        <option value="" selected disabled>Choose...</option>
+                        {% if active_program and active_program_routines %}
+                            <optgroup label="{{ active_program.name }} (Active Program)">
+                            {% for routine in active_program_routines %}
+                                <option value="{% url 'start-workout-from-routine' routine.id %}">{{ routine.name }}</option>
+                            {% endfor %}
+                            </optgroup>
+                        {% endif %}
+                        {% if other_routines %}
+                            {% if active_program %}
+                                <optgroup label="Other Routines">
+                            {% endif %}
+                            {% for routine in other_routines %}
+                                <option value="{% url 'start-workout-from-routine' routine.id %}">{{ routine.name }}</option>
+                            {% endfor %}
+                            {% if active_program %}
+                                </optgroup>
+                            {% endif %}
+                        {% endif %}
+                    </select>
+                    <div class="invalid-feedback">Please choose a workout to start.</div>
+                {% else %}
+                    <div class="alert alert-info mb-0">
+                        You don't have any routines yet. Create one from the Routines page.
+                    </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="startChosenWorkoutBtn" class="btn btn-primary" {% if not active_program_routines and not other_routines %}disabled{% endif %}>Start</button>
+            </div>
+        </div>
+    </div>
+    </div>
+
 {% endblock %}
+
+{% block extra_js %}
+<script>
+    (function() {
+        const selectEl = document.getElementById('chooseRoutineSelect');
+        const startBtn = document.getElementById('startChosenWorkoutBtn');
+        if (selectEl) {
+            selectEl.addEventListener('change', function() {
+                selectEl.classList.remove('is-invalid');
+            });
+        }
+        if (startBtn) {
+            startBtn.addEventListener('click', function() {
+                if (!selectEl || !selectEl.value) {
+                    if (selectEl) selectEl.classList.add('is-invalid');
+                    return;
+                }
+                // Navigate to the selected routine's start URL
+                window.location.href = selectEl.value;
+            });
+        }
+    })();
+
+        </script>
+{% endblock %}
+
