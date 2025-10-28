@@ -38,22 +38,22 @@
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label for="routine_primary_timer_seconds" class="form-label">Primary Exercise Timer (seconds)</label>
-                        <input type="number" class="form-control" id="routine_primary_timer_seconds" name="routine_primary_timer_seconds" 
-                               value="{% if routine_timer_prefs.primary_timer_seconds %}{{ routine_timer_prefs.primary_timer_seconds }}{% endif %}" 
+                        <input type="number" class="form-control" id="routine_primary_timer_seconds" name="routine_primary_timer_seconds"
+                               value="{% if routine_timer_prefs.primary_timer_seconds %}{{ routine_timer_prefs.primary_timer_seconds }}{% endif %}"
                                min="10" max="3600" placeholder="Default: Program/User Setting">
                         <small class="form-text text-muted">Leave blank to use program or user default</small>
                     </div>
                     <div class="col-md-4">
                         <label for="routine_secondary_timer_seconds" class="form-label">Secondary Exercise Timer (seconds)</label>
-                        <input type="number" class="form-control" id="routine_secondary_timer_seconds" name="routine_secondary_timer_seconds" 
-                               value="{% if routine_timer_prefs.secondary_timer_seconds %}{{ routine_timer_prefs.secondary_timer_seconds }}{% endif %}" 
+                        <input type="number" class="form-control" id="routine_secondary_timer_seconds" name="routine_secondary_timer_seconds"
+                               value="{% if routine_timer_prefs.secondary_timer_seconds %}{{ routine_timer_prefs.secondary_timer_seconds }}{% endif %}"
                                min="10" max="3600" placeholder="Default: Program/User Setting">
                         <small class="form-text text-muted">Leave blank to use program or user default</small>
                     </div>
                     <div class="col-md-4">
                         <label for="routine_accessory_timer_seconds" class="form-label">Accessory Exercise Timer (seconds)</label>
-                        <input type="number" class="form-control" id="routine_accessory_timer_seconds" name="routine_accessory_timer_seconds" 
-                               value="{% if routine_timer_prefs.accessory_timer_seconds %}{{ routine_timer_prefs.accessory_timer_seconds }}{% endif %}" 
+                        <input type="number" class="form-control" id="routine_accessory_timer_seconds" name="routine_accessory_timer_seconds"
+                               value="{% if routine_timer_prefs.accessory_timer_seconds %}{{ routine_timer_prefs.accessory_timer_seconds }}{% endif %}"
                                min="10" max="3600" placeholder="Default: Program/User Setting">
                         <small class="form-text text-muted">Leave blank to use program or user default</small>
                     </div>
@@ -221,7 +221,7 @@
                         </thead>
                         <tbody class="sets-tbody">
                             <tr class="sets-empty-message">
-                                <td colspan="7" class="text-center text-muted py-3">No sets planned yet.</td>
+                                <td colspan="8" class="text-center text-muted py-3">No sets planned yet.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -260,13 +260,19 @@
             </div>
         </td>
         <td class="text-end">
-            <div class="btn-group btn-group-sm" role="group" aria-label="Set actions">
-                <button type="button" class="btn btn-outline-secondary duplicate-set-btn" data-function="click->duplicateSetRow" title="Duplicate set" aria-label="Duplicate set">
-                    <i class="fas fa-copy"></i>
+            <div class="d-flex align-items-center justify-content-end gap-2">
+                <input type="hidden" name="routine_exercise___EXERCISE_INDEX___planned_sets___SET_INDEX___locked" value="0">
+                <button type="button" class="btn btn-sm btn-outline-secondary set-lock-btn" data-function="click->toggleSetLock" title="Lock this set from bulk editing" aria-label="Lock set from bulk editing">
+                    <i class="fas fa-unlock"></i>
                 </button>
-                <button type="button" class="btn btn-outline-danger remove-set-btn" data-function="click->removeSetFromExerciseCard" title="Remove set" aria-label="Remove set">
-                    <i class="fas fa-trash"></i>
-                </button>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Set actions">
+                    <button type="button" class="btn btn-outline-secondary duplicate-set-btn" data-function="click->duplicateSetRow" title="Duplicate set" aria-label="Duplicate set">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger remove-set-btn" data-function="click->removeSetFromExerciseCard" title="Remove set" aria-label="Remove set">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
         </td>
     </tr>

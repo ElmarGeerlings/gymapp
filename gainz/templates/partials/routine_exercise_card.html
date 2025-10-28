@@ -110,19 +110,25 @@
                                     </div>
                                 </td>
                                 <td class="text-end">
-                                    <div class="btn-group btn-group-sm" role="group" aria-label="Set actions">
-                                        <button type="button" class="btn btn-outline-secondary duplicate-set-btn" data-function="click->duplicateSetRow" title="Duplicate set" aria-label="Duplicate set">
-                                            <i class="fas fa-copy"></i>
+                                    <div class="d-flex align-items-center justify-content-end gap-2">
+                                        <input type="hidden" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_locked" value="0">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary set-lock-btn" data-function="click->toggleSetLock" title="Lock this set from bulk editing" aria-label="Lock set from bulk editing">
+                                            <i class="fas fa-unlock"></i>
                                         </button>
-                                        <button type="button" class="btn btn-outline-danger remove-set-btn" data-function="click->removeSetFromExerciseCard" title="Remove set" aria-label="Remove set">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
+                                        <div class="btn-group btn-group-sm" role="group" aria-label="Set actions">
+                                            <button type="button" class="btn btn-outline-secondary duplicate-set-btn" data-function="click->duplicateSetRow" title="Duplicate set" aria-label="Duplicate set">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger remove-set-btn" data-function="click->removeSetFromExerciseCard" title="Remove set" aria-label="Remove set">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>
                         {% empty %}
                             <tr class="sets-empty-message">
-                                <td colspan="7" class="text-center text-muted py-3">No sets planned yet.</td>
+                                <td colspan="8" class="text-center text-muted py-3">No sets planned yet.</td>
                             </tr>
                         {% endfor %}
                     </tbody>

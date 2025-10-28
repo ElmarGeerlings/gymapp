@@ -2235,58 +2235,36 @@ function addSetToExerciseCard(eventOrCardElement) {
     }
 
     const existingRows = Array.from(tbody.querySelectorAll('.set-row'));
-    let newRow;
-
-    if (existingRows.length > 0) {
-        const sourceRow = existingRows[existingRows.length - 1];
-        newRow = sourceRow.cloneNode(true);
-        newRow.dataset.setIndex = existingRows.length;
-
-        newRow.querySelectorAll('input, select, textarea').forEach(input => {
-            if (!input.name) {
-                return;
-            }
-            if (input.type === 'hidden' && input.name.endsWith('_id')) {
-                input.value = '';
-            } else if (input.classList.contains('set-number-input')) {
-                input.value = existingRows.length + 1;
-            }
-            if (input.dataset) {
-                input.dataset.originalValue = input.value ?? '';
-            }
-        });
-    } else {
-        const setTemplate = document.getElementById('set-row-template');
-        if (!setTemplate) {
-            console.error('#set-row-template not found!');
-            return null;
-        }
-
-        const fragment = setTemplate.content.cloneNode(true);
-        newRow = fragment.querySelector('.set-row');
-        newRow.dataset.setIndex = 0;
-
-        newRow.querySelectorAll('input, select, textarea').forEach(input => {
-            if (!input.name) {
-                return;
-            }
-            input.name = input.name
-                .replace(/__EXERCISE_INDEX__/g, exerciseCard.dataset.index)
-                .replace(/__SET_INDEX__/g, 0)
-                .replace(/__SET_NUMBER__/g, 1);
-
-            if (input.type === 'hidden' && input.name.endsWith('_id')) {
-                input.value = '';
-            } else if (input.classList.contains('set-number-input')) {
-                input.value = 1;
-            } else {
-                input.value = '';
-            }
-            if (input.dataset) {
-                input.dataset.originalValue = input.value ?? '';
-            }
-        });
+    const setTemplate = document.getElementById('set-row-template');
+    if (!setTemplate) {
+        console.error('#set-row-template not found!');
+        return null;
     }
+
+    const fragment = setTemplate.content.cloneNode(true);
+    const newRow = fragment.querySelector('.set-row');
+    newRow.dataset.setIndex = existingRows.length;
+
+    newRow.querySelectorAll('input, select, textarea').forEach(input => {
+        if (!input.name) {
+            return;
+        }
+        input.name = input.name
+            .replace(/__EXERCISE_INDEX__/g, exerciseCard.dataset.index)
+            .replace(/__SET_INDEX__/g, existingRows.length)
+            .replace(/__SET_NUMBER__/g, existingRows.length + 1);
+
+        if (input.type === 'hidden' && input.name.endsWith('_id')) {
+            input.value = '';
+        } else if (input.classList.contains('set-number-input')) {
+            input.value = existingRows.length + 1;
+        } else {
+            input.value = '';
+        }
+        if (input.dataset) {
+            input.dataset.originalValue = input.value ?? '';
+        }
+    });
 
     tbody.appendChild(newRow);
     updateSetNumbers(exerciseCard);
@@ -2373,6 +2351,37 @@ function normalizeRoutineSetFieldValue(value, fieldKey) {
     return trimmed;
 }
 
+function toggleSetLock(event) {
+    if (event) {
+        event.preventDefault?.();
+    }
+    const button = event?.target?.closest('.set-lock-btn') || event?.target;
+    const setRow = button ? button.closest('.set-row') : null;
+    if (!setRow) {
+        return;
+    }
+
+    const lockInput = setRow.querySelector('input[name*="_locked"]');
+    const icon = button.querySelector('i') || button;
+
+    if (lockInput && icon) {
+        const isLocked = lockInput.value === '1';
+        lockInput.value = isLocked ? '0' : '1';
+
+        if (isLocked) {
+            // Unlocking
+            button.className = 'btn btn-sm btn-outline-secondary set-lock-btn';
+            icon.className = 'fas fa-unlock';
+            button.title = 'Lock this set from bulk editing';
+        } else {
+            // Locking
+            button.className = 'btn btn-sm btn-warning set-lock-btn';
+            icon.className = 'fas fa-lock';
+            button.title = 'Unlock this set for bulk editing';
+        }
+    }
+}
+
 function captureRoutineSetFieldOriginalValue(event) {
     const input = event?.target;
     if (!input) {
@@ -2413,6 +2422,16 @@ function handleRoutineSetFieldChange(event) {
         if (otherInput === input) {
             return;
         }
+
+        // Skip locked sets
+        const otherSetRow = otherInput.closest('.set-row');
+        if (otherSetRow) {
+            const lockInput = otherSetRow.querySelector('input[name*="_locked"]');
+            if (lockInput && lockInput.value === '1') {
+                return;
+            }
+        }
+
         const otherValue = otherInput.value ?? '';
         if (normalizeRoutineSetFieldValue(otherValue, fieldKey) !== normalizedOriginal) {
             return;
@@ -2552,6 +2571,7 @@ function initializeRoutineForm() {
 window.updateRoutineSpecificTypeLabel = updateRoutineSpecificTypeLabel;
 window.captureRoutineSetFieldOriginalValue = captureRoutineSetFieldOriginalValue;
 window.handleRoutineSetFieldChange = handleRoutineSetFieldChange;
+window.toggleSetLock = toggleSetLock;
 window.captureWorkoutSetOriginalValue = captureWorkoutSetOriginalValue;
 window.handleWorkoutSetChange = handleWorkoutSetChange;
 window.updateExerciseCardName = updateExerciseCardName;
