@@ -1,0 +1,7 @@
+#!/bin/bash
+# Django Shell alias script
+# Usage: ./ds
+
+cd /srv/gainz/app
+. venv/bin/activate
+python manage.py shell
