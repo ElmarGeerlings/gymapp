@@ -1,0 +1,25 @@
+name: Deploy to Hetzner
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Deploy to Hetzner
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HETZNER_HOST }}
+        username: ${{ secrets.HETZNER_USER }}
+        key: ${{ secrets.HETZNER_SSH_KEY }}
+        script: |
+          cd /srv/gainz/app
+          sudo -u gainz git pull origin master
+          sudo systemctl restart gainz
+          sudo systemctl reload caddy
+          sudo systemctl status gainz --no-pager
+          sudo systemctl status caddy --no-pager
+          echo "✅ Deployment complete!"
