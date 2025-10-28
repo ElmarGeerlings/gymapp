@@ -21,17 +21,15 @@ REDIS_HOST = os.environ.get("REDIS_HOST", 'localhost')
 REDIS_PORT = os.environ.get("REDIS_PORT", '6379')
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", None)
 
-try:
-    from django_redis import get_redis_connection
+import importlib.util
 
+# Detect available Redis cache backend without importing missing modules
+if importlib.util.find_spec('django_redis') is not None:
     REDIS_CACHE_TYPE = 'django-redis'
-except ImportError:
-    try:
-        import redis_cache
-
-        REDIS_CACHE_TYPE = 'django-redis-cache'
-    except ImportError:
-        REDIS_CACHE_TYPE = 'none'
+elif importlib.util.find_spec('redis_cache') is not None:
+    REDIS_CACHE_TYPE = 'django-redis-cache'
+else:
+    REDIS_CACHE_TYPE = 'none'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -43,6 +41,14 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-w!r=&r-lul9aiu8pq!nh(
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com,gymapp-r7bx.onrender.com').split(',')
+
+# Django 4.2: allow configuring CSRF trusted origins via env
+# Example: CSRF_TRUSTED_ORIGINS="https://yourdomain.com,https://www.yourdomain.com"
+_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins_env.split(',') if o.strip()]
+
+# Respect X-Forwarded-Proto from reverse proxies (e.g., Caddy/Nginx)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Application definition
 
