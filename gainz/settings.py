@@ -16,6 +16,10 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Environment variables
 REDIS_HOST = os.environ.get("REDIS_HOST", 'localhost')
 REDIS_PORT = os.environ.get("REDIS_PORT", '6379')
@@ -151,9 +155,9 @@ if REDIS_URL:
     # Parse Redis URL for SSL/TLS connections (common on Render)
     import ssl
     from urllib.parse import urlparse
-    
+
     parsed_redis_url = urlparse(REDIS_URL)
-    
+
     # Check if it's a rediss:// URL (Redis with SSL/TLS)
     if parsed_redis_url.scheme == 'rediss':
         # Configure for SSL/TLS connection
@@ -161,7 +165,7 @@ if REDIS_URL:
         ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-        
+
         CACHES = {
             'default': {
                 'BACKEND': 'django_redis.cache.RedisCache',
@@ -283,7 +287,7 @@ if REDIS_URL:
     # Parse Redis URL for SSL/TLS connections
     from urllib.parse import urlparse
     parsed_redis_url = urlparse(REDIS_URL)
-    
+
     if parsed_redis_url.scheme == 'rediss':
         # Configure for SSL/TLS connection
         # Use individual connection parameters with REDIS_CLIENT_KWARGS for SSL
@@ -319,7 +323,7 @@ else:
     # Fall back to individual settings
     redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
     redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
-    
+
     RQ_QUEUES = {
         'default': {
             'URL': redis_url,
