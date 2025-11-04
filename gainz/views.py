@@ -93,12 +93,141 @@ class WorkoutViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def add_exercise(self, request, pk=None):
         workout = self.get_object()
-        serializer = WorkoutExerciseSerializer(data=request.data)
+
+        # Get the current exercise ID to determine insertion position
+        current_exercise_id = request.data.get('current_exercise_id')
+
+        # Get exercise type override if provided
+        exercise_type_override = request.data.get('exercise_type')
+
+        # Calculate the appropriate order for the new exercise
+        new_order = self._calculate_exercise_order(workout, request.data.get('exercise'), current_exercise_id, exercise_type_override)
+
+        # Add the calculated order to the request data
+        mutable_data = request.data.copy()
+        mutable_data['order'] = new_order
+
+        serializer = WorkoutExerciseSerializer(data=mutable_data)
 
         if serializer.is_valid():
-            serializer.save(workout=workout)
+            workout_exercise = serializer.save(workout=workout)
+
+            # Renumber all exercises to be sequential after insertion
+            all_exercises = workout.exercises.all().order_by('order')
+            for index, exercise in enumerate(all_exercises):
+                exercise.order = index
+                exercise.save()
+
+            # Refresh serializer data with updated order
+            serializer = WorkoutExerciseSerializer(workout_exercise)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def _calculate_exercise_order(self, workout, new_exercise_id, current_exercise_id, exercise_type_override=None):
+        """
+        Calculate the appropriate order for a new exercise based on:
+        - Exercise type hierarchy (primary > secondary > accessory)
+        - Current exercise position
+        - Priority-based insertion rules:
+          * Higher priority type -> insert as LAST of that type
+          * Same priority type -> insert AFTER current
+          * Lower priority type -> insert as FIRST of that type
+        """
+        # Priority mapping: primary (3) > secondary (2) > accessory (1)
+        PRIORITY = {'primary': 3, 'secondary': 2, 'accessory': 1}
+
+        # Get the new exercise type (use override if provided, otherwise from exercise)
+        if exercise_type_override:
+            new_exercise_type = exercise_type_override
+        else:
+            try:
+                new_exercise = Exercise.objects.get(id=new_exercise_id)
+                new_exercise_type = new_exercise.exercise_type
+            except Exercise.DoesNotExist:
+                return 0
+
+        new_priority = PRIORITY.get(new_exercise_type, 1)
+
+        # Get all existing exercises in this workout
+        existing_exercises = list(workout.exercises.prefetch_related('exercise').order_by('order'))
+
+        # If no current exercise specified or no exercises exist
+        if not current_exercise_id or not existing_exercises:
+            # Find exercises of the same type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return max(ex.order for ex in same_type) + 1
+            else:
+                # No exercises of this type yet, find insertion point based on type hierarchy
+                if new_exercise_type == 'primary':
+                    return 0
+                elif new_exercise_type == 'secondary':
+                    primaries = [ex for ex in existing_exercises if ex.get_exercise_type() == 'primary']
+                    if primaries:
+                        return max(ex.order for ex in primaries) + 1
+                    else:
+                        return 0
+                else:  # accessory
+                    return max([ex.order for ex in existing_exercises], default=0) + 1
+
+        # Find the current exercise
+        current_exercise = None
+        for ex in existing_exercises:
+            if ex.id == int(current_exercise_id):
+                current_exercise = ex
+                break
+
+        if not current_exercise:
+            # Current exercise not found, place at end of same type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return max(ex.order for ex in same_type) + 1
+            else:
+                return max([ex.order for ex in existing_exercises], default=0) + 1
+
+        current_type = current_exercise.get_exercise_type()
+        current_priority = PRIORITY.get(current_type, 1)
+
+        # Apply priority-based insertion rules
+        if new_priority > current_priority:
+            # Higher priority: insert as LAST of new type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return max(ex.order for ex in same_type) + 1
+            else:
+                # No exercises of this type yet, insert at appropriate boundary
+                if new_exercise_type == 'primary':
+                    return 0
+                elif new_exercise_type == 'secondary':
+                    primaries = [ex for ex in existing_exercises if ex.get_exercise_type() == 'primary']
+                    if primaries:
+                        return max(ex.order for ex in primaries) + 1
+                    else:
+                        return 0
+                else:  # accessory
+                    return max([ex.order for ex in existing_exercises], default=0) + 1
+
+        elif new_priority == current_priority:
+            # Same priority: insert AFTER current
+            return current_exercise.order + 1
+
+        else:  # new_priority < current_priority
+            # Lower priority: insert as FIRST of new type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return min(ex.order for ex in same_type)
+            else:
+                # No exercises of this type yet, insert at appropriate boundary
+                if new_exercise_type == 'accessory':
+                    return max([ex.order for ex in existing_exercises], default=0) + 1
+                elif new_exercise_type == 'secondary':
+                    primaries = [ex for ex in existing_exercises if ex.get_exercise_type() == 'primary']
+                    if primaries:
+                        return max(ex.order for ex in primaries) + 1
+                    else:
+                        return 0
+                else:  # primary (shouldn't happen if current is higher)
+                    return 0
 
     @action(detail=True, methods=['post'], url_path='reorder-exercises')
     def reorder_exercises(self, request, pk=None):

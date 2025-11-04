@@ -1643,7 +1643,7 @@ async function addExerciseToWorkout(event) {
     const container = button.closest('.add-exercise-controls'); // Adjust selector
     if (!container) {
          console.error('Cannot find container for add exercise controls');
-         return;
+        return;
     }
     const exerciseSelect = container.querySelector('select[name="exercise"]');
     const typeSelect = container.querySelector('select[name="exercise_type"]');
@@ -1656,14 +1656,35 @@ async function addExerciseToWorkout(event) {
         return;
     }
 
+    // Get current exercise ID from mobile controller if available
+    let currentExerciseId = null;
+    if (window.mobileSetController && typeof window.mobileSetController.getCurrentExerciseId === 'function') {
+        currentExerciseId = window.mobileSetController.getCurrentExerciseId();
+    }
+
     const url = `/api/workouts/${workoutId}/add_exercise/`;
-    const data = { exercise: exerciseId, exercise_type: exerciseType };
+    const data = {
+        exercise: exerciseId,
+        exercise_type: exerciseType,
+        current_exercise_id: currentExerciseId
+    };
 
     const response = await httpRequestHelper(url, 'POST', data);
 
     if (response.ok) {
         send_toast('Exercise added to workout', 'success');
-        window.location.reload();
+
+        // Try to handle dynamically on mobile, fallback to reload
+        if (typeof window.addExerciseDynamically === 'function') {
+            try {
+                await window.addExerciseDynamically(response.data);
+            } catch (error) {
+                console.error('Error adding exercise dynamically:', error);
+                window.location.reload();
+            }
+        } else {
+            window.location.reload();
+        }
     } else {
         send_toast(response.data?.detail || 'Error adding exercise', 'danger');
     }

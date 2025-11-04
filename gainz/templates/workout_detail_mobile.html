@@ -344,7 +344,7 @@
                 this.setupSwipeHandling();
                 this.refresh(0);
             },
-            refresh(preferredIndex = null) {
+            refresh(preferredIndex = null, preferredExerciseId = null) {
                 this.captureDomRefs();
                 this.pruneStaleSetState();
                 const total = this.cards.length;
@@ -360,7 +360,7 @@
 
                 this.cards.forEach(card => this.initialiseCard(card));
                 this.updateTotalCounter();
-                const targetIndex = this.resolveTargetIndex(preferredIndex);
+                const targetIndex = this.resolveTargetIndex(preferredIndex, preferredExerciseId);
                 this.showExercise(targetIndex);
             },
             captureDomRefs() {
@@ -418,9 +418,20 @@
                     }
                 });
             },
-            resolveTargetIndex(preferredIndex) {
+            resolveTargetIndex(preferredIndex, preferredExerciseId = null) {
                 const total = this.cards.length;
                 if (!total) return 0;
+
+                // If a specific exercise ID is requested, find its index
+                if (preferredExerciseId) {
+                    const exerciseIndex = this.cards.findIndex(card => {
+                        const exerciseCard = card.querySelector('.workout-exercise-card');
+                        return exerciseCard && exerciseCard.dataset.exerciseId == preferredExerciseId;
+                    });
+                    if (exerciseIndex >= 0) {
+                        return exerciseIndex;
+                    }
+                }
 
                 if (typeof preferredIndex === 'number' && !Number.isNaN(preferredIndex)) {
                     if (preferredIndex < 0) return 0;
@@ -712,6 +723,194 @@
         });
 
         return controller;
+    }
+
+    // Add exercise dynamically without page reload
+    window.addExerciseDynamically = async function(exerciseData) {
+        const controller = window.mobileWorkoutController;
+        if (!controller) return;
+
+        try {
+            // Create the exercise card HTML
+            const cardHtml = await createExerciseCardHtml(exerciseData);
+
+            // Insert the card at the correct position
+            const container = document.getElementById('exercise-card-container');
+            if (!container) return;
+
+            // Find the correct insertion position based on order
+            const existingCards = Array.from(container.querySelectorAll('.exercise-card'));
+            let insertIndex = existingCards.length;
+
+            // Find where to insert based on order
+            for (let i = 0; i < existingCards.length; i++) {
+                const card = existingCards[i];
+                const order = parseInt(card.querySelector('.workout-exercise-card')?.dataset.order || 0);
+                if (exerciseData.order <= order) {
+                    insertIndex = i;
+                    break;
+                }
+            }
+
+            // Insert the new card
+            if (insertIndex >= existingCards.length) {
+                container.appendChild(cardHtml);
+            } else {
+                container.insertBefore(cardHtml, existingCards[insertIndex]);
+            }
+
+            // Update all exercise card data-exercise-index attributes after insertion
+            const allCards = Array.from(container.querySelectorAll('.exercise-card'));
+            allCards.forEach((card, idx) => {
+                card.setAttribute('data-exercise-index', String(idx));
+            });
+
+            // Add indicator dot for new exercise
+            const indicatorsContainer = document.querySelector('.exercise-indicators');
+            if (indicatorsContainer) {
+                const newIndicator = document.createElement('div');
+                newIndicator.className = 'indicator';
+                newIndicator.setAttribute('data-exercise-index', String(insertIndex));
+
+                if (insertIndex >= existingCards.length) {
+                    indicatorsContainer.appendChild(newIndicator);
+                } else {
+                    const existingIndicators = Array.from(indicatorsContainer.querySelectorAll('.indicator'));
+                    if (existingIndicators[insertIndex]) {
+                        indicatorsContainer.insertBefore(newIndicator, existingIndicators[insertIndex]);
+                    } else {
+                        indicatorsContainer.appendChild(newIndicator);
+                    }
+                }
+
+                // Update all indicator data-exercise-index attributes after insertion
+                const allIndicators = Array.from(indicatorsContainer.querySelectorAll('.indicator'));
+                allIndicators.forEach((indicator, idx) => {
+                    indicator.setAttribute('data-exercise-index', String(idx));
+                });
+            }
+
+            // Update the controller with the new exercise and show the new one
+            controller.refresh(null, String(exerciseData.id));
+
+        } catch (error) {
+            console.error('Error adding exercise dynamically:', error);
+            throw error;
+        }
+    }
+
+    // Create exercise card HTML from exercise data
+    async function createExerciseCardHtml(exerciseData) {
+        // Get the exercise type - prefer exercise_type (override) or use exercise_type_display (from get_exercise_type())
+        let exerciseType = exerciseData.exercise_type || exerciseData.exercise_type_display;
+
+        if (!exerciseType) {
+            // Fallback: fetch exercise details if still not available
+            try {
+                const response = await fetch(`/api/exercises/${exerciseData.exercise}/`);
+                if (response.ok) {
+                    const exerciseDetails = await response.json();
+                    exerciseType = exerciseDetails.exercise_type;
+                }
+            } catch (error) {
+                console.error('Error fetching exercise details:', error);
+            }
+        }
+
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'exercise-card d-none';
+        cardDiv.innerHTML = `
+            <div class="card workout-exercise-card" data-exercise-id="${exerciseData.id}" data-order="${exerciseData.order}" data-exercise-type="${exerciseType || ''}">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            ${exerciseData.exercise_name}
+                            <small class="text-muted">(Type: "${exerciseType || 'default'}")</small>
+                        </h5>
+                        <button class="btn btn-sm btn-outline-danger"
+                                data-function="click->removeExercise"
+                                data-exercise-id="${exerciseData.id}"
+                                title="Remove exercise">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="progress mobile-set-progress mb-3">
+                        <div class="progress-bar" role="progressbar" data-set-progress style="width: 0%;"></div>
+                    </div>
+
+                    <div class="timer-section text-center mb-4 p-3 bg-light rounded">
+                        <div class="timer-display mb-3" data-timer-display data-exercise-id="${exerciseData.id}" style="font-size: 2rem; font-weight: bold;">0:00</div>
+                        <div class="timer-message small text-muted mb-3" data-timer-message data-exercise-id="${exerciseData.id}"></div>
+                        <div class="d-flex justify-content-center gap-2">
+                            <button type="button" class="btn btn-success btn-lg timer-start-btn"
+                                    data-function="click->startTimer"
+                                    data-exercise-id="${exerciseData.id}"
+                                    data-exercise-type="${exerciseType || ''}"
+                                    title="Start timer">
+                                <i class="fas fa-play"></i>
+                            </button>
+                            <button type="button" class="btn btn-warning btn-lg timer-pause-btn"
+                                    data-function="click->pauseTimer"
+                                    data-exercise-id="${exerciseData.id}"
+                                    title="Pause timer">
+                                <i class="fas fa-pause"></i>
+                            </button>
+                            <button type="button" class="btn btn-danger btn-lg timer-stop-btn"
+                                    data-function="click->stopTimer"
+                                    data-exercise-id="${exerciseData.id}"
+                                    title="Stop timer">
+                                <i class="fas fa-stop"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="feedback-section mb-4">
+                        <h6 class="text-center mb-3">How was this exercise?</h6>
+                        <div class="d-flex justify-content-center gap-2">
+                            <button type="button" class="btn btn-outline-success"
+                                    data-function="click->updateExerciseFeedback"
+                                    data-exercise-id="${exerciseData.id}"
+                                    data-feedback="increase"
+                                    title="Increase weight/reps next time">
+                                <i class="fas fa-plus me-1"></i>Increase
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary"
+                                    data-function="click->updateExerciseFeedback"
+                                    data-exercise-id="${exerciseData.id}"
+                                    data-feedback="stay"
+                                    title="Keep same weight/reps">
+                                <i class="fas fa-equals me-1"></i>Same
+                            </button>
+                            <button type="button" class="btn btn-outline-warning"
+                                    data-function="click->updateExerciseFeedback"
+                                    data-exercise-id="${exerciseData.id}"
+                                    data-feedback="decrease"
+                                    title="Decrease weight/reps next time">
+                                <i class="fas fa-minus me-1"></i>Decrease
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="sets-container" data-exercise-id="${exerciseData.id}" data-exercise-name="${exerciseData.exercise_name}">
+                        <h6 class="mb-3">Sets & Reps</h6>
+                        <p class="text-muted no-sets-message text-center">No sets recorded for this exercise.</p>
+
+                        <div class="text-center mt-3">
+                            <button class="btn btn-outline-primary"
+                                    data-function="click->addSet"
+                                    data-exercise-id="${exerciseData.id}"
+                                    title="Add set">
+                                <i class="fas fa-plus me-1"></i>Add Set
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        return cardDiv;
     }
 })();
 </script>
