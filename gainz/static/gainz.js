@@ -1645,7 +1645,7 @@ async function addExerciseToWorkout(event) {
          console.error('Cannot find container for add exercise controls');
          return;
     }
-    const exerciseSelect = container.querySelector('select[name="exercise"]'); // Use name selector instead of ID
+    const exerciseSelect = container.querySelector('select[name="exercise"]');
     const typeSelect = container.querySelector('select[name="exercise_type"]');
 
     const exerciseId = exerciseSelect?.value;
@@ -1663,7 +1663,7 @@ async function addExerciseToWorkout(event) {
 
     if (response.ok) {
         send_toast('Exercise added to workout', 'success');
-        window.location.reload(); // Reload to see the change
+        window.location.reload();
     } else {
         send_toast(response.data?.detail || 'Error adding exercise', 'danger');
     }
@@ -2689,7 +2689,7 @@ function handleWorkoutExerciseDrop(event) {
         }
         workoutDraggedItem.classList.remove('drag-source-hidden');
 
-        // Update order in database
+        // Update order in database for this category container
         updateWorkoutExerciseOrder(container);
     }
 }

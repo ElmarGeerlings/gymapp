@@ -45,6 +45,7 @@ from gainz.views import (
     register, # Add register view
     generate_sample_data, # Add sample data generation view
     import_routine, # Add import routine view
+    import_single_routine, # Add import single routine view
     profile, # Add profile view
     progress_overview, # Add progress overview view
     exercise_progress_detail, # Add exercise progress detail view
@@ -127,6 +128,9 @@ urlpatterns = [
     
     # Import Routine
     path('routines/import/', import_routine, name='import-routine'),
+
+    # Import a single Routine from text
+    path('routines/import-single/', import_single_routine, name='routine-import-single'),
 
     # Update Routine
     path('routines/<int:routine_id>/edit/', routine_update, name='routine-update'),
