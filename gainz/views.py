@@ -47,6 +47,23 @@ def get_redis_connection():
     except:
         return None
 
+def renumber_exercises_by_type(workout):
+    """Renumber exercises maintaining type hierarchy: Primary > Secondary > Accessory
+    Preserves relative order within each type group."""
+    PRIORITY = {'primary': 3, 'secondary': 2, 'accessory': 1}
+
+    # Get all exercises and sort by type priority (descending), then by current order
+    all_exercises = list(workout.exercises.all())
+    all_exercises.sort(key=lambda ex: (
+        -PRIORITY.get(ex.get_exercise_type(), 1),  # Higher priority first
+        ex.order  # Then by current order within type
+    ))
+
+    # Renumber sequentially
+    for index, exercise in enumerate(all_exercises):
+        exercise.order = index
+        exercise.save()
+
 # Exercise ViewSets
 class ExerciseCategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ExerciseCategory.objects.all()
@@ -90,6 +107,11 @@ class WorkoutViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def _renumber_exercises_by_type(self, workout):
+        """Renumber exercises maintaining type hierarchy: Primary > Secondary > Accessory
+        Preserves relative order within each type group."""
+        return renumber_exercises_by_type(workout)
+
     @action(detail=True, methods=['post'])
     def add_exercise(self, request, pk=None):
         workout = self.get_object()
@@ -112,11 +134,8 @@ class WorkoutViewSet(viewsets.ModelViewSet):
         if serializer.is_valid():
             workout_exercise = serializer.save(workout=workout)
 
-            # Renumber all exercises to be sequential after insertion
-            all_exercises = workout.exercises.all().order_by('order')
-            for index, exercise in enumerate(all_exercises):
-                exercise.order = index
-                exercise.save()
+            # Renumber all exercises to be sequential after insertion, maintaining type hierarchy
+            self._renumber_exercises_by_type(workout)
 
             # Refresh serializer data with updated order
             serializer = WorkoutExerciseSerializer(workout_exercise)
@@ -258,6 +277,12 @@ class WorkoutExerciseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return WorkoutExercise.objects.filter(workout__user=self.request.user)
+
+    def perform_destroy(self, instance):
+        """Override destroy to renumber exercises after deletion, maintaining type hierarchy."""
+        workout = instance.workout
+        instance.delete()
+        renumber_exercises_by_type(workout)
 
 class ExerciseSetViewSet(viewsets.ModelViewSet):
     serializer_class = ExerciseSetSerializer
