@@ -141,7 +141,7 @@
                             </div>
 
                             <!-- Sets Section -->
-                            <div class="sets-container" data-exercise-id="{{ exercise.id }}" data-exercise-name="{{ exercise.exercise.name }}">
+                            <div class="sets-container" data-exercise-id="{{ exercise.id }}" data-exercise-name="{{ exercise.exercise.name }}" data-weight-increment="{{ exercise.exercise.weight_increment|default:2.5|floatformat:1 }}">
                                 <h6 class="mb-3">Sets & Reps</h6>
                                 {% if exercise.sets.all %}
                                     <div class="table-responsive">
@@ -158,25 +158,34 @@
                                             <tbody class="sets-tbody">
                                                 {% for set in exercise.sets.all %}
                                                     <tr class="set-row {% if set.is_completed %}set-completed{% endif %}"
-                                                        data-set-id="{{ set.id }}"
-                                                        data-set-index="{{ forloop.counter0 }}"
-                                                        data-reps="{{ set.reps }}"
-                                                        data-weight="{{ set.weight|floatformat:1 }}"
-                                                        data-is-completed="{% if set.is_completed %}true{% else %}false{% endif %}"
-                                                        data-exercise-id="{{ exercise.id }}">
+                                                         data-set-id="{{ set.id }}"
+                                                         data-set-index="{{ forloop.counter0 }}"
+                                                         data-reps="{{ set.reps }}"
+                                                         data-weight="{{ set.weight|floatformat:1 }}"
+                                                         data-is-amrap="{% if set.is_amrap %}true{% else %}false{% endif %}"
+                                                         data-is-completed="{% if set.is_completed %}true{% else %}false{% endif %}"
+                                                         data-exercise-id="{{ exercise.id }}">
                                                         <td class="set-reps">
-                                                            <input type="number" class="form-control form-control-sm set-reps-input"
-                                                                   value="{{ set.reps }}" min="0" step="1"
-                                                                   data-function="blur->updateSet"
-                                                                   data-set-id="{{ set.id }}"
-                                                                   data-field="reps">
+                                                            <button type="button" class="btn btn-link p-0 set-open-modal"
+                                                                    data-function="click->openSetEditModal"
+                                                                    data-set-id="{{ set.id }}"
+                                                                    data-exercise-id="{{ exercise.id }}"
+                                                                    data-current-reps="{{ set.reps }}"
+                                                                    data-current-weight="{{ set.weight|floatformat:1 }}"
+                                                                    data-is-amrap="{% if set.is_amrap %}true{% else %}false{% endif %}">
+                                                                {% if set.is_amrap %}&infin;{% else %}{{ set.reps }}{% endif %}
+                                                            </button>
                                                         </td>
                                                         <td class="set-weight">
-                                                            <input type="number" class="form-control form-control-sm set-weight-input"
-                                                                   value="{{ set.weight|floatformat:1 }}" min="0" step="0.5"
-                                                                   data-function="blur->updateSet"
-                                                                   data-set-id="{{ set.id }}"
-                                                                   data-field="weight">
+                                                            <button type="button" class="btn btn-link p-0 set-open-modal"
+                                                                    data-function="click->openSetEditModal"
+                                                                    data-set-id="{{ set.id }}"
+                                                                    data-exercise-id="{{ exercise.id }}"
+                                                                    data-current-reps="{{ set.reps }}"
+                                                                    data-current-weight="{{ set.weight|floatformat:1 }}"
+                                                                    data-is-amrap="{% if set.is_amrap %}true{% else %}false{% endif %}">
+                                                                {{ set.weight|floatformat:1 }}
+                                                            </button>
                                                         </td>
                                                     <td class="set-warmup text-center">
                                                             <input type="checkbox" class="form-check-input"

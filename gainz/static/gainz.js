@@ -845,6 +845,40 @@ async function saveExercise(event) {
     });
     data.is_custom = true; // Always set for this form
 
+    // Weight increment handling (radio + optional custom input)
+    try {
+        const choice = form.querySelector('input[name="weight_increment_choice"]:checked');
+        let increment = null;
+        if (choice) {
+            if (choice.value === 'custom') {
+                const customEl = document.getElementById('weight_increment_custom');
+                const raw = customEl ? customEl.value : '';
+                const normalized = (function(v){
+                    let s = String(v || '').replace(',', '.');
+                    let out = '';
+                    let dot = false;
+                    for (let i=0;i<s.length;i++){ const ch=s[i]; if(ch>='0'&&ch<='9'){out+=ch;} else if((ch==='.'||ch===',')&&!dot){out+='.'; dot=true;} }
+                    if(!out) return '';
+                    const parts=out.split('.');
+                    if(parts.length===1) return parts[0];
+                    return parts[0] + '.' + parts[1].slice(0,1);
+                })(raw);
+                if (normalized !== '' && normalized !== '.') {
+                    const num = Number(normalized);
+                    if (Number.isFinite(num) && num > 0) increment = Math.round(num * 10) / 10;
+                }
+            } else {
+                const num = Number(choice.value);
+                if (Number.isFinite(num) && num > 0) increment = Math.round(num * 10) / 10;
+            }
+        }
+        if (increment !== null) {
+            data.weight_increment = increment.toFixed(1);
+        }
+    } catch (e) {
+        console.warn('Weight increment parse error:', e);
+    }
+
     // Determine URL and method based on whether we're editing or creating
     const url = isEdit ? `/api/exercises/${exerciseId}/` : form.action;
     const method = isEdit ? 'PUT' : 'POST';
@@ -880,6 +914,7 @@ function editExercise(event) {
     const exerciseType = exerciseCard.dataset.exerciseType;
     const exerciseCategories = exerciseCard.dataset.exerciseCategories ?
         exerciseCard.dataset.exerciseCategories.split(',') : [];
+    const exerciseWeightIncrement = exerciseCard.dataset.exerciseWeightIncrement || '';
 
     // Update modal title
     document.getElementById('exercise-modal-title').textContent = 'Edit Exercise';
@@ -896,6 +931,29 @@ function editExercise(event) {
         option.selected = exerciseCategories.includes(option.value);
     });
 
+    // Prefill weight increment radios/custom
+    (function(){
+        const wi1 = document.getElementById('wi_1_0');
+        const wi2 = document.getElementById('wi_2_5');
+        const wic = document.getElementById('wi_custom');
+        const custom = document.getElementById('weight_increment_custom');
+        if (!wi1 || !wi2 || !wic || !custom) return;
+        let val = parseFloat(exerciseWeightIncrement);
+        if (Number.isFinite(val)) {
+            const rounded = Math.round(val * 10) / 10;
+            if (Math.abs(rounded - 1.0) < 0.0001) {
+                wi1.checked = true; custom.disabled = true; custom.value = '';
+            } else if (Math.abs(rounded - 2.5) < 0.0001) {
+                wi2.checked = true; custom.disabled = true; custom.value = '';
+            } else {
+                wic.checked = true; custom.disabled = false; custom.value = rounded.toFixed(1);
+            }
+        } else {
+            // default
+            wi2.checked = true; custom.disabled = true; custom.value = '';
+        }
+    })();
+
     // Show delete button for editing
     document.getElementById('delete-exercise-btn').style.display = 'inline-block';
 
@@ -905,6 +963,21 @@ function editExercise(event) {
     // Focus on the name field
     document.getElementById('id_name_modal').focus();
 }
+
+// Toggle custom weight increment input enable/disable
+(function(){
+    const custom = document.getElementById('weight_increment_custom');
+    const radios = document.querySelectorAll('input[name="weight_increment_choice"]');
+    if (custom && radios && radios.length) {
+        radios.forEach(r => r.addEventListener('change', () => {
+            if (document.getElementById('wi_custom')?.checked) {
+                custom.disabled = false;
+            } else {
+                custom.disabled = true;
+            }
+        }));
+    }
+})();
 
 // --- Delete Exercise ---
 // This function deletes a custom exercise
@@ -1292,20 +1365,28 @@ async function addSet(event) {
                 ? parseFloat(setData.weight).toFixed(1)
                 : '';
         const newRow = `
-            <tr class="set-row${setData.is_completed ? ' set-completed' : ''}" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${formattedWeight}" data-is-completed="${setData.is_completed ? 'true' : 'false'}" data-exercise-id="${exerciseId}">
+            <tr class="set-row${setData.is_completed ? ' set-completed' : ''}" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${formattedWeight}" data-is-amrap="${setData.is_amrap ? 'true' : 'false'}" data-is-completed="${setData.is_completed ? 'true' : 'false'}" data-exercise-id="${exerciseId}">
                 <td class="set-reps">
-                    <input type="number" class="form-control form-control-sm set-reps-input"
-                           value="${setData.reps}" min="0" step="1"
-                           data-function="blur->updateSet"
-                           data-set-id="${setData.id}"
-                           data-field="reps">
+                    <button type="button" class="btn btn-link p-0 set-open-modal"
+                            data-function="click->openSetEditModal"
+                            data-set-id="${setData.id}"
+                            data-exercise-id="${exerciseId}"
+                            data-current-reps="${setData.reps}"
+                            data-current-weight="${formattedWeight}"
+                            data-is-amrap="${setData.is_amrap ? 'true' : 'false'}">
+                        ${setData.is_amrap ? '&infin;' : setData.reps}
+                    </button>
                 </td>
                 <td class="set-weight">
-                    <input type="number" class="form-control form-control-sm set-weight-input"
-                           value="${formattedWeight}" min="0" step="0.5"
-                           data-function="blur->updateSet"
-                           data-set-id="${setData.id}"
-                           data-field="weight">
+                    <button type="button" class="btn btn-link p-0 set-open-modal"
+                            data-function="click->openSetEditModal"
+                            data-set-id="${setData.id}"
+                            data-exercise-id="${exerciseId}"
+                            data-current-reps="${setData.reps}"
+                            data-current-weight="${formattedWeight}"
+                            data-is-amrap="${setData.is_amrap ? 'true' : 'false'}">
+                        ${formattedWeight}
+                    </button>
                 </td>
                 <td class="set-warmup text-center">
                     <input type="checkbox" class="form-check-input"
@@ -3456,6 +3537,9 @@ function bootstrapGainzApp() {
     }
     gainzAppInitialized = true;
 
+    // Initialize Reps/Weight edit modal refs and listeners
+    try { initSetEditModal(); } catch (_) {}
+
     if (!mutationObserverStarted && document.body) {
         observer.observe(document.body, {
             childList: true,
@@ -3613,3 +3697,273 @@ function bindWorkoutSetSyncHandlers(root) {
         }
     });
 })();
+
+// ==========================
+// Reps/Weight Modal Editing
+// ==========================
+
+// Element refs
+let modal = null;
+let modalContent = null;
+let repsInput = null;
+let weightInput = null;
+let applySmartEditCheckbox = null;
+let hiddenSetId = null;
+let hiddenExerciseId = null;
+
+// State
+let lastNumericReps = 8; // default cache
+let isAmrap = false;
+let weightIncrement = 2.5;
+let baselineAllIdentical = false;
+let pointerState = null; // { target: 'reps'|'weight', startX, startY }
+
+function showModal() { if (modal) modal.style.display = 'block'; }
+function hideModal() { if (modal) modal.style.display = 'none'; }
+
+function sanitizeOneDecimal(value) {
+        if (value == null) return '';
+        let s = String(value).replace(',', '.');
+        let out = '';
+        let seenDot = false;
+        for (let i = 0; i < s.length; i++) {
+            const ch = s[i];
+            if ((ch >= '0' && ch <= '9')) {
+                out += ch;
+            } else if ((ch === '.' || ch === ',') && !seenDot) {
+                out += '.';
+                seenDot = true;
+            }
+        }
+        if (!out) return '';
+        const parts = out.split('.');
+        if (parts.length === 1) return parts[0];
+        return parts[0] + '.' + (parts[1].slice(0, 1));
+    }
+
+function parseWeightOneDecimal(text) {
+        const clean = sanitizeOneDecimal(text);
+        if (clean === '' || clean === '.') return null;
+        const num = Number(clean);
+        if (!Number.isFinite(num) || num < 0) return null;
+        return Math.round(num * 10) / 10;
+    }
+
+function setAmrapUI(active) {
+        isAmrap = !!active;
+        if (isAmrap) {
+            repsInput.disabled = true;
+            repsInput.value = '';
+            repsInput.placeholder = '∞';
+        } else {
+            repsInput.disabled = false;
+            repsInput.placeholder = '';
+            const val = Math.min(99, Math.max(1, parseInt(lastNumericReps || '8', 10)));
+            repsInput.value = String(val);
+        }
+    }
+
+function detectAllSetsIdentical(exerciseId) {
+        const container = document.querySelector(`.sets-container[data-exercise-id="${exerciseId}"]`);
+        if (!container) return false;
+        const rows = Array.from(container.querySelectorAll('.set-row'));
+        const normalized = rows.map(row => ({
+            reps: parseInt(row.dataset.reps || '0', 10) || 0,
+            weight: Number(row.dataset.weight || '0') || 0,
+            is_amrap: row.dataset.isAmrap === 'true'
+        }));
+        if (normalized.length === 0) return false;
+        const first = normalized[0];
+        return normalized.every(it => it.reps === first.reps && it.weight === first.weight && it.is_amrap === first.is_amrap);
+    }
+
+async function patchSetById(setId, payload) {
+        try {
+            const url = `/api/workouts/sets/${setId}/`;
+            const resp = await httpRequestHelper(url, 'PATCH', payload);
+            return resp.ok;
+        } catch (e) {
+            console.error('Error patching set', setId, e);
+            return false;
+        }
+    }
+
+function updateRowDOM(setId, exerciseId, newReps, newIsAmrap, newWeight) {
+        const row = document.querySelector(`.set-row[data-set-id="${setId}"]`);
+        if (!row) return;
+        if (typeof newWeight === 'number') {
+            row.dataset.weight = newWeight.toFixed(1);
+            const btns = row.querySelectorAll('.set-weight .set-open-modal');
+            btns.forEach(b => b.textContent = newWeight.toFixed(1));
+        }
+        row.dataset.isAmrap = newIsAmrap ? 'true' : 'false';
+        if (newIsAmrap) {
+            row.dataset.reps = '';
+            const btns = row.querySelectorAll('.set-reps .set-open-modal');
+            btns.forEach(b => b.innerHTML = '&infin;');
+        } else if (typeof newReps === 'number') {
+            row.dataset.reps = String(newReps);
+            const btns = row.querySelectorAll('.set-reps .set-open-modal');
+            btns.forEach(b => b.textContent = String(newReps));
+        }
+    }
+
+function getWeightIncrementForExercise(exerciseId) {
+        const container = document.querySelector(`.sets-container[data-exercise-id="${exerciseId}"]`);
+        if (!container) return 2.5;
+        const inc = Number(container.dataset.weightIncrement || '2.5');
+        return Number.isFinite(inc) && inc > 0 ? Math.round(inc * 10) / 10 : 2.5;
+    }
+
+function attachGestureHandlers(inputEl, kind) {
+        inputEl.addEventListener('pointerdown', (e) => {
+            pointerState = { target: kind, startX: e.clientX, startY: e.clientY };
+            try { inputEl.setPointerCapture(e.pointerId); } catch (_) {}
+        });
+        inputEl.addEventListener('pointermove', (e) => {
+            if (!pointerState) return;
+            const dx = e.clientX - pointerState.startX;
+            const dy = e.clientY - pointerState.startY;
+            if (kind === 'reps' && Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy) && dx < 0) {
+                if (!pointerState.didToggle) {
+                    pointerState.didToggle = true;
+                    if (isAmrap) {
+                        setAmrapUI(false);
+                    } else {
+                        const current = parseInt(repsInput.value || '8', 10);
+                        if (Number.isFinite(current)) lastNumericReps = current;
+                        setAmrapUI(true);
+                    }
+                }
+                return;
+            }
+            if (Math.abs(dy) > 20 && Math.abs(dy) > Math.abs(dx)) {
+                const steps = Math.trunc(Math.abs(dy) / 20);
+                if (steps <= 0) return;
+                if (kind === 'reps') {
+                    if (isAmrap) return;
+                    let current = parseInt(repsInput.value || '0', 10) || 0;
+                    const delta = dy < 0 ? steps : -steps;
+                    current = Math.min(99, Math.max(1, current + delta));
+                    repsInput.value = String(current);
+                    pointerState.startY = e.clientY;
+                } else if (kind === 'weight') {
+                    const inc = weightIncrement;
+                    const parsed = parseWeightOneDecimal(weightInput.value);
+                    let current = (parsed == null ? 0 : parsed);
+                    const delta = dy < 0 ? steps : -steps;
+                    let next = current + delta * inc;
+                    if (next < 0) next = 0;
+                    weightInput.value = (Math.round(next * 10) / 10).toFixed(1);
+                    pointerState.startY = e.clientY;
+                }
+            }
+        });
+        inputEl.addEventListener('pointerup', () => { pointerState = null; });
+        inputEl.addEventListener('pointercancel', () => { pointerState = null; });
+    }
+
+function prepareInputsFor(setId, exerciseId, currentReps, currentWeight, currentIsAmrap) {
+        hiddenSetId.value = setId;
+        hiddenExerciseId.value = exerciseId;
+        weightIncrement = getWeightIncrementForExercise(exerciseId);
+        if (currentIsAmrap) {
+            if (Number.isInteger(currentReps)) lastNumericReps = currentReps;
+            setAmrapUI(true);
+        } else {
+            isAmrap = false;
+            const r = Math.min(99, Math.max(1, parseInt(currentReps || '8', 10)));
+            repsInput.value = String(r);
+            lastNumericReps = r;
+            repsInput.disabled = false;
+        }
+        weightInput.value = (Number(currentWeight) || 0).toFixed(1);
+        baselineAllIdentical = detectAllSetsIdentical(exerciseId);
+        applySmartEditCheckbox.checked = true;
+    }
+
+async function saveAndClose() {
+        const setId = hiddenSetId.value;
+        const exerciseId = hiddenExerciseId.value;
+        if (!setId || !exerciseId) { hideModal(); return; }
+
+        let newIsAmrap = isAmrap;
+        let newReps = null;
+        if (!newIsAmrap) {
+            const r = parseInt(repsInput.value || '0', 10);
+            if (!Number.isInteger(r) || r < 1 || r > 99) { hideModal(); return; }
+            newReps = r;
+        }
+        const wParsed = parseWeightOneDecimal(weightInput.value);
+        if (wParsed == null) { hideModal(); return; }
+
+        const applySmart = !!applySmartEditCheckbox.checked;
+        const applyToAll = applySmart && baselineAllIdentical;
+
+        if (applyToAll) {
+            const container = document.querySelector(`.sets-container[data-exercise-id="${exerciseId}"]`);
+            const rows = Array.from(container.querySelectorAll('.set-row'));
+            for (const row of rows) {
+                const rowSetId = row.dataset.setId;
+                const payload = { weight: wParsed.toFixed(1), is_amrap: newIsAmrap };
+                if (!newIsAmrap) payload.reps = newReps;
+                const ok = await patchSetById(rowSetId, payload);
+                if (ok) updateRowDOM(rowSetId, exerciseId, newReps, newIsAmrap, wParsed);
+            }
+        } else {
+            const payload = { weight: wParsed.toFixed(1), is_amrap: newIsAmrap };
+            if (!newIsAmrap) payload.reps = newReps;
+            const ok = await patchSetById(setId, payload);
+            if (ok) updateRowDOM(setId, exerciseId, newReps, newIsAmrap, wParsed);
+        }
+
+        hideModal();
+    }
+
+function initSetEditModal() {
+    modal = document.getElementById('set-edit-modal');
+    if (!modal) return;
+    modalContent = modal.querySelector('[data-modal-content]');
+    repsInput = document.getElementById('set-edit-reps');
+    weightInput = document.getElementById('set-edit-weight');
+    applySmartEditCheckbox = document.getElementById('apply-smart-edit');
+    hiddenSetId = document.getElementById('set-edit-id');
+    hiddenExerciseId = document.getElementById('set-edit-exercise-id');
+
+    if (repsInput) attachGestureHandlers(repsInput, 'reps');
+    if (weightInput) attachGestureHandlers(weightInput, 'weight');
+    if (weightInput) weightInput.addEventListener('input', () => {
+        const clean = (function(v){
+            let s = String(v || '').replace(',', '.');
+            let out = '';
+            let dot = false;
+            for (let i=0;i<s.length;i++){ const ch=s[i]; if(ch>='0'&&ch<='9'){out+=ch;} else if((ch==='.'||ch===',')&&!dot){out+='.'; dot=true;} }
+            if(!out) return '';
+            const parts=out.split('.');
+            if(parts.length===1) return parts[0];
+            return parts[0] + '.' + parts[1].slice(0,1);
+        })(weightInput.value);
+        weightInput.value = clean;
+    });
+}
+
+// Backdrop click handled via data-function handler (closeSetEditModal)
+function openSetEditModal(event) {
+    event.preventDefault();
+    if (!modal) initSetEditModal();
+    const btn = event.currentTarget;
+    const setId = btn.dataset.setId;
+    const exerciseId = btn.dataset.exerciseId;
+    const currentReps = parseInt(btn.dataset.currentReps || '0', 10);
+    const currentWeight = Number(btn.dataset.currentWeight || '0');
+    const currentIsAmrap = btn.dataset.isAmrap === 'true';
+    prepareInputsFor(setId, exerciseId, currentReps, currentWeight, currentIsAmrap);
+    showModal();
+}
+
+function closeSetEditModal(event) {
+    if (event && event.target && event.target.closest && event.target.closest('[data-modal-content]')) {
+        return;
+    }
+    saveAndClose();
+}
