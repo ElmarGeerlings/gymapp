@@ -44,6 +44,26 @@
             {% endif %}
         </div>
 
+        <div class="form-group">
+            <label class="form-label">Weight Increment (kg)</label>
+            <div class="d-flex align-items-center gap-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="weight_increment_choice" id="wi_1_0_page" value="1.0" {% if form_data.weight_increment == '1.0' %}checked{% endif %}>
+                    <label class="form-check-label" for="wi_1_0_page">1.0</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="weight_increment_choice" id="wi_2_5_page" value="2.5" {% if not form_data.weight_increment or form_data.weight_increment == '2.5' %}checked{% endif %}>
+                    <label class="form-check-label" for="wi_2_5_page">2.5</label>
+                </div>
+                <div class="form-check d-flex align-items-center">
+                    <input class="form-check-input me-2" type="radio" name="weight_increment_choice" id="wi_custom_page" value="custom" {% if form_data.weight_increment and form_data.weight_increment not in '1.0,2.5' %}checked{% endif %}>
+                    <label class="form-check-label me-2" for="wi_custom_page">Custom</label>
+                    <input type="text" name="weight_increment" id="weight_increment_custom_page" class="form-control" style="width: 90px;" placeholder="0.0" value="{{ form_data.weight_increment|default:'' }}" inputmode="decimal" {% if not form_data.weight_increment or form_data.weight_increment in '1.0,2.5' %}disabled{% endif %}>
+                </div>
+            </div>
+            <small class="form-text text-muted">If not set, 2.5 kg is used as default.</small>
+        </div>
+
         <button type="submit" class="btn btn-primary">Add Exercise</button>
         <a href="{% url 'exercise-list' %}" class="btn btn-secondary">Cancel</a>
     </form>

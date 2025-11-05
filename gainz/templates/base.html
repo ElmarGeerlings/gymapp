@@ -149,6 +149,33 @@
             }
         })();
     </script>
+    
+    <!-- Reps/Weight Edit Modal -->
+    <div id="set-edit-modal" class="siu-modal" style="display: none;" data-function="click->closeSetEditModal">
+        <div class="siu-modal-content" style="max-width: 420px;" data-modal-content>
+            <h2 class="mb-3">Edit Set</h2>
+            <input type="hidden" id="set-edit-id" value="">
+            <input type="hidden" id="set-edit-exercise-id" value="">
+
+            <div class="row g-3 align-items-center mb-2">
+                <div class="col-6">
+                    <label for="set-edit-reps" class="form-label">Reps</label>
+                    <input id="set-edit-reps" class="form-control" type="number" inputmode="numeric" min="1" max="99" step="1">
+                </div>
+                <div class="col-6">
+                    <label for="set-edit-weight" class="form-label">Weight (kg)</label>
+                    <input id="set-edit-weight" class="form-control" type="text" inputmode="decimal" placeholder="0.0">
+                </div>
+            </div>
+
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" value="1" id="apply-smart-edit" checked>
+                <label class="form-check-label" for="apply-smart-edit">
+                    Apply Smart Edit
+                </label>
+            </div>
+        </div>
+    </div>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

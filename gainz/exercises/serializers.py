@@ -20,7 +20,8 @@ class ExerciseSerializer(serializers.ModelSerializer):
             'categories', # Expects list of category IDs on write
             'category_names', # Read-only list of names
             'is_custom',
-            'exercise_type' # Added missing exercise_type field
+            'exercise_type', # Added missing exercise_type field
+            'weight_increment', # Per-exercise weight increment (kg)
         ]
         # Optionally, make 'categories' write-only if you only want names on read
         # extra_kwargs = {

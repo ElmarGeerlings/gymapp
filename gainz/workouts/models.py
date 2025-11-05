@@ -217,10 +217,12 @@ class ExerciseSet(models.Model):
     """ Represents a single set performed for a WorkoutExercise. """
     workout_exercise = models.ForeignKey(WorkoutExercise, related_name='sets', on_delete=models.CASCADE)
     set_number = models.PositiveIntegerField()
-    reps = models.PositiveIntegerField()
+    reps = models.PositiveIntegerField(null=True, blank=True)
     weight = models.DecimalField(max_digits=6, decimal_places=2)
     is_warmup = models.BooleanField(default=False)
     is_completed = models.BooleanField(default=False)
+    # AMRAP support: when True, reps is logged later and may be null at creation/edit time
+    is_amrap = models.BooleanField(default=False)
 
     def __str__(self):
         # Adding a basic __str__ for ExerciseSet
@@ -289,6 +291,8 @@ class ExerciseSet(models.Model):
     
     def get_rep_range_category(self) -> str:
         """Return 'low' (1-3), 'mid' (4-6), 'high' (7+)"""
+        if not isinstance(self.reps, int):
+            return 'high'
         if 1 <= self.reps <= 3:
             return 'low'
         elif 4 <= self.reps <= 6:
@@ -301,12 +305,15 @@ class ExerciseSet(models.Model):
         return (
             not self.is_warmup and 
             self.weight > 0 and 
+            isinstance(self.reps, int) and
             self.reps > 0 and 
             self.reps <= 15
         )
     
     def get_volume(self) -> Decimal:
         """Calculate volume (sets × reps × weight) for this set"""
+        if not isinstance(self.reps, int):
+            return Decimal('0')
         return self.reps * self.weight
 
 # -- Timer Preference Models --
