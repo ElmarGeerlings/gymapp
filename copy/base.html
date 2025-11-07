@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta jadid="{{ JAD_ID }}" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <title>
+      {% block title %}
+
+      {% endblock %} - {{ STORE_NAME }} - {{ DASHBOARD_NAME }}
+    </title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="{{ static('css/new_css/variables.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/base.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/standards.css') }}?v={{ JAD_VERSION }}" />
+
+    <link rel="stylesheet" href="{{ static('css/new_css/pages/sellfiller/base.css') }}?v={{ JAD_VERSION }}" />
+
+    <link rel="stylesheet" href="{{ static('css/new_css/components/grid.css') }}?v={{ JAD_VERSION }}" />
+		<link rel="stylesheet" href="{{ static('css/new_css/components/buttons.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/navbar.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/sidebar.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/modal.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/search.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/alerts.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/pills.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/card.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/pages/sellfiller/table.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/progressbar.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="stylesheet" href="{{ static('css/new_css/components/media.css') }}?v={{JAD_VERSION}}">
+    <link rel="stylesheet" href="{{ static('css/new_css/components/tooltips.css') }}?v={{ JAD_VERSION }}" />
+
+    <link href="{{ static(FAVICON_FILE) }}" type="image/x-icon" rel="icon" />
+    <link rel="stylesheet" href="{{ static('css/font-awesome-line-awesome.css') }}?v={{ JAD_VERSION }}" />
+
+    {% block head_css %}
+
+    {% endblock %}
+
+    <link rel="stylesheet" href="{{ static('css/icons.css') }}?v={{ JAD_VERSION }}" />
+    <link rel="manifest" href="{{ static('manifest/manifest.json') }}" />
+
+    <meta property="og:title" content="{{ STORE_NAME }} x Stockitup" />
+    <meta property="og:description" content="ID: {{ JAD_ID }} Versie: {{ JAD_VERSION }}" />
+    <meta property="og:image" content="{{ static('logos/STOCKitUP_logo40.png') }}" />
+    <meta property="og:url" content="https://stockitup.nl" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Stockitup 👑 alles-in-een verkopertool" />
+
+    {% block headend %}
+
+    {% endblock %}
+  </head>
+  <body class="position-relative">
+    {% include 'startup_banner.html' %}
+
+    <div id="outer-bar">
+      <div id="inner-bar"></div>
+    </div>
+
+    <div aria-live="polite" aria-atomic="true" class="polite_modal">
+      <div class="toast-container"></div>
+    </div>
+
+    <div class="app_layout container-fluid" id="outer-container">
+      <div class="row app_layout__inner">
+        <!-- Sidebar START -->
+        <div class="col-auto app_layout__sidebar">
+          <div id="sidebar" class="show collapse collapse-horizontal">
+            <div id="sidebar-nav">
+              <!-- Sidebar-nav top -->
+              <div class="sidebar-nav__top">
+                <div class="siu-logo">
+                  {% if VERZENDSIMPEL_CLIENT %}
+                    <img src="{{ static('logos/third-party/verzendsimpel.svg') }}" />
+                  {% endif %}
+                  <img src="{{ static('logo.png') }}" />
+                </div>
+                <form id="global-search-form">
+                  <button type="submit" disabled aria-hidden="true"></button>
+                  <div class="col">
+                    <div class="relative">
+                      <input autocomplete="off" type="text" id="sidebar-search-input" placeholder="Zoeken..." name="query" data-function="input->global_search" />
+                    </div>
+                  </div>
+                </form>
+                <div class="sidebar_main_items">
+                  {% include 'sellfiller/sidebar.html' %}
+                </div>
+
+                <div class="responsive_menu">
+                  {% for main_name, main_item in global_nav_items.items() %}
+                    <span class="responsive_menu__item" data-bs-toggle="collapse" data-bs-target="#collapse{{ main_name }}" aria-expanded="false" aria-controls="collapse{{ main_name }}">
+                      <a class="btn {% if request.path == main_item.base_url %}active{% endif %}">{{ main_name }}</a>
+                      <i class="siu-icon/siu-icon-large siu-arrow-down"></i>
+                    </span>
+                    <div class="collapse" id="collapse{{ main_name }}">
+                      <ul>
+                        {% for name, item in main_item.urls.items() %}
+                          {% if not item.hidden %}
+                            <li>
+                              <a class="fine-print" href="/{{ item.url }}/">{{ name }}</a>
+                            </li>
+                          {% endif %}
+                        {% endfor %}
+                      </ul>
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="sidebar-nav__bottom">
+                <!-- Bottom items -->
+                <div class="bottom-items">
+                  <a class="mt-auto" href="/instellingen/algemeen/BTW/">
+                    <img src="/static/css/icons/cog.svg" alt="Cog Icon" />
+                    <p>Instellingen</p>
+                  </a>
+                  {% if user.is_siu_employee %}
+                  <a href="/help/">
+                    <img src="/static/css/icons/phone.svg" alt="User Icon" />
+                    <p>Help</p>
+                  </a>
+                    <a href="/ontwerp/">
+                      <img src="/static/css/icons/vulkleur.svg" alt="User Icon" />
+                      <p>Design</p>
+                    </a>
+                  {% endif %}
+                </div>
+
+                <!-- User account -->
+                <div class="user-account" data-bs-toggle="collapse" data-bs-target="#collapseUser" aria-expanded="false" aria-controls="collapseUser">
+                  <!-- User account items -->
+                  <div class="collapse" id="collapseUser">
+                    <ul>
+                      {% if user.username == 'demo' %}
+                        <li>
+                          <a target="_blank" href="/demo_home/">Open Demo control</a>
+                        </li>
+                      {% endif %}
+
+                      <li>
+                        <a href="/welkom/">Welkom</a>
+                      </li>
+
+                      <li>
+                        <a href="/uitloggen/">Log uit</a>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="user-account_bottom">
+                    <img class="new_icon" src="/static/css/icons/user.svg" alt="User Icon" />
+                    <div class="user-account__inner">
+                      <div class="name body-default">{{ user.username }}</div>
+                      {% if user.is_dev %}
+                        <span class="badge bg-primary-strong mx-1">{{ request.session.p }}</span>
+                        <span class="badge bg-primary-strong">{{ request.session.view_type }}</span>
+                      {% endif %}
+                    </div>
+                    <img src="/static/css/icons/chevron_up_small.svg" alt="Chevron Up" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Sidebar END -->
+
+        <!-- Navbar START -->
+        <div class="app_layout__navbar col">
+          <div class="app_layout__navbar__inner">
+            <div class="vw-mobile-header">
+              <div id="search-results"></div>
+              <nav class="navbar">
+                <div class="container-fluid navbar__inner">
+                  <div class="navbar__first">
+                    <div data-function="click->toggle_sidebar">
+                      <img src="/static/css/icons/navbar_toggler.svg" alt="Toggler" />
+                    </div>
+                    <div class="nav_branding" id="navbarCollapse">
+                      {% if user.is_dev %}
+                        <a tabindex="-1" href="/" data-siu="click->navigate">
+                          {% if VERZENDSIMPEL_CLIENT %}
+                            <img src="{{ static('logos/third-party/verzendsimpel.svg') }}" />
+                          {% endif %}
+                          <img src="{{ static('logo.png') }}" />
+                        </a>
+                      {% else %}
+                        <a tabindex="-1" href="/dashboard/" data-siu="click->navigate">
+                          {% if VERZENDSIMPEL_CLIENT %}
+                            <img src="{{ static('logos/third-party/verzendsimpel.svg') }}" />
+                          {% endif %}
+                          <img src="{{ static('logo.png') }}" />
+                        </a>
+                      {% endif %}
+                    </div>
+                    <div class="navbar__text" id="navbarText">
+                      <ul>
+                        {% if user.supply_rights %}
+                          <li>
+                            <a tabindex="-1" class="{% if request.path == '/inventory/' %}active{% endif %}" href="/inventory/">Voorraad</a>
+                          </li>
+                        {% endif %} {% if user.orders_rights %}
+                          <li>
+                            <a tabindex="-1" class="{% if request.path == '/orders2/items/' %}active{% endif %}" href="/orders2/items/">Bestellingen</a>
+                          </li>
+                        {% endif %} {% if user.profit_rights %}
+                          <li>
+                            <a tabindex="-1" class="{% if request.path == '/prestaties/' %}active{% endif %}" href="/prestaties/">Prestaties</a>
+                          </li>
+                        {% endif %} {% if user.suggestions_rights %}
+                          <li>
+                            <a tabindex="-1"
+                              class="{% if request.path == '/inkoop/manual/' or request.path == '/inkoop/products/' or request.path == '/inkoop/' %}active{% endif %} position-relative"
+                              href="{% if SUGGESTION_PAGE_STATE %}
+                                /inkoop/manual/
+                              {% else %}
+                                /inkoop/products/
+                              {% endif %}">
+                              Inkopen
+                            </a>
+                          </li>
+                        {% endif %} {% if user.marketing_rights %}
+                          <li>
+                            <a tabindex="-1" class="{% if request.path == '/marketing/' %}active{% endif %}" href="/marketing/">Marketing</a>
+                          </li>
+                        {% endif %} {% if user.integration_rights %}
+                          <li>
+                            <a tabindex="-1" class="{% if request.path == '/kanalen/' %}active{% endif %}" href="/kanalen/">Koppelingen</a>
+                          </li>
+                        {% endif %}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div class="navbar__end">
+                    <!--  <span
+                      id="present-user-indicator"
+                      class="mx-3 d-none"
+                    ></span>  -->
+                    <!--  {% if user.is_siu_employee %} {#
+                    <span id="darkmode-wrapper">
+                      <a
+                        href="#"
+                        onclick="window.location.reload(true); return false;"
+                        class="siu-icon {% if request.session.darkmode %}siu-h-darkmode-hover_off{% else %}siu-h-lightmode-hover_off{% endif %} pointer me-4"
+                        data-reflex="click->BaseReflex#toggle_darkmode"
+                      ></a>
+                    </span>
+                    #} {% endif %}   -->
+
+                    <span id="bell-wrapper">{% include 'bell_icon.html' %}</span>
+                    <div id="notifications-div" hidden></div>
+                  </div>
+                </div>
+              </nav>
+
+              <div id="chest">
+                <!-- <div class="row" id="page_header"></div> -->
+                <div id="tiddy" style="position: relative">
+                  {% if EXPIRING_BOLCHANNELS and not JAD_ID == 0 %}
+                    <div class="alert alert-danger">
+                      <i class="fas fa-exclamation-circle"></i>
+                      De autorisatie van de volgende Bol kanalen verloopt deze week: {{ EXPIRING_BOLCHANNELS }}. Een autorisatie is een jaar geldig. Autoriseer ze
+                      <a href="/koppelingen/">hier</a> opnieuw door op 'login op bol' te klikken.
+                    </div>
+                  {% endif %} {% if WARNING_BANNER %}
+                    {{ WARNING_BANNER|safe }}
+                  {% endif %} {% block content %}
+
+                  {% endblock %}
+                </div>
+                <div id="feedback_modals">
+                  {% if feedback %}
+                    {% include 'components/feedback_modal.html' %}
+                  {% endif %}
+                </div>
+                <div id="content_modal"></div>
+              </div>
+            </div>
+            <script>
+              window.pick_mode = '{{PICK_MODE}}'
+            </script>
+            <script src="{{ static('js/jquery-3.5.1.slim.min.js') }}?v={{ JAD_VERSION }}"></script>
+            <script src="{{ static('js/popper.min.js') }}?v={{ JAD_VERSION }}"></script>
+            <!-- <script src="{{ static('bootstrap-5.2.2/dist/js/bootstrap.bundle.min.js') }}?v={{ JAD_VERSION }}"></script> -->
+            <script src="{{ static('js/Chart.min.js') }}?v={{ JAD_VERSION }}"></script>
+            <script src="{{ static('lottie/lottieplayer.js') }}?v={{ JAD_VERSION }}"></script>
+            {% if DEBUG %}
+            <script src="{{ static('js/react.development.js') }}?v={{ JAD_VERSION }}"></script>
+            <script src="{{ static('js/react-dom.development.js') }}?v={{ JAD_VERSION }}"></script>
+            {% else %}
+            <script src="{{ static('js/react.production.js') }}?v={{ JAD_VERSION }}"></script>
+            <script src="{{ static('js/react-dom.production.js') }}?v={{ JAD_VERSION }}"></script>
+            {% endif %}
+
+            <script>
+              // Ensure React is available globally for non-AMD scripts
+              if (typeof window.React === 'undefined' && typeof React !== 'undefined') {
+                window.React = React;
+              }
+              if (typeof window.ReactDOM === 'undefined' && typeof ReactDOM !== 'undefined') {
+                window.ReactDOM = ReactDOM;
+              }
+            </script>
+
+            {% if request.path != '/help/' %}
+            <script src="{{ static('js/stockitup.js') }}?v={{ JAD_VERSION }}"></script>
+            <script src="{{ static('js/siu_new.js') }}?v={{ JAD_VERSION }}"></script>
+            {% endif %}
+
+            {% block js %}
+
+            {% endblock %}
+          </div>
+        </div>
+        <!-- Navbar END -->
+      </div>
+    </div>
+    <div id="disconnection-cover" class="display-3 text-primary fw-bold" style="
+        left: 0;
+        top: 0;
+        position: absolute;
+        height: 100%;
+        width: 100%;
+        z-index: 99999999;
+        background-color: rgba(21, 73, 124, 0.4);
+        display: none;
+        text-align: center;
+        justify-content: center;
+        align-items: center;
+      ">⌛ Wachten op verbinding...</div>
+
+    {% if user.is_dev %}
+      <div class="modal fade" id="help-modal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <ul>
+                <li>
+                  <b>a</b>: dev
+                </li>
+                <li>
+                  <b>s</b>: sellfiller
+                </li>
+                <li>
+                  <b>d</b>: docs/meta
+                </li>
+                <li>
+                  <b>f</b>: website
+                </li>
+                <li>
+                  <b>z</b>: external
+                </li>
+                <li>
+                  <b>x</b>: seller
+                </li>
+                <li>
+                  <b>c</b>: fulfiller
+                </li>
+              </ul>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">sluiten</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </body>
+</html>
