@@ -23,10 +23,21 @@ ssh -o StrictHostKeyChecking=no $SERVER << EOF
 
     # Pull latest changes
     echo -e "${YELLOW}Pulling latest code...${NC}"
-    sudo -u gainz bash -lc 'cd $APP_DIR && git pull origin master'
+    sudo -u gainz bash -lc "cd $APP_DIR && git pull origin master"
 
-    # Check if Django code changed (optional - requires more complex logic)
-    # For now, always restart services
+    # Install/update dependencies
+    echo -e "${YELLOW}Installing/updating dependencies...${NC}"
+    sudo -u gainz bash -lc "cd $APP_DIR && source venv/bin/activate && pip install -r requirements.txt --quiet"
+
+    # Run database migrations
+    echo -e "${YELLOW}Running database migrations...${NC}"
+    sudo -u gainz bash -lc "cd $APP_DIR && source venv/bin/activate && python manage.py migrate --noinput"
+
+    # Collect static files
+    echo -e "${YELLOW}Collecting static files...${NC}"
+    sudo -u gainz bash -lc "cd $APP_DIR && source venv/bin/activate && python manage.py collectstatic --noinput"
+
+    # Restart services
     echo -e "${YELLOW}Restarting services...${NC}"
     sudo systemctl restart gainz
     sudo systemctl reload caddy
