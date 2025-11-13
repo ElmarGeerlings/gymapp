@@ -44,7 +44,7 @@ router.register(r'workouts/sets', ExerciseSetViewSet, basename='exercise-set')
 
 # Define urlpatterns as a list
 urlpatterns = [
-    # Health check for Railway
+    # Health check endpoint
     path('health/', health_check, name='health-check'),
 
     # Homepage

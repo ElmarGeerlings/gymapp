@@ -42,7 +42,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-w!r=&r-lul9aiu8pq!nh(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.railway.app').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,elgainz.com,www.elgainz.com').split(',')
 
 # Application definition
 
@@ -102,14 +102,14 @@ WSGI_APPLICATION = 'gainz.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Use DATABASE_URL from environment (Railway provides this)
+# Use DATABASE_URL from environment if provided
 import dj_database_url
 
 # Get database URL from environment
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL:
-    # Production database (Railway)
+    # Production database from DATABASE_URL
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL)
     }
@@ -248,7 +248,8 @@ if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 else:
     CORS_ALLOWED_ORIGINS.extend([
-        "https://your-app-name.railway.app",  # Replace with your actual Railway domain
+        "https://elgainz.com",
+        "https://www.elgainz.com",
     ])
 
 try:

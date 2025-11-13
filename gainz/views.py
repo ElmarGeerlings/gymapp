@@ -1071,7 +1071,7 @@ def update_user_preferences(request):
 
     return JsonResponse({'status': 'error', 'message': 'Invalid request method.'}, status=405)
 
-# Health check view for Railway deployment
+# Health check view
 def health_check(request):
-    """Simple health check endpoint for Railway"""
+    """Simple health check endpoint"""
     return HttpResponse("OK", content_type="text/plain")

@@ -6,14 +6,11 @@ from .settings import *
 DEBUG = False
 SECRET_KEY = os.getenv('SECRET_KEY')
 
-# Allow Railway's domain
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    '.railway.app',
-    '.render.com',
-    '.herokuapp.com',
-    '.digitalocean.app',
+    'elgainz.com',
+    'www.elgainz.com',
 ]
 
 # Database - Use PostgreSQL in production
@@ -61,9 +58,8 @@ X_FRAME_OPTIONS = 'DENY'
 
 # CORS settings for production
 CORS_ALLOWED_ORIGINS = [
-    "https://your-app-name.railway.app",
-    "https://your-app-name.onrender.com",
-    # Add your actual domain here
+    "https://elgainz.com",
+    "https://www.elgainz.com",
 ]
 
 # Remove debug toolbar in production
