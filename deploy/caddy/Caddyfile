@@ -1,0 +1,51 @@
+91.98.229.71 {
+    # Handle static files
+    @static {
+        file {
+            try_files {path} {path}/
+        }
+        path *.ico *.css *.js *.gif *.jpg *.jpeg *.png *.svg *.woff *.woff2
+    }
+    handle @static {
+        uri strip_prefix /static
+        root * /srv/gainz/staticfiles
+        file_server
+    }
+
+    # Handle media files
+    @media {
+        path /media/*
+    }
+    handle @media {
+        uri strip_prefix /media
+        root * /srv/gainz/mediafiles
+        file_server
+    }
+
+    # Handle Django app
+    handle {
+        reverse_proxy unix//srv/gainz/app/gainz.sock
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Enable automatic HTTPS
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/gainz.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}

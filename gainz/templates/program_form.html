@@ -39,6 +39,41 @@
 
                 <hr class="my-4">
 
+                <h4 class="mb-3">Timer Preferences</h4>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="primary_timer_seconds" class="form-label">Primary Exercise Timer (seconds)</label>
+                        <input type="number" class="form-control" id="primary_timer_seconds" name="primary_timer_seconds" 
+                               value="{% if program_timer_prefs.primary_timer_seconds %}{{ program_timer_prefs.primary_timer_seconds }}{% endif %}" 
+                               min="10" max="3600" placeholder="Default: User Setting">
+                        <small class="form-text text-muted">Leave blank to use user default</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="secondary_timer_seconds" class="form-label">Secondary Exercise Timer (seconds)</label>
+                        <input type="number" class="form-control" id="secondary_timer_seconds" name="secondary_timer_seconds" 
+                               value="{% if program_timer_prefs.secondary_timer_seconds %}{{ program_timer_prefs.secondary_timer_seconds }}{% endif %}" 
+                               min="10" max="3600" placeholder="Default: User Setting">
+                        <small class="form-text text-muted">Leave blank to use user default</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="accessory_timer_seconds" class="form-label">Accessory Exercise Timer (seconds)</label>
+                        <input type="number" class="form-control" id="accessory_timer_seconds" name="accessory_timer_seconds" 
+                               value="{% if program_timer_prefs.accessory_timer_seconds %}{{ program_timer_prefs.accessory_timer_seconds }}{% endif %}" 
+                               min="10" max="3600" placeholder="Default: User Setting">
+                        <small class="form-text text-muted">Leave blank to use user default</small>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="auto_start_timer" name="auto_start_timer"
+                               {% if program_timer_prefs.auto_start_timer %}checked{% endif %}>
+                        <label class="form-check-label" for="auto_start_timer">Auto-start timer for this program</label>
+                        <small class="form-text text-muted d-block">Override user's auto-start setting for this program</small>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
                 <h4 class="mb-3">Scheduling Type</h4>
                 <div class="mb-3">
                     <div class="form-check">
@@ -65,9 +100,16 @@
                                     <!-- Routines for this day will be added here -->
                                      {% for pr in program_routines %}
                                         {% if pr.assigned_day == day_val %}
-                                            <div class="routine-chip" data-routine-id="{{ pr.routine.id }}">
-                                                <span>{{ pr.routine.name }}</span>
-                                                <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+                                            <div class="routine-chip"
+                                                 draggable="true"
+                                                 data-routine-id="{{ pr.routine.id }}"
+                                                 data-routine-name="{{ pr.routine.name }}"
+                                                 tabindex="0"
+                                                 title="Double tap or double click to open routine">
+                                                <span class="routine-chip-label">{{ pr.routine.name }}</span>
+                                                <div class="d-flex align-items-center">
+                                                    <button type="button" class="btn-close btn-close-white btn-sm" data-ignore-double-activate="true" aria-label="Remove"></button>
+                                                </div>
                                                 <input type="hidden" name="weekly_day_{{ day_val }}_routines" value="{{ pr.routine.id }}">
                                             </div>
                                         {% endif %}
@@ -95,7 +137,9 @@
                                 <input type="hidden" name="program_routine_{{ forloop.counter0 }}_routine_id" value="{{ pr.routine.id }}">
                                 <div class="col-md-5">
                                     <label class="form-label visually-hidden">Routine</label>
-                                    <input type="text" class="form-control" value="{{ pr.routine.name }}" readonly>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="text" class="form-control routine-open-trigger" value="{{ pr.routine.name }}" readonly data-routine-id="{{ pr.routine.id }}" data-routine-name="{{ pr.routine.name }}" title="Double tap or double click to open routine">
+                                    </div>
                                 </div>
                                 <div class="col-md-2">
                                     <label for="order_{{ forloop.counter0 }}" class="form-label visually-hidden">Order</label>
@@ -153,7 +197,9 @@
         <input type="hidden" name="program_routine___INDEX___routine_id" value="__ROUTINE_ID__">
         <div class="col-md-5">
             <label class="form-label visually-hidden">Routine</label>
-            <input type="text" class="form-control" value="__ROUTINE_NAME__" readonly>
+            <div class="d-flex align-items-center gap-2">
+                <input type="text" class="form-control routine-open-trigger" value="__ROUTINE_NAME__" readonly data-routine-id="__ROUTINE_ID__" data-routine-name="__ROUTINE_NAME__" title="Double tap or double click to open routine">
+            </div>
         </div>
         <div class="col-md-2">
             <label for="order___INDEX__" class="form-label visually-hidden">Order</label>

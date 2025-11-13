@@ -16,22 +16,24 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Environment variables
 REDIS_HOST = os.environ.get("REDIS_HOST", 'localhost')
 REDIS_PORT = os.environ.get("REDIS_PORT", '6379')
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", None)
 
-try:
-    from django_redis import get_redis_connection
+import importlib.util
 
+# Detect available Redis cache backend without importing missing modules
+if importlib.util.find_spec('django_redis') is not None:
     REDIS_CACHE_TYPE = 'django-redis'
-except ImportError:
-    try:
-        import redis_cache
-
-        REDIS_CACHE_TYPE = 'django-redis-cache'
-    except ImportError:
-        REDIS_CACHE_TYPE = 'none'
+elif importlib.util.find_spec('redis_cache') is not None:
+    REDIS_CACHE_TYPE = 'django-redis-cache'
+else:
+    REDIS_CACHE_TYPE = 'none'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -43,6 +45,14 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-w!r=&r-lul9aiu8pq!nh(
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,elgainz.com,www.elgainz.com').split(',')
+
+# Django 4.2: allow configuring CSRF trusted origins via env
+# Example: CSRF_TRUSTED_ORIGINS="https://yourdomain.com,https://www.yourdomain.com"
+_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins_env.split(',') if o.strip()]
+
+# Respect X-Forwarded-Proto from reverse proxies (e.g., Caddy/Nginx)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Application definition
 
@@ -63,6 +73,7 @@ INSTALLED_APPS = [
     'gainz.exercises',  # Full path to the app
     'gainz.workouts',   # Full path to the app
     'gainz.ai',         # AI conversation app
+    'gainz.social',     # Social features app
 ]
 
 MIDDLEWARE = [
@@ -108,10 +119,21 @@ import dj_database_url
 # Get database URL from environment
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
+# Check if we're on Render (they set RENDER environment variable)
+IS_RENDER = os.environ.get('RENDER')
+
 if DATABASE_URL:
     # Production database from DATABASE_URL
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL)
+    }
+elif IS_RENDER:
+    # Use SQLite on Render if no DATABASE_URL (temporary for testing)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': '/tmp/db.sqlite3',
+        }
     }
 else:
     # Development database
@@ -126,8 +148,49 @@ else:
         }
     }
 
-# Redis configuration for production
-if REDIS_CACHE_TYPE == 'django-redis':
+# Redis configuration for production (optional)
+# Disable Redis if not available (for free deployments)
+REDIS_URL = os.environ.get('REDIS_URL')
+if REDIS_URL:
+    # Parse Redis URL for SSL/TLS connections (common on Render)
+    import ssl
+    from urllib.parse import urlparse
+
+    parsed_redis_url = urlparse(REDIS_URL)
+
+    # Check if it's a rediss:// URL (Redis with SSL/TLS)
+    if parsed_redis_url.scheme == 'rediss':
+        # Configure for SSL/TLS connection
+        # Create an SSL context that doesn't verify certificates
+        ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': REDIS_URL,
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                    'CONNECTION_POOL_KWARGS': {
+                        'ssl_context': ssl_context,
+                    }
+                },
+            },
+        }
+    else:
+        # Regular Redis connection without SSL
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': REDIS_URL,
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                },
+            },
+        }
+elif REDIS_CACHE_TYPE == 'django-redis':
+    # Fall back to individual Redis settings
     redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
     redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
 
@@ -206,6 +269,10 @@ STATICFILES_DIRS = [
 # WhiteNoise configuration for static files
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# Media files configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'mediafiles'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
@@ -216,19 +283,57 @@ LOGIN_REDIRECT_URL = '/'  # Redirect to homepage after login
 LOGIN_URL = 'login'       # URL name of the login view
 
 # RQ Queue configuration
-redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
-redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
+if REDIS_URL:
+    # Parse Redis URL for SSL/TLS connections
+    from urllib.parse import urlparse
+    parsed_redis_url = urlparse(REDIS_URL)
 
-RQ_QUEUES = {
-    'default': {
-        'URL': redis_url,
-        'DEFAULT_TIMEOUT': 500,
-        'DEFAULT_RESULT_TTL': 500,
-    },
-    'django-redis': {
-        'USE_REDIS_CACHE': 'default',
-    },
-}
+    if parsed_redis_url.scheme == 'rediss':
+        # Configure for SSL/TLS connection
+        # Use individual connection parameters with REDIS_CLIENT_KWARGS for SSL
+        RQ_QUEUES = {
+            'default': {
+                'HOST': parsed_redis_url.hostname,
+                'PORT': parsed_redis_url.port or 6379,
+                'DB': 0,
+                'PASSWORD': parsed_redis_url.password,
+                'DEFAULT_TIMEOUT': 500,
+                'DEFAULT_RESULT_TTL': 500,
+                'REDIS_CLIENT_KWARGS': {
+                    'ssl_cert_reqs': ssl.CERT_NONE,  # Don't require SSL certificates
+                }
+            },
+            'django-redis': {
+                'USE_REDIS_CACHE': 'default',
+            },
+        }
+    else:
+        # Regular Redis connection without SSL
+        RQ_QUEUES = {
+            'default': {
+                'URL': REDIS_URL,
+                'DEFAULT_TIMEOUT': 500,
+                'DEFAULT_RESULT_TTL': 500,
+            },
+            'django-redis': {
+                'USE_REDIS_CACHE': 'default',
+            },
+        }
+else:
+    # Fall back to individual settings
+    redis_url = f"redis://:{REDIS_PASSWORD}@" if REDIS_PASSWORD else "redis://"
+    redis_url += f"{REDIS_HOST}:{REDIS_PORT}/0"
+
+    RQ_QUEUES = {
+        'default': {
+            'URL': redis_url,
+            'DEFAULT_TIMEOUT': 500,
+            'DEFAULT_RESULT_TTL': 500,
+        },
+        'django-redis': {
+            'USE_REDIS_CACHE': 'default',
+        },
+    }
 
 if REDIS_CACHE_TYPE == 'django-redis-cache':
     RQ_QUEUES['django-redis-cache'] = {'USE_REDIS_CACHE': 'django-redis-cache'}

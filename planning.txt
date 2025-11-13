@@ -1,0 +1,7 @@
+Unfuck a bunch of stuff
+-Javascript: get everything out of domcontentloaded and make it use data-function instead
+-Make stuff use scope attributes intead of whatever it is doing now
+-Set up rules to work towards/on
+
+Progress/goals sections
+-see latest chat

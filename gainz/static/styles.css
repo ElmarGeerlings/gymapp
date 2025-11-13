@@ -92,6 +92,30 @@ button:hover {
     background-color: #45a049;
 }
 
+/* Preserve Bootstrap navbar toggler appearance */
+.navbar-toggler {
+    background-color: transparent;
+    color: inherit;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 0.25rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.navbar-toggler:hover,
+.navbar-toggler:active,
+.navbar-toggler:not(.collapsed) {
+    background-color: transparent;
+    color: inherit;
+    border-color: rgba(0, 0, 0, 0.2);
+    box-shadow: none;
+}
+
+.navbar-toggler:focus,
+.navbar-toggler:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
 .delete-set-btn {
     background-color: #f44336;
 }
@@ -281,6 +305,32 @@ footer {
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
+.exercise-card-editable {
+    position: relative;
+    cursor: pointer;
+    border: 2px solid #007bff;
+}
+
+.exercise-card-editable:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 12px rgba(0,123,255,0.2);
+    background-color: #f0f8ff;
+}
+
+.exercise-card-editable::after {
+    content: '\270E';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 1.2rem;
+    color: #007bff;
+    opacity: 0.7;
+}
+
+.exercise-card-editable:hover::after {
+    opacity: 1;
+}
+
 .category-section {
     margin-bottom: 2rem;
 }
@@ -416,6 +466,7 @@ footer {
     text-align: center;
     vertical-align: middle;
     cursor: pointer;
+    -webkit-user-select: none;
     user-select: none;
     background-color: transparent;
     border: 1px solid transparent;
@@ -464,20 +515,16 @@ footer {
 
 /* Styles for Routine Form Exercise Cards */
 .exercise-routine-card {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 15px;
-    background-color: #f9f9f9;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-bottom: 18px;
+    background-color: #ffffff;
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.05);
 }
 .exercise-routine-card .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #eee;
+    background-color: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.75rem 1rem;
 }
 .exercise-routine-card .card-header h5 {
     margin: 0;
@@ -498,6 +545,30 @@ footer {
 
 .drag-source-hidden {
     visibility: hidden;
+}
+
+/* Mobile touch dragging improvements */
+.dragging-clone {
+    cursor: grabbing;
+    transform-origin: center;
+}
+
+/* Improve touch targets for mobile drag */
+@media (max-width: 768px) {
+    .exercise-routine-card[draggable="true"],
+    .workout-exercise-card[draggable="true"],
+    .routine-chip[draggable="true"] {
+        touch-action: none; /* Prevent scrolling during drag */
+        user-select: none; /* Prevent text selection during drag */
+        -webkit-user-select: none;
+        cursor: grab;
+    }
+
+    .exercise-routine-card[draggable="true"]:active,
+    .workout-exercise-card[draggable="true"]:active,
+    .routine-chip[draggable="true"]:active {
+        cursor: grabbing;
+    }
 }
 
 .drop-placeholder {
@@ -541,11 +612,19 @@ footer {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    transition: background-color 0.2s ease;
+}
+
+.routines-for-day-container.drag-over {
+    background-color: #e8f4f8;
+    border: 2px dashed #4a90e2;
+    border-radius: 4px;
 }
 
 .routine-chip {
     display: flex;
     justify-content: space-between;
+    cursor: move;
     align-items: center;
     background-color: #007bff;
     color: white;
@@ -967,8 +1046,534 @@ html {
     }
 }
 
+/* ============================================
+   MOBILE WORKOUT VIEW (SET FOCUSED)
+   ============================================ */
+
+
 @media (min-width: 992px) {
     .responsive-text {
         font-size: 1.25rem;
     }
+}
+
+/* ============================================
+   TIMER STYLES - MOBILE FIRST RESPONSIVE
+   ============================================ */
+
+/* Timer section base styles */
+.timer-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Desktop alignment for Warmup and Done columns in sets table */
+.sets-container th.set-header-warmup,
+.sets-container th.set-header-done,
+.sets-container td.set-warmup,
+.sets-container td.set-done {
+    text-align: center;
+    vertical-align: middle;
+}
+
+/* Mobile workout set helpers */
+.mobile-set-progress {
+    height: 6px;
+    background-color: #f1f3f5;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.mobile-set-progress .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #ffbf75 0%, #ff9933 100%);
+    transition: width 0.3s ease;
+}
+
+
+.set-row.current-set-row {
+    background-color: var(--bs-warning) !important;
+}
+
+.set-row.set-completed {
+    opacity: 0.6;
+}
+
+.set-row.current-set-row > td,
+.set-row.current-set-row > th {
+    background-color: var(--bs-warning) !important;
+}
+
+.set-row.set-completed.current-set-row {
+    opacity: 0.8;
+}
+
+/* Timer display styles */
+.timer-display {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #333;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 6px 12px;
+    min-width: 60px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+/* Timer display active state */
+.timer-display.active {
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+    color: #333;
+}
+
+/* Timer display paused state */
+.timer-display.paused {
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+    color: #333;
+}
+
+/* Timer controls button group */
+.timer-controls {
+    display: flex;
+    gap: 0;
+}
+
+/* Timer button base styles */
+.timer-controls .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    min-width: 36px;
+    padding: 6px 8px;
+    font-size: 0.875rem;
+    border-radius: 0;
+    transition: all 0.2s ease;
+}
+
+/* First and last button border radius */
+.timer-controls .btn:first-child {
+    border-top-left-radius: 0.375rem;
+    border-bottom-left-radius: 0.375rem;
+}
+
+.timer-controls .btn:last-child {
+    border-top-right-radius: 0.375rem;
+    border-bottom-right-radius: 0.375rem;
+}
+
+/* Timer button text spacing */
+.timer-controls .btn span {
+    margin-left: 4px;
+}
+
+/* Timer button states */
+.timer-start-btn.active {
+    background-color: #198754;
+    border-color: #198754;
+    color: white;
+}
+
+.timer-pause-btn.active {
+    background-color: #ffc107;
+    border-color: #ffc107;
+    color: #000;
+}
+
+.timer-stop-btn.active {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: white;
+}
+
+/* Mobile-first: Hide text labels on small screens */
+@media (max-width: 576px) {
+    .timer-display {
+        font-size: 1rem;
+        padding: 5px 8px;
+        min-width: 50px;
+    }
+
+    .timer-controls .btn {
+        min-width: 32px;
+        min-height: 32px;
+        padding: 4px 6px;
+        font-size: 0.75rem;
+    }
+
+    /* Ensure text is hidden on mobile */
+    .timer-controls .d-none.d-sm-inline {
+        display: none !important;
+    }
+}
+
+/* Tablet styles (768px and up) */
+@media (min-width: 768px) {
+    .timer-section {
+        gap: 12px;
+    }
+
+    .timer-display {
+        font-size: 1.2rem;
+        padding: 8px 14px;
+        min-width: 70px;
+    }
+
+    .timer-controls .btn {
+        min-height: 40px;
+        min-width: 40px;
+        padding: 8px 10px;
+        font-size: 0.875rem;
+    }
+
+    /* Show text labels on tablet and up */
+    .timer-controls .d-none.d-sm-inline {
+        display: inline !important;
+    }
+}
+
+/* Desktop styles (992px and up) */
+@media (min-width: 992px) {
+    .timer-display {
+        font-size: 1.3rem;
+        padding: 10px 16px;
+        min-width: 80px;
+    }
+
+    .timer-controls .btn {
+        padding: 10px 14px;
+        font-size: 0.9rem;
+    }
+
+    .timer-controls .btn span {
+        margin-left: 6px;
+    }
+}
+
+/* ============================================
+   EXERCISE TIMER OVERRIDES STYLES
+   ============================================ */
+
+/* Exercise timer overrides list styles */
+.exercise-timer-overrides-list {
+    min-height: 120px;
+}
+
+.timer-override-item {
+    padding: 12px 0;
+    transition: background-color 0.2s ease;
+}
+
+.timer-override-item:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: 4px;
+    margin: 0 -8px;
+    padding: 12px 8px;
+}
+
+.timer-override-item:last-child {
+    border-bottom: none !important;
+}
+
+.override-info .fw-semibold {
+    color: #2c3e50;
+    font-size: 1rem;
+    margin-bottom: 4px;
+}
+
+.override-info .text-muted {
+    color: #6c757d !important;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.override-info .text-muted i {
+    width: 16px;
+    text-align: center;
+    opacity: 0.7;
+}
+
+.override-actions .btn {
+    transition: all 0.2s ease;
+    opacity: 0.7;
+}
+
+.timer-override-item:hover .override-actions .btn {
+    opacity: 1;
+}
+
+.override-actions .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Exercise search select styles */
+#override_exercise_search {
+    font-size: 0.95rem;
+    padding: 10px 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background-color: #fff;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+#override_exercise_search:focus {
+    border-color: #80bdff;
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+#override_exercise_search.is-invalid {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+
+/* Timer duration input styles */
+#override_timer_seconds {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 0.95rem;
+    text-align: center;
+}
+
+#override_timer_seconds:focus {
+    border-color: #80bdff;
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Add override button styles */
+.btn[data-function*="addExerciseTimerOverride"] {
+    background-color: #198754;
+    border-color: #198754;
+    transition: all 0.2s ease;
+}
+
+.btn[data-function*="addExerciseTimerOverride"]:hover {
+    background-color: #157347;
+    border-color: #146c43;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* No overrides message styles */
+#no-overrides-message {
+    color: #6c757d;
+    font-style: italic;
+    text-align: center;
+    padding: 32px 16px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border: 1px dashed #dee2e6;
+}
+
+#no-overrides-message i {
+    opacity: 0.5;
+    font-size: 1.1rem;
+}
+
+/* Card styles for override sections */
+.card-header.bg-light {
+    background-color: #f8f9fa !important;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.card-header h6 {
+    color: #495057;
+    font-weight: 600;
+    margin: 0;
+}
+
+.card-header h6 i {
+    color: #6c757d;
+    margin-right: 8px;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 767px) {
+    .timer-override-item {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 12px;
+        padding: 16px 0;
+    }
+
+    .override-actions {
+        width: 100%;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .override-info .fw-semibold {
+        font-size: 0.95rem;
+    }
+
+    .override-info .text-muted {
+        font-size: 0.8rem;
+    }
+
+    /* Stack form fields on mobile */
+    .row > .col-md-6,
+    .row > .col-md-4,
+    .row > .col-md-2 {
+        margin-bottom: 15px;
+    }
+
+    /* Make search select larger on mobile */
+    #override_exercise_search {
+        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 12px 14px;
+    }
+
+    #override_timer_seconds {
+        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 12px 14px;
+    }
+}
+
+/* Focus states for accessibility */
+.timer-override-item:focus-within {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* Animation for adding/removing items */
+.timer-override-item {
+    animation: fadeInUp 0.3s ease;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Loading state styles */
+.btn[disabled] {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.btn .fa-spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Mobile adjustments for workout set inputs */
+@media (max-width: 575.98px) {
+    .sets-container .set-reps-input {
+        min-width: 40px;
+    }
+
+    .sets-container .set-weight-input {
+        min-width: 50px;
+    }
+
+    .sets-container table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    .sets-container table th,
+    .sets-container table td {
+        padding: 6px 4px;
+    }
+
+    .sets-container table th {
+        font-size: 0.78rem;
+        white-space: normal;
+        line-height: 1.15;
+    }
+
+    .sets-container .form-control-sm {
+        padding: 4px 6px;
+        font-size: 0.9rem;
+    }
+
+    .sets-container th.set-header-reps,
+    .sets-container td.set-reps {
+        width: 22%;
+    }
+
+    .sets-container th.set-header-weight,
+    .sets-container td.set-weight {
+        width: 24%;
+    }
+
+    .sets-container th.set-header-warmup,
+    .sets-container td.set-warmup {
+        width: 21%;
+        text-align: center;
+    }
+
+    .sets-container th.set-header-done,
+    .sets-container td.set-done {
+        width: 18%;
+        text-align: center;
+    }
+
+    .sets-container th.set-header-actions,
+    .sets-container td.set-actions {
+        width: 15%;
+        text-align: center;
+    }
+}
+
+/* Routine mobile navigation */
+.exercise-navigation-bottom {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  z-index: 2;
+}
+.exercise-indicators {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.exercise-indicators .indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cfd4da;
+}
+.exercise-indicators .indicator.active {
+  background: #0d6efd;
+}
+@media (min-width: 768px) {
+  #routine-exercise-mobile-nav {
+    display: none !important;
+  }
+}@media (max-width: 767px) {
+  /* Keep workout header actions inline next to title on mobile */
+  .workout-header .workout-header-row {
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+  .workout-header .workout-actions-group {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    width: auto !important;
+    gap: 6px;
+  }
+  .workout-header .workout-actions-group .btn {
+    margin-bottom: 0 !important;
+  }
 }

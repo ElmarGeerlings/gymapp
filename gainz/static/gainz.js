@@ -38,7 +38,7 @@ console.log('gainz.js script started execution.'); // Log at the very top
     // ... WebSocket send logic ...
 // }
 
-const observer = new MutationObserver(process_mutations);
+let mutationObserverStarted = false;
 
 function process_mutations(mutations) {
     mutations.forEach(mutation => {
@@ -64,6 +64,8 @@ function process_mutations(mutations) {
         }
     });
 }
+
+const observer = new MutationObserver(process_mutations);
 
 function handle_attribute(element, attr) {
     if (!attr || !attr.value) return;
@@ -109,24 +111,363 @@ function handle_attribute(element, attr) {
     });
 }
 
-function toggleScheduleType() {
+// Store the original program state for cancel functionality
+let originalProgramState = null;
+
+function saveProgramState() {
+    const state = {
+        schedulingType: document.getElementById('scheduling-weekly').checked ? 'weekly' : 'sequential',
+        weeklyRoutines: {},
+        sequentialRoutines: []
+    };
+
+    // Save weekly routines with order
+    document.querySelectorAll('.day-column').forEach(dayColumn => {
+        const dayValue = dayColumn.dataset.dayValue;
+        state.weeklyRoutines[dayValue] = [];
+        dayColumn.querySelectorAll('.routine-chip').forEach((chip, index) => {
+            state.weeklyRoutines[dayValue].push({
+                routine_id: chip.dataset.routineId,
+                name: chip.dataset.routineName || chip.querySelector('span').textContent,
+                order: index + 1
+            });
+        });
+    });
+
+    // Save sequential routines
+    document.querySelectorAll('.program-routine-row').forEach(row => {
+        const routineIdInput = row.querySelector('input[name*="_routine_id"]');
+        const routineNameInput = row.querySelector('input[type="text"][readonly]');
+        const orderInput = row.querySelector('input[name*="_order"]');
+
+        if (routineIdInput && routineNameInput) {
+            state.sequentialRoutines.push({
+                routine_id: routineIdInput.value,
+                name: routineNameInput.value,
+                order: orderInput ? orderInput.value : state.sequentialRoutines.length + 1
+            });
+        }
+    });
+
+    return state;
+}
+
+function restoreProgramState(state) {
+    if (!state) return;
+
+    // Restore scheduling type
+    if (state.schedulingType === 'weekly') {
+        document.getElementById('scheduling-weekly').checked = true;
+    } else {
+        document.getElementById('scheduling-sequential').checked = true;
+    }
+
+    // Clear current routines
+    document.querySelectorAll('.routines-for-day-container').forEach(container => {
+        container.innerHTML = '';
+    });
+    document.getElementById('program-routines-container').innerHTML = '';
+
+    // Restore weekly routines
+    Object.keys(state.weeklyRoutines).forEach(dayValue => {
+        const dayColumn = document.querySelector(`.day-column[data-day-value="${dayValue}"]`);
+        if (dayColumn) {
+            const container = dayColumn.querySelector('.routines-for-day-container');
+            state.weeklyRoutines[dayValue].forEach(routine => {
+                const chip = document.createElement('div');
+                chip.className = 'routine-chip';
+                chip.draggable = true;
+                chip.dataset.routineId = routine.routine_id || routine.id;
+                chip.dataset.routineName = routine.name;
+                chip.innerHTML = `
+                    <span class="routine-chip-label">${routine.name}</span>
+                    <div class="d-flex align-items-center">
+                        <button type="button" class="btn-close btn-close-white btn-sm" data-ignore-double-activate="true" aria-label="Remove"></button>
+                    </div>
+                    <input type="hidden" name="weekly_day_${dayValue}_routines" value="${routine.routine_id || routine.id}">
+                `;
+                container.appendChild(chip);
+                setupProgramRoutineDragListeners(chip);
+            });
+        }
+    });
+
+    // Restore sequential routines
+    const programRoutinesContainer = document.getElementById('program-routines-container');
+    const template = document.getElementById('program-routine-template');
+
+    state.sequentialRoutines.forEach((routine, index) => {
+        if (template) {
+            let newRowHTML = template.innerHTML;
+            newRowHTML = newRowHTML.replace(/__INDEX__/g, index)
+                                   .replace(/__ROUTINE_ID__/g, routine.routine_id || routine.id)
+                                   .replace(/__ROUTINE_NAME__/g, routine.name)
+                                   .replace(/__ORDER__/g, routine.order);
+
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = newRowHTML;
+            const newRow = tempDiv.firstElementChild;
+
+            programRoutinesContainer.appendChild(newRow);
+            setupSequentialRoutineActivation(newRow);
+        }
+    });
+
+    // Update UI visibility
     const weeklyContainer = document.getElementById('weekly-schedule-container');
     const sequentialContainer = document.getElementById('sequential-schedule-container');
     const sequentialAdder = document.getElementById('sequential-routine-adder');
-    const weeklyRadio = document.getElementById('scheduling-weekly');
 
-    if (!weeklyContainer || !sequentialContainer || !sequentialAdder || !weeklyRadio) return;
-
-    if (weeklyRadio.checked) {
+    if (state.schedulingType === 'weekly') {
         weeklyContainer.style.display = 'block';
         sequentialContainer.style.display = 'none';
         sequentialAdder.style.display = 'none';
+        initializeProgramRoutinesDragDrop();
     } else {
         weeklyContainer.style.display = 'none';
         sequentialContainer.style.display = 'block';
         sequentialAdder.style.display = 'block';
     }
 }
+
+async function restoreProgramStateViaAPI(programId, originalState) {
+    try {
+        const response = await fetch(`/ajax/program/${programId}/restore-state/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                original_state: originalState
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to restore program state');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            console.log('Program state restored successfully');
+            return true;
+        } else {
+            console.error('Error restoring program state:', data.error);
+            return false;
+        }
+    } catch (error) {
+        console.error('Error restoring program state:', error);
+        return false;
+    }
+}
+
+async function toggleScheduleType() {
+    const weeklyContainer = document.getElementById('weekly-schedule-container');
+    const sequentialContainer = document.getElementById('sequential-schedule-container');
+    const sequentialAdder = document.getElementById('sequential-routine-adder');
+    const weeklyRadio = document.getElementById('scheduling-weekly');
+    const programRoutinesContainer = document.getElementById('program-routines-container');
+
+    if (!weeklyContainer || !sequentialContainer || !sequentialAdder || !weeklyRadio) return;
+
+    // Get program ID first
+    const programForm = document.querySelector('form[action*="/programs/"]');
+    let programId = null;
+    if (programForm) {
+        const actionUrl = programForm.getAttribute('action');
+        const match = actionUrl.match(/\/programs\/(\d+)\//);
+        if (match) {
+            programId = match[1];
+        }
+    }
+
+    // Prepare routine data to send to backend
+    let routineData = null;
+    const schedulingType = weeklyRadio.checked ? 'weekly' : 'sequential';
+
+    if (weeklyRadio.checked) {
+        // Switching TO weekly - collect from sequential view first
+        const sequentialRoutines = [];
+        programRoutinesContainer?.querySelectorAll('.program-routine-row').forEach((row) => {
+            const routineIdInput = row.querySelector('input[name*="_routine_id"]');
+            const routineNameInput = row.querySelector('input[type="text"][readonly]');
+
+            if (routineIdInput && routineNameInput && routineIdInput.value) {
+                sequentialRoutines.push({
+                    routine_id: routineIdInput.value,
+                    name: routineNameInput.value
+                });
+            }
+        });
+
+        // Distribute sequential routines to weekly days
+        const days = [0, 1, 2, 3, 4, 5, 6];
+        routineData = {};
+        sequentialRoutines.forEach((routine, index) => {
+            const assignedDay = days[index % days.length];
+            if (!routineData[assignedDay]) {
+                routineData[assignedDay] = [];
+            }
+            routineData[assignedDay].push(routine);
+        });
+
+        // Save to database first if we have a program ID
+        if (programId) {
+            try {
+                const response = await fetch(`/ajax/program/${programId}/update-scheduling/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        scheduling_type: 'weekly',
+                        routines: routineData
+                    })
+                });
+
+                // Try to parse response, but proceed with UI update regardless of API result
+                try {
+                    const data = await response.json();
+                    if (!data.success) {
+                        console.warn('Non-fatal: update-scheduling weekly failed:', data.error);
+                    }
+                } catch (e) {
+                    // Non-JSON or other issue; ignore and continue
+                    console.warn('Non-fatal: update-scheduling weekly parse error');
+                }
+            } catch (error) {
+                // Network or endpoint error; log and continue UI update
+                console.warn('Non-fatal: update-scheduling weekly request error:', error);
+            }
+        }
+
+        // Now update the DOM
+        // Clear sequential container
+        programRoutinesContainer.innerHTML = '';
+
+        // Clear weekly containers first to avoid duplicates
+        weeklyContainer.querySelectorAll('.routines-for-day-container').forEach(container => {
+            container.innerHTML = '';
+        });
+
+        // Add to weekly view
+        Object.entries(routineData).forEach(([day, routines]) => {
+            const dayColumn = weeklyContainer.querySelector(`.day-column[data-day-value="${day}"]`);
+            if (dayColumn) {
+                const routinesContainer = dayColumn.querySelector('.routines-for-day-container');
+
+                routines.forEach(routine => {
+                    const chip = document.createElement('div');
+                    chip.className = 'routine-chip';
+                    chip.draggable = true;
+                    chip.dataset.routineId = routine.routine_id;
+                    chip.dataset.routineName = routine.name;
+                    chip.innerHTML = `
+                        <span class="routine-chip-label">${routine.name}</span>
+                        <div class="d-flex align-items-center">
+                            <button type="button" class="btn-close btn-close-white btn-sm" data-ignore-double-activate="true" aria-label="Remove"></button>
+                        </div>
+                        <input type="hidden" name="weekly_day_${day}_routines" value="${routine.routine_id}">
+                    `;
+
+                    routinesContainer.appendChild(chip);
+                    setupProgramRoutineDragListeners(chip);
+                });
+            }
+        });
+
+        weeklyContainer.style.display = 'block';
+        sequentialContainer.style.display = 'none';
+        sequentialAdder.style.display = 'none';
+        initializeProgramRoutinesDragDrop();
+
+    } else {
+        // Switching TO sequential - collect from weekly view first
+        routineData = [];
+
+        for (let day = 0; day < 7; day++) {
+            const dayColumn = weeklyContainer.querySelector(`.day-column[data-day-value="${day}"]`);
+            if (dayColumn) {
+                dayColumn.querySelectorAll('.routine-chip').forEach(chip => {
+                    const routineId = chip.dataset.routineId;
+                    const routineName = chip.dataset.routineName || chip.querySelector('span').textContent;
+                    if (routineId) {
+                        routineData.push({
+                            routine_id: routineId,
+                            name: routineName
+                        });
+                    }
+                });
+            }
+        }
+
+        // Save to database first if we have a program ID
+        if (programId) {
+            try {
+                const response = await fetch(`/ajax/program/${programId}/update-scheduling/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        scheduling_type: 'sequential',
+                        routines: routineData
+                    })
+                });
+
+                // Try to parse response, but proceed with UI update regardless of API result
+                try {
+                    const data = await response.json();
+                    if (!data.success) {
+                        console.warn('Non-fatal: update-scheduling sequential failed:', data.error);
+                    }
+                } catch (e) {
+                    // Non-JSON or other issue; ignore and continue
+                    console.warn('Non-fatal: update-scheduling sequential parse error');
+                }
+            } catch (error) {
+                // Network or endpoint error; log and continue UI update
+                console.warn('Non-fatal: update-scheduling sequential request error:', error);
+            }
+        }
+
+        // Now update the DOM
+        // Clear weekly view
+        weeklyContainer.querySelectorAll('.routines-for-day-container').forEach(container => {
+            container.innerHTML = '';
+        });
+
+        // Clear sequential first
+        programRoutinesContainer.innerHTML = '';
+
+        // Add to sequential view
+        routineData.forEach((routine, index) => {
+            const template = document.getElementById('program-routine-template');
+            if (template) {
+                let newRowHTML = template.innerHTML;
+                newRowHTML = newRowHTML.replace(/__INDEX__/g, index)
+                                       .replace(/__ROUTINE_ID__/g, routine.routine_id)
+                                       .replace(/__ROUTINE_NAME__/g, routine.name)
+                                       .replace(/__ORDER__/g, index + 1);
+
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = newRowHTML;
+                const newRow = tempDiv.firstElementChild;
+
+                programRoutinesContainer.appendChild(newRow);
+            }
+        });
+
+        weeklyContainer.style.display = 'none';
+        sequentialContainer.style.display = 'block';
+        sequentialAdder.style.display = 'block';
+    }
+}
+
+// Expose for data-function or manual binding
+window.toggleScheduleType = toggleScheduleType;
 
 // ======================================
 //      HTTP REQUEST HELPER (Optional)
@@ -198,6 +539,29 @@ function show_modal(event) {
     if (modal) {
         const form = modal.querySelector('form');
         if(form && form.id) clearFormErrors(form.id);
+
+        // Reset the form for add exercise modal
+        if (modalname === 'add-exercise-modal') {
+            // Reset title
+            const modalTitle = document.getElementById('exercise-modal-title');
+            if (modalTitle) modalTitle.textContent = 'Add New Exercise';
+
+            // Clear exercise ID
+            const exerciseIdField = document.getElementById('exercise-id');
+            if (exerciseIdField) exerciseIdField.value = '';
+
+            // Reset form
+            if (form) form.reset();
+
+            // Hide delete button
+            const deleteBtn = document.getElementById('delete-exercise-btn');
+            if (deleteBtn) deleteBtn.style.display = 'none';
+
+            // Reset exercise type to default
+            const exerciseTypeField = document.getElementById('id_exercise_type_modal');
+            if (exerciseTypeField) exerciseTypeField.value = 'accessory';
+        }
+
         modal.style.display = 'flex';
     }
     const focus = event.target.getAttribute('data-focus');
@@ -233,16 +597,40 @@ document.addEventListener('keydown', (event) => {
 //          UI UTILITIES
 // ======================================
 
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            // Does this cookie string begin with the name we want?
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
 function getCsrfToken() {
     let token = document.querySelector('meta[name="csrf-token"]');
     if (token) return token.content;
     token = document.querySelector('[name=csrfmiddlewaretoken]');
     if (token) return token.value;
+    // Fallback to cookie
+    token = getCookie('csrftoken');
+    if (token) return token;
     console.error('CSRF token not found');
     return null;
 }
 
 function send_toast(body, status = 'default', title = '', delete_time = 3000) {
+    // Suppress toasts in mobile workout view
+    try {
+        const isMobile = !!document.getElementById('exercise-card-container');
+        if (isMobile) return;
+    } catch (e) { /* ignore */ }
     const alertConfigs = {
         success: { icon: 'fas fa-check-circle', alertClass: 'alert-success' },
         danger: { icon: 'fas fa-exclamation-triangle', alertClass: 'alert-danger' },
@@ -428,13 +816,16 @@ window.handle_and_morph = async function(event) { // Made async to use await wit
     }
 };
 
-// --- Add Exercise Modal Submission ---
+// --- Add/Edit Exercise Modal Submission ---
 // This function will be triggered by data-function="click->saveExercise"
 async function saveExercise(event) {
     const form = event.target.closest('form');
     if (!form) return;
     const formId = form.id;
     clearFormErrors(formId);
+
+    const exerciseId = document.getElementById('exercise-id').value;
+    const isEdit = exerciseId !== '';
 
     const formData = new FormData(form);
     const data = {};
@@ -454,14 +845,20 @@ async function saveExercise(event) {
     });
     data.is_custom = true; // Always set for this form
 
+    // Determine URL and method based on whether we're editing or creating
+    const url = isEdit ? `/api/exercises/${exerciseId}/` : form.action;
+    const method = isEdit ? 'PUT' : 'POST';
+
     // Use the helper for the actual request
-    const response = await httpRequestHelper(form.action, 'POST', data);
+    const response = await httpRequestHelper(url, method, data);
 
     if (response.ok) {
-        send_toast('Exercise added successfully!', 'success');
+        const message = isEdit ? 'Exercise updated successfully!' : 'Exercise added successfully!';
+        send_toast(message, 'success');
         const modal = form.closest('.siu-modal');
         if (modal) modal.style.display = 'none';
         form.reset();
+        document.getElementById('exercise-id').value = '';
         // Instead of full reload, maybe update list dynamically later?
         // For now, reload is simplest
         window.location.reload();
@@ -471,72 +868,502 @@ async function saveExercise(event) {
     }
 }
 
-// --- Add Set to Workout Exercise ---
+// --- Edit Exercise ---
+// This function opens the modal with pre-filled data for editing
+function editExercise(event) {
+    const exerciseCard = event.currentTarget;
+
+    // Get the exercise data from data attributes
+    const exerciseId = exerciseCard.dataset.exerciseId;
+    const exerciseName = exerciseCard.dataset.exerciseName;
+    const exerciseDescription = exerciseCard.dataset.exerciseDescription || '';
+    const exerciseType = exerciseCard.dataset.exerciseType;
+    const exerciseCategories = exerciseCard.dataset.exerciseCategories ?
+        exerciseCard.dataset.exerciseCategories.split(',') : [];
+
+    // Update modal title
+    document.getElementById('exercise-modal-title').textContent = 'Edit Exercise';
+
+    // Fill the form fields
+    document.getElementById('exercise-id').value = exerciseId;
+    document.getElementById('id_name_modal').value = exerciseName;
+    document.getElementById('id_description_modal').value = exerciseDescription;
+    document.getElementById('id_exercise_type_modal').value = exerciseType;
+
+    // Set selected categories
+    const categorySelect = document.getElementById('id_categories_modal');
+    Array.from(categorySelect.options).forEach(option => {
+        option.selected = exerciseCategories.includes(option.value);
+    });
+
+    // Show delete button for editing
+    document.getElementById('delete-exercise-btn').style.display = 'inline-block';
+
+    // Open the modal
+    document.getElementById('add-exercise-modal').style.display = 'block';
+
+    // Focus on the name field
+    document.getElementById('id_name_modal').focus();
+}
+
+// --- Delete Exercise ---
+// This function deletes a custom exercise
+async function deleteExercise(event) {
+    const exerciseId = document.getElementById('exercise-id').value;
+
+    if (!exerciseId) {
+        send_toast('No exercise selected for deletion.', 'danger');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to delete this exercise? This cannot be undone.')) {
+        return;
+    }
+
+    const response = await httpRequestHelper(`/api/exercises/${exerciseId}/`, 'DELETE');
+
+    if (response.ok) {
+        send_toast('Exercise deleted successfully!', 'success');
+        const modal = document.getElementById('add-exercise-modal');
+        if (modal) modal.style.display = 'none';
+        document.getElementById('add-exercise-form').reset();
+        document.getElementById('exercise-id').value = '';
+        window.location.reload();
+    } else {
+        send_toast(response.data?.detail || 'Error deleting exercise.', 'danger');
+    }
+}
+
+
+// --- Update Set ---
+// Triggered by data-function="blur->updateSet" or data-function="change->updateSet"
+// Needs data-set-id, data-field on the input/select element
+async function updateSet(eventOrElement, overrideValue) {
+    const element = eventOrElement && eventOrElement.target ? eventOrElement.target : eventOrElement;
+    if (!element) {
+        return false;
+    }
+
+    const setId = element.dataset.setId;
+    const field = element.dataset.field;
+
+    if (!setId || !field) {
+        console.error('Missing data-set-id or data-field on element');
+        return false;
+    }
+
+    let value;
+    if (overrideValue !== undefined) {
+        value = overrideValue;
+    } else if (field === 'is_warmup') {
+        value = element.checked;
+    } else {
+        value = element.value;
+    }
+
+    const url = '/api/workouts/sets/' + setId + '/';
+    const data = { [field]: value };
+
+    const response = await httpRequestHelper(url, 'PATCH', data);
+
+    if (response.ok) {
+        if (field === 'reps' || field === 'weight') {
+            const row = element.closest('.set-row');
+            if (row) {
+                if (field === 'weight') {
+                    const num = Number(value);
+                    if (Number.isFinite(num)) {
+                        const formatted = num.toFixed(1);
+                        row.dataset.weight = formatted;
+                        // Update the input's visible value to ensure .0 is shown
+                        element.value = formatted;
+                    } else {
+                        row.dataset.weight = value;
+                    }
+                } else {
+                    row.dataset[field] = value;
+                }
+            }
+        }
+        return true;
+    }
+
+    send_toast(response.data?.detail || 'Error updating set', 'danger');
+    return false;
+}
+
+function normalizeWorkoutSetValue(value, field) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    const trimmed = String(value).trim();
+    if (!trimmed) {
+        return '';
+    }
+    if (field === 'weight') {
+        const numeric = Number(trimmed);
+        return Number.isFinite(numeric) ? numeric : trimmed;
+    }
+    return trimmed;
+}
+
+function captureWorkoutSetOriginalValue(event) {
+    const element = event?.target;
+    if (!element) {
+        return;
+    }
+    const field = element.dataset.field;
+    if (field === 'is_warmup') {
+        element.dataset.originalValue = element.checked ? 'true' : 'false';
+    } else {
+        element.dataset.originalValue = element.value ?? '';
+    }
+}
+
+async function handleWorkoutSetChange(event) {
+    const element = event?.target;
+    if (!element) {
+        return;
+    }
+
+    const field = element.dataset.field;
+    const originalValueRaw = element.dataset.originalValue ?? (field === 'is_warmup' ? (element.checked ? 'true' : 'false') : element.value ?? '');
+    const normalizedOriginal = normalizeWorkoutSetValue(originalValueRaw, field);
+
+    // Helpers
+    const tolZero = (field === 'weight') ? 0.1 : 0;
+    const setsContainer = element.closest('.sets-container');
+    const editedRow = element.closest('.set-row');
+    if (!setsContainer || !editedRow) {
+        // Still update the edited value and return
+        await updateSet(element);
+        return;
+    }
+    const getRows = () => Array.from(setsContainer.querySelectorAll('.set-row'));
+    const isWarmupRow = (row) => {
+        const cb = row.querySelector('[data-field="is_warmup"]');
+        return !!(cb && cb.checked);
+    };
+    const isCompletedRow = (row) => {
+        if (row.dataset && typeof row.dataset.isCompleted !== 'undefined') {
+            return row.dataset.isCompleted === 'true';
+        }
+        return row.classList.contains('set-completed');
+    };
+    const readValue = (row) => {
+        if (field === 'weight') {
+            const v = row.dataset && row.dataset.weight ? Number(row.dataset.weight) : Number(row.querySelector('[data-field="weight"]')?.value || 0);
+            return Number.isFinite(v) ? v : 0;
+        }
+        if (field === 'reps') {
+            const v = row.dataset && row.dataset.reps ? parseInt(row.dataset.reps, 10) : parseInt(row.querySelector('[data-field="reps"]')?.value || '0', 10);
+            return Number.isFinite(v) ? v : 0;
+        }
+        return null;
+    };
+    const formatValue = (val) => {
+        if (field === 'weight') {
+            const num = Number(val);
+            return Number.isFinite(num) ? num.toFixed(1) : val;
+        }
+        if (field === 'reps') {
+            return String(parseInt(val, 10));
+        }
+        return val;
+    };
+    const diffs = (arr) => arr.slice(1).map((v, i) => v - arr[i]);
+
+    // Build segment rows starting at edited row (inclusive), skipping warmups, stopping on completed (barrier)
+    const allRows = getRows();
+    const startIdx = allRows.indexOf(editedRow);
+    const segment = [];
+    for (let i = startIdx; i < allRows.length; i++) {
+        const row = allRows[i];
+        if (row !== editedRow && isCompletedRow(row)) break; // barrier at first completed under edited
+        if (isWarmupRow(row)) continue; // exclude warmups
+        segment.push(row);
+    }
+
+    // Pre-update values: use original value for edited row
+    const originalFirstVal = (function() {
+        if (field === 'weight') {
+            const n = Number(normalizedOriginal);
+            return Number.isFinite(n) ? n : Number(element.value || 0);
+        } else if (field === 'reps') {
+            return parseInt(normalizedOriginal || '0', 10);
+        }
+        return null;
+    })();
+    const preValues = segment.map(row => row === editedRow ? originalFirstVal : readValue(row));
+
+    // Detect pattern from preValues
+    let pattern = 'none';
+    let originalDiffs = [];
+    let zeroMask = [];
+    let trendMagnitude = 0;
+    let trendSign = 0;
+    if (preValues.length >= 2) {
+        const isFlat = preValues.every(v => Math.abs(v - preValues[0]) <= tolZero);
+        if (isFlat) {
+            pattern = 'flat';
+        } else {
+            originalDiffs = diffs(preValues);
+            zeroMask = originalDiffs.map(d => Math.abs(d) <= tolZero);
+            const nonZero = originalDiffs.filter(d => Math.abs(d) > tolZero);
+            if (nonZero.length === 0) {
+                pattern = 'flat';
+            } else {
+                const sPos = nonZero.every(d => d > 0);
+                const sNeg = nonZero.every(d => d < 0);
+                const sameSign = sPos || sNeg;
+                const mag0 = Math.abs(nonZero[0]);
+                const sameMag = nonZero.every(d => Math.abs(Math.abs(d) - mag0) <= tolZero);
+                if (sameSign && sameMag) {
+                    pattern = 'trend';
+                    trendMagnitude = mag0;
+                    trendSign = sPos ? 1 : -1;
+                }
+            }
+        }
+    }
+
+    // Update edited set first
+    const success = await updateSet(element);
+    if (!success) return;
+
+    if (field === 'weight') {
+        const num = Number(element.value);
+        if (Number.isFinite(num)) element.value = num.toFixed(1);
+    }
+    const newValueRaw = field === 'is_warmup' ? (element.checked ? 'true' : 'false') : element.value ?? '';
+    element.dataset.originalValue = newValueRaw;
+
+    if (pattern === 'none') return;
+
+    // Apply to subsequent rows only
+    const editedNewNumeric = (field === 'weight') ? Number(element.value) : parseInt(element.value || '0', 10);
+    let applied = 0;
+    if (pattern === 'flat') {
+        for (let i = 1; i < segment.length; i++) {
+            const row = segment[i];
+            const input = row.querySelector(`[data-field="${field}"]`);
+            if (!input) continue;
+            input.value = formatValue(editedNewNumeric);
+            const ok = await updateSet(input, input.value);
+            if (ok) applied++;
+        }
+    } else if (pattern === 'trend') {
+        let prev = editedNewNumeric;
+        for (let i = 1; i < segment.length; i++) {
+            const row = segment[i];
+            const input = row.querySelector(`[data-field="${field}"]`);
+            if (!input) continue;
+            const stepIsZero = zeroMask[i - 1] === true; // preserve plateaus
+            const next = stepIsZero ? prev : (prev + trendSign * trendMagnitude);
+            input.value = formatValue(next);
+            const ok = await updateSet(input, input.value);
+            if (ok) {
+                applied++;
+                prev = (field === 'weight') ? Number(input.value) : parseInt(input.value || '0', 10);
+            }
+        }
+    }
+    if (applied > 0 && typeof send_toast === 'function') {
+        send_toast(`Applied to ${applied} set${applied === 1 ? '' : 's'}`, 'success');
+    }
+}
+
+// --- Add Set to Exercise ---
 // Triggered by data-function="click->addSet"
-// Needs data-workout-exercise-id="{{ workout_exercise.id }}" on the button
+// Copies values from the last set or uses smart defaults
 async function addSet(event) {
-    const button = event.target;
-    const workoutExerciseId = button.dataset.workoutExerciseId;
-    if (!workoutExerciseId) {
-        console.error('Missing data-workout-exercise-id on add set button');
+    event.preventDefault();
+    const button = event.currentTarget;
+    const exerciseId = button.dataset.exerciseId;
+
+    if (!exerciseId) {
+        console.error('Missing data-exercise-id on add set button');
         return;
     }
 
-    // Find inputs relative to the button/exercise container
-    const container = button.closest('.workout-exercise-controls'); // Adjust selector if needed
-    if (!container) {
-         console.error('Cannot find container for inputs relative to button');
-         return;
+    // Find the parent card body and sets container
+    const cardBody = button.closest('.card-body');
+    const setsContainer = cardBody.querySelector('.sets-container');
+    const tbody = setsContainer.querySelector('.sets-tbody');
+
+    // Get default values from last set and calculate set number
+    let reps = 0;
+    let weight = 0;
+    let isWarmup = false;
+    let setNumber = 1;
+
+    if (tbody) {
+        // Count existing sets to determine next set number
+        const existingRows = tbody.querySelectorAll('.set-row');
+        setNumber = existingRows.length + 1;
+
+        // Get the last set row
+        const lastRow = tbody.querySelector('.set-row:last-child');
+        if (lastRow) {
+            // Copy values from last set
+            reps = parseInt(lastRow.dataset.reps) || parseInt(lastRow.querySelector('.set-reps-input')?.value) || 0;
+            weight = parseFloat(lastRow.dataset.weight) || parseFloat(lastRow.querySelector('.set-weight-input')?.value) || 0;
+            // Last set is usually not a warmup
+            isWarmup = false;
+        }
     }
-    const weightInput = container.querySelector(`.weight-input`); // Use classes for inputs
-    const repsInput = container.querySelector(`.reps-input`);
-    const warmupInput = container.querySelector(`.warmup-input`);
 
-    const weight = parseFloat(weightInput?.value);
-    const reps = parseInt(repsInput?.value);
-    const isWarmup = warmupInput?.checked || false;
-
-    if (isNaN(weight) || isNaN(reps)) {
-        send_toast('Please enter valid weight and reps', 'warning');
-        return;
+    // If still no values, try to get from previous workout with same exercise
+    // This would require an API call to get historical data - for now use defaults
+    if (reps === 0) {
+        reps = 10; // Default reps
+        weight = 0; // Default weight
     }
 
-    const url = `/api/workouts/exercises/${workoutExerciseId}/sets/`;
-    const data = { weight, reps, is_warmup: isWarmup };
+    // Ensure reps is at least 1 (PositiveIntegerField in Django)
+    if (reps < 1) {
+        reps = 1;
+    }
 
+    const url = `/api/workouts/exercises/${exerciseId}/sets/`;
+    const data = {
+        set_number: setNumber,
+        reps: Math.max(1, reps), // Ensure at least 1
+        weight: weight.toFixed(2), // Format as decimal string
+        is_warmup: isWarmup
+    };
+
+    console.log('Adding set with data:', data, 'to URL:', url);
     const response = await httpRequestHelper(url, 'POST', data);
+    console.log('Add set response:', response);
 
     if (response.ok) {
         send_toast('Set added', 'success');
-        // TODO: Update UI dynamically instead of relying on reload?
-        // Find table: document.getElementById(`sets-${workoutExerciseId}`)
-        // Append row with response.data info
-        // Clear inputs
-        if(weightInput) weightInput.value = '';
-        if(repsInput) repsInput.value = '';
-        if(warmupInput) warmupInput.checked = false;
-        // TEMP: Reload for simplicity
-        location.reload();
+
+        // Auto-start timer based on user preferences
+        if (window.handleTimerAutoStart) {
+            await window.handleTimerAutoStart(button);
+        }
+
+        // No inputs to clear since we're using a simple + button
+
+        // Re-find tbody since we may have created the table structure
+        let tbody = setsContainer.querySelector('.sets-tbody');
+
+        // If no table exists yet (first set), create the table structure
+        if (!tbody) {
+            const noSetsMessage = setsContainer.querySelector('.no-sets-message');
+            if (noSetsMessage) {
+                noSetsMessage.remove();
+            }
+
+            const tableHtml = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th class="set-header-reps">Reps</th>
+                                <th class="set-header-weight">Weight</th>
+                                <th class="set-header-warmup">Warmup</th>
+                                <th class="set-header-done">Done</th>
+                                <th class="set-header-actions"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="sets-tbody"></tbody>
+                    </table>
+                </div>
+            `;
+
+            // Insert the table before the add button (which is in a mt-2 div)
+            const addButton = setsContainer.querySelector('button[data-function*="addSet"]');
+            if (addButton && addButton.parentElement) {
+                addButton.parentElement.insertAdjacentHTML('beforebegin', tableHtml);
+            } else {
+                // Fallback: add at the end of the container
+                setsContainer.insertAdjacentHTML('beforeend', tableHtml);
+            }
+            tbody = setsContainer.querySelector('.sets-tbody');
+        }
+
+        // Add the new row
+        const setData = response.data;
+        const formattedWeight =
+            setData.weight !== null && setData.weight !== undefined && setData.weight !== ''
+                ? parseFloat(setData.weight).toFixed(1)
+                : '';
+        const newRow = `
+            <tr class="set-row${setData.is_completed ? ' set-completed' : ''}" data-set-id="${setData.id}" data-reps="${setData.reps}" data-weight="${formattedWeight}" data-is-completed="${setData.is_completed ? 'true' : 'false'}" data-exercise-id="${exerciseId}">
+                <td class="set-reps">
+                    <input type="number" class="form-control form-control-sm set-reps-input"
+                           value="${setData.reps}" min="0" step="1"
+                           data-function="blur->updateSet"
+                           data-set-id="${setData.id}"
+                           data-field="reps">
+                </td>
+                <td class="set-weight">
+                    <input type="number" class="form-control form-control-sm set-weight-input"
+                           value="${formattedWeight}" min="0" step="0.5"
+                           data-function="blur->updateSet"
+                           data-set-id="${setData.id}"
+                           data-field="weight">
+                </td>
+                <td class="set-warmup text-center">
+                    <input type="checkbox" class="form-check-input"
+                           ${setData.is_warmup ? 'checked' : ''}
+                           data-function="change->updateSet"
+                           data-set-id="${setData.id}"
+                           data-field="is_warmup">
+                </td>
+                <td class="set-done text-center">
+                    <button type="button" class="btn btn-sm btn-outline-success mark-set-btn"
+                            data-function="click->toggleSetCompletion"
+                            data-set-id="${setData.id}"
+                            data-exercise-id="${exerciseId}"
+                            data-completed="${setData.is_completed ? 'true' : 'false'}"
+                            title="Toggle completion">
+                        <i class="fas fa-check"></i>
+                    </button>
+                </td>
+                <td class="set-actions text-center">
+                    <a href="#" class="text-danger"
+                       data-function="click->deleteSet"
+                       data-set-id="${setData.id}"
+                       title="Delete set">
+                        <i class="fas fa-times"></i>
+                    </a>
+                </td>
+            </tr>
+        `;
+        tbody.insertAdjacentHTML('beforeend', newRow);
+
+        const insertedRow = tbody.querySelector(`.set-row[data-set-id="${setData.id}"]`);
+        if (insertedRow) {
+            const index = Array.from(tbody.querySelectorAll('.set-row')).indexOf(insertedRow);
+            insertedRow.dataset.setIndex = index;
+        }
+
+        // Only trigger mobile focus logic when on mobile workout view
+        if (document.getElementById('exercise-card-container') &&
+            window.mobileSetController && typeof window.mobileSetController.focusSet === 'function') {
+            window.mobileSetController.focusSet(exerciseId, String(setData.id));
+        }
     } else {
-        displayFormErrors(container.id || 'add-set-form', response.data); // Need a way to target errors
-        send_toast(response.data?.detail || 'Error adding set', 'danger');
+        console.error('Error adding set:', response);
+        const errorMsg = response.data?.detail || response.data?.error || JSON.stringify(response.data) || 'Error adding set';
+        send_toast(errorMsg, 'danger');
     }
 }
 
 // --- Delete Set ---
 // Triggered by data-function="click->deleteSet"
-// Needs data-set-id="{{ set.id }}" and data-confirm="Are you sure?" on the button
+// Needs data-set-id on the delete link/button
 async function deleteSet(event) {
-    const button = event.target;
-    const setId = button.dataset.setId;
-    const confirmMsg = button.dataset.confirm;
+    event.preventDefault();
+    const element = event.currentTarget;
+    const setId = element.dataset.setId;
 
     if (!setId) {
-        console.error('Missing data-set-id on delete button');
-        return;
-    }
-
-    if (confirmMsg && !confirm(confirmMsg)) {
+        console.error('Missing data-set-id on delete element');
         return;
     }
 
@@ -545,11 +1372,260 @@ async function deleteSet(event) {
 
     if (response.ok) {
         send_toast('Set deleted', 'success');
-        button.closest('tr')?.remove(); // Remove the table row
+        const row = element.closest('tr');
+        const tbody = row.closest('tbody');
+        const exerciseId = row?.dataset?.exerciseId;
+        row.remove();
+
+        // No need to update set numbers since we removed that column
+
+        // Check if any rows are left
+        const remainingRows = tbody.querySelectorAll('.set-row');
+        if (remainingRows.length === 0) {
+            const table = tbody.closest('.table-responsive');
+            const setsContainer = table.closest('.sets-container');
+            table.remove();
+            const addButton = setsContainer.querySelector('.mt-2');
+            if (addButton) {
+                addButton.insertAdjacentHTML('beforebegin', '<p class="text-muted no-sets-message">No sets recorded for this exercise.</p>');
+            }
+        }
+
+        if (exerciseId && document.getElementById('exercise-card-container') &&
+            window.mobileSetController && typeof window.mobileSetController.advanceSetForExercise === 'function') {
+            window.mobileSetController.advanceSetForExercise(exerciseId);
+        }
     } else {
          send_toast(response.data?.detail || 'Error deleting set', 'danger');
     }
 }
+
+// --- Toggle Set Completion ---
+// Triggered by data-function="click->toggleSetCompletion"
+// Toggles is_completed flag and updates UI state
+async function toggleSetCompletion(event) {
+    event.preventDefault();
+    const button = event.currentTarget;
+    const setId = button.dataset.setId;
+    const exerciseId = button.dataset.exerciseId;
+
+    if (!setId) {
+        console.error('Missing data-set-id on completion toggle button');
+        return;
+    }
+
+    // Be robust: infer completion from multiple sources
+    let isCurrentlyCompleted = button.dataset.completed === 'true';
+    const row = button.closest('.set-row');
+    if (typeof button.dataset.completed === 'undefined' && row) {
+        if (typeof row.dataset.isCompleted !== 'undefined') {
+            isCurrentlyCompleted = row.dataset.isCompleted === 'true';
+        } else if (row.classList.contains('set-completed')) {
+            isCurrentlyCompleted = true;
+        }
+    }
+    const url = `/api/workouts/sets/${setId}/`;
+    const response = await httpRequestHelper(url, 'PATCH', { is_completed: !isCurrentlyCompleted });
+
+    if (!response.ok) {
+        send_toast(response.data?.detail || 'Error updating set', 'danger');
+        return;
+    }
+
+    if (row) {
+        row.dataset.isCompleted = (!isCurrentlyCompleted).toString();
+        row.classList.toggle('set-completed', !isCurrentlyCompleted);
+    }
+
+    button.dataset.completed = (!isCurrentlyCompleted).toString();
+    if (!isCurrentlyCompleted) {
+        button.classList.remove('btn-outline-success');
+        button.classList.add('btn-success', 'text-white');
+        send_toast('Set marked complete', 'success');
+    } else {
+        button.classList.remove('btn-success', 'text-white');
+        button.classList.add('btn-outline-success');
+        send_toast('Set marked incomplete', 'info');
+    }
+
+    if (document.getElementById('exercise-card-container') &&
+        window.mobileSetController && typeof window.mobileSetController.handleSetCompletionChange === 'function') {
+        window.mobileSetController.handleSetCompletionChange({
+            exerciseId: exerciseId,
+            setId: setId,
+            isCompleted: !isCurrentlyCompleted
+        });
+    }
+}
+
+// --- Update Exercise Feedback ---
+// Triggered by data-function="click->updateExerciseFeedback"
+// Needs data-exercise-id and data-feedback on the button
+async function updateExerciseFeedback(event) {
+    const button = event.currentTarget;
+    const exerciseId = button.dataset.exerciseId;
+    const feedback = button.dataset.feedback;
+
+    if (!exerciseId || !feedback) {
+        console.error('Missing data-exercise-id or data-feedback on button');
+        return;
+    }
+
+    // Use PATCH to update just the feedback field
+    const url = `/api/workouts/exercises/${exerciseId}/`;
+    const data = { performance_feedback: feedback };
+
+    const response = await httpRequestHelper(url, 'PATCH', data);
+
+    if (response.ok) {
+        // Update button states (robust to both desktop and mobile markup)
+        // Scope to the current card if possible
+        const scope = button.closest('.exercise-card') || button.closest('.workout-exercise-card') || document;
+        const selector = `[data-function*="updateExerciseFeedback"][data-exercise-id="${exerciseId}"]`;
+        const allButtons = scope.querySelectorAll(selector);
+
+        allButtons.forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+
+        send_toast(`Feedback saved: ${feedback}`, 'success');
+    } else {
+        console.error('Error updating feedback:', response);
+        send_toast(response.data?.detail || 'Error updating feedback', 'danger');
+    }
+}
+
+// --- Remove Exercise from Workout ---
+// Triggered by data-function="click->removeExercise"
+// Needs data-exercise-id on the button
+async function removeExercise(event) {
+    const button = event.currentTarget;
+    const exerciseId = button.dataset.exerciseId;
+
+    if (!exerciseId) {
+        console.error('Missing data-exercise-id on remove button');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to remove this exercise and all its sets?')) {
+        return;
+    }
+
+    const url = `/api/workouts/exercises/${exerciseId}/`;
+    const response = await httpRequestHelper(url, 'DELETE');
+
+    if (response.ok) {
+        send_toast('Exercise removed', 'success');
+
+        // Stop and clear any timer state for this exercise
+        try {
+            if (window.timerManager) {
+                window.timerManager.stopTimer(exerciseId);
+            }
+        } catch (e) { /* noop */ }
+
+        // Prefer removing the full mobile wrapper if present
+        let wrapper = button.closest('.exercise-card');
+        let preferredIndex = null;
+        if (wrapper) {
+            // Remember index before removal
+            preferredIndex = parseInt(wrapper.dataset.exerciseIndex || '0', 10);
+            wrapper.remove();
+        } else {
+            // Desktop or fallback: remove the inner card
+            const innerCard = button.closest('.workout-exercise-card');
+            if (innerCard) innerCard.remove();
+        }
+
+        // If on mobile view, refresh navigation UI (dots, counter, prev/next)
+        if (document.getElementById('exercise-card-container')) {
+            if (typeof window.refreshMobileWorkoutUI === 'function') {
+                window.refreshMobileWorkoutUI(preferredIndex);
+            } else {
+                // Minimal fallback: update count text if present
+                const container = document.getElementById('exercise-card-container');
+                const cards = container ? container.querySelectorAll('.exercise-card') : [];
+                const currentNumSpan = document.getElementById('current-exercise-num');
+                if (currentNumSpan && cards.length > 0) {
+                    // Clamp to valid range
+                    const visibleIndex = Array.from(cards).findIndex(c => !c.classList.contains('d-none'));
+                    currentNumSpan.textContent = String(Math.max(1, (visibleIndex >= 0 ? visibleIndex : 0) + 1));
+                }
+            }
+        }
+    } else {
+        send_toast(response.data?.detail || 'Error removing exercise', 'danger');
+    }
+}
+
+// Refresh the mobile workout navigation UI after dynamic changes (e.g., deletion)
+// Rebuilds indicators, reindexes cards, updates counter and prev/next handlers.
+window.refreshMobileWorkoutUI = function(preferredIndex = null) {
+    const container = document.getElementById('exercise-card-container');
+    if (!container) return;
+
+    container.querySelectorAll('.exercise-card').forEach(card => {
+        if (!card.querySelector('.workout-exercise-card')) {
+            card.remove();
+        }
+    });
+
+    const cards = Array.from(container.querySelectorAll('.exercise-card'));
+    const total = cards.length;
+
+    const navBottom = document.querySelector('.exercise-navigation-bottom');
+    const indicatorsContainer = document.querySelector('.exercise-indicators');
+    const currentNumSpan = document.getElementById('current-exercise-num');
+    const totalNumSpan = document.getElementById('total-exercises-num');
+
+    if (total === 0) {
+        if (navBottom) navBottom.style.display = 'none';
+        if (currentNumSpan) currentNumSpan.textContent = '0';
+        if (totalNumSpan) totalNumSpan.textContent = '0';
+        if (window.mobileWorkoutController && typeof window.mobileWorkoutController.refresh === 'function') {
+            window.mobileWorkoutController.refresh();
+        }
+        return;
+    }
+
+    cards.forEach((card, idx) => {
+        card.dataset.exerciseIndex = idx;
+    });
+
+    if (indicatorsContainer) {
+        indicatorsContainer.innerHTML = '';
+        for (let i = 0; i < total; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'indicator';
+            dot.dataset.exerciseIndex = i;
+            indicatorsContainer.appendChild(dot);
+        }
+    }
+
+    if (totalNumSpan) totalNumSpan.textContent = String(total);
+    if (navBottom) navBottom.style.display = '';
+
+    let targetIndex = null;
+    if (Number.isInteger(preferredIndex)) {
+        targetIndex = preferredIndex;
+    }
+
+    if (window.mobileWorkoutController && typeof window.mobileWorkoutController.refresh === 'function') {
+        window.mobileWorkoutController.refresh(targetIndex);
+    } else {
+        const clampedIndex = targetIndex !== null ? Math.max(0, Math.min(targetIndex, total - 1)) : 0;
+        cards.forEach(card => card.classList.add('d-none'));
+        const targetCard = cards[clampedIndex];
+        if (targetCard) targetCard.classList.remove('d-none');
+        if (currentNumSpan) currentNumSpan.textContent = String(clampedIndex + 1);
+        const prevBtn = document.getElementById('prev-exercise');
+        const nextBtn = document.getElementById('next-exercise');
+        if (prevBtn) prevBtn.disabled = clampedIndex === 0;
+        if (nextBtn) nextBtn.disabled = clampedIndex === total - 1;
+        document.querySelectorAll('.indicator').forEach((indicator, idx) => {
+            indicator.classList.toggle('active', idx === clampedIndex);
+        });
+    }
+};
 
 // --- Add Existing Exercise to Workout ---
 // Triggered by data-function="click->addExerciseToWorkout"
@@ -567,10 +1643,10 @@ async function addExerciseToWorkout(event) {
     const container = button.closest('.add-exercise-controls'); // Adjust selector
     if (!container) {
          console.error('Cannot find container for add exercise controls');
-         return;
+        return;
     }
-    const exerciseSelect = container.querySelector('#exercise-select'); // Assuming IDs are stable
-    const typeSelect = container.querySelector('#exercise-type');
+    const exerciseSelect = container.querySelector('select[name="exercise"]');
+    const typeSelect = container.querySelector('select[name="exercise_type"]');
 
     const exerciseId = exerciseSelect?.value;
     const exerciseType = typeSelect?.value;
@@ -580,14 +1656,35 @@ async function addExerciseToWorkout(event) {
         return;
     }
 
+    // Get current exercise ID from mobile controller if available
+    let currentExerciseId = null;
+    if (window.mobileSetController && typeof window.mobileSetController.getCurrentExerciseId === 'function') {
+        currentExerciseId = window.mobileSetController.getCurrentExerciseId();
+    }
+
     const url = `/api/workouts/${workoutId}/add_exercise/`;
-    const data = { exercise: exerciseId, exercise_type: exerciseType };
+    const data = {
+        exercise: exerciseId,
+        exercise_type: exerciseType,
+        current_exercise_id: currentExerciseId
+    };
 
     const response = await httpRequestHelper(url, 'POST', data);
 
     if (response.ok) {
         send_toast('Exercise added to workout', 'success');
-        window.location.reload(); // Reload to see the change
+
+        // Try to handle dynamically on mobile, fallback to reload
+        if (typeof window.addExerciseDynamically === 'function') {
+            try {
+                await window.addExerciseDynamically(response.data);
+            } catch (error) {
+                console.error('Error adding exercise dynamically:', error);
+                window.location.reload();
+            }
+        } else {
+            window.location.reload();
+        }
     } else {
         send_toast(response.data?.detail || 'Error adding exercise', 'danger');
     }
@@ -615,6 +1712,7 @@ window.fetchAndUpdateExerciseList = async function() {
     const searchInput = document.getElementById('exercise-search');
     const typeFilter = document.getElementById('exercise-type-filter');
     const categoryFilter = document.getElementById('category-filter');
+    const customFilter = document.getElementById('custom-filter');
     const listContainer = document.getElementById('exercise-list-container');
 
     if (!listContainer) return;
@@ -629,24 +1727,38 @@ window.fetchAndUpdateExerciseList = async function() {
     if (categoryFilter && categoryFilter.value) { // Added null check for categoryFilter
         params.append('category', categoryFilter.value);
     }
+    if (customFilter && customFilter.value) { // Added custom filter
+        params.append('custom_filter', customFilter.value);
+    }
 
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState({ path: newUrl }, '', newUrl);
-
+    // Don't update the URL - just make the AJAX request
     try {
-        const response = await fetch(`${form.action}?${params.toString()}`, {
+        // Use the exercises URL directly
+        const url = '/exercises/?' + params.toString();
+        console.log('Fetching exercises from:', url);  // Debug log
+
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest'
-            }
+            },
+            credentials: 'same-origin'  // Include cookies for authentication
         });
+
+        console.log('Response status:', response.status);  // Debug log
+
         if (!response.ok) {
-            console.error('Error fetching exercise list:', response.statusText);
+            console.error('Error fetching exercise list:', response.status, response.statusText);
+            const errorText = await response.text();
+            console.error('Error details:', errorText);
             listContainer.innerHTML = '<p class="text-danger">Error loading exercises. Please try again.</p>';
             return;
         }
+
         const html = await response.text();
         listContainer.innerHTML = html;
+
+        // Event listeners are automatically attached via MutationObserver and data-function attributes
     } catch (error) {
         console.error('Fetch error:', error);
         listContainer.innerHTML = '<p class="text-danger">Error loading exercises. Please try again.</p>';
@@ -677,19 +1789,19 @@ function updateRoutineExerciseOrderNumbers() {
     const exercisesContainer = document.getElementById('routine-exercises-container');
     if (!exercisesContainer) return;
     const cards = exercisesContainer.querySelectorAll('.exercise-routine-card');
+
     cards.forEach((card, idx) => {
-        const orderSpan = card.querySelector('.exercise-order');
-        const orderInput = card.querySelector('input[name^="order_"]');
         const newOrder = idx + 1;
-        if (orderSpan) {
-            orderSpan.textContent = newOrder;
-        }
-        // Only set the input value for newly added cards (those without an existing ID)
-        // or if it still has the placeholder value.
-        const routineExerciseIdInput = card.querySelector('input[name^="routine_exercise_id_"]');
-        if (orderInput && (!routineExerciseIdInput || !routineExerciseIdInput.value || orderInput.value === '__DEFAULT_ORDER__')) {
-            orderInput.value = newOrder;
-        }
+        const orderSpan = card.querySelector('.exercise-order');
+        if (orderSpan) orderSpan.textContent = newOrder;
+
+        const orderInput = card.querySelector('.exercise-order-input');
+        if (orderInput) orderInput.value = newOrder;
+
+        const upButton = card.querySelector('[data-move-direction="up"]');
+        const downButton = card.querySelector('[data-move-direction="down"]');
+        if (upButton) upButton.disabled = idx === 0;
+        if (downButton) downButton.disabled = idx === cards.length - 1;
     });
 }
 
@@ -736,14 +1848,48 @@ function updateRoutineFormCount() {
 // }
 
 window.removeRoutineExerciseCard = function(event) {
+    const container = document.getElementById('routine-exercises-container');
     const button = event.target;
     const cardToRemove = button.closest('.exercise-routine-card');
     if (cardToRemove) {
         cardToRemove.remove();
         updateRoutineFormCount();
         updateRoutineExerciseOrderNumbers();
-    }
+        if (container && !container.querySelector('.exercise-routine-card')) {
+            }
+            const emptyMessage = document.createElement('p');
+            emptyMessage.className = 'text-muted routine-empty-message';
+            emptyMessage.textContent = 'No exercises added yet. Use "Add Exercise" to get started.';
+            container.appendChild(emptyMessage);
+        } else {
+        }
 }
+
+
+
+window.handleRoutineExerciseMove = function(event) {
+    const trigger = event.target.closest('[data-move-direction]');
+    if (!trigger) return;
+
+    const direction = trigger.dataset.moveDirection;
+    const card = trigger.closest('.exercise-routine-card');
+    const container = card ? card.parentElement : null;
+    if (!card || !container) return;
+
+    if (direction === 'up') {
+        const previous = card.previousElementSibling;
+        if (previous) {
+            container.insertBefore(card, previous);
+        }
+    } else if (direction === 'down') {
+        const next = card.nextElementSibling;
+        if (next) {
+            container.insertBefore(next, card);
+        }
+    }
+
+    updateRoutineExerciseOrderNumbers();
+};
 
 // --- Routine Form Modal Functions ---
 window.showAddExerciseToRoutineModal = function(event) {
@@ -892,16 +2038,138 @@ function handleDrop(event) {
 }
 
 function setupDragAndDropListeners(cardElement) {
+    if (!cardElement || cardElement.dataset.routineDragBound === 'true') {
+        return;
+    }
+    cardElement.dataset.routineDragBound = 'true';
     cardElement.addEventListener('dragstart', handleDragStart);
     cardElement.addEventListener('dragend', handleDragEnd);
+    // Add touch support for mobile (desktop drag will ignore this)
+    addTouchDragSupport(cardElement, 'routine-exercises');
 }
 
-// This function was modified to correctly handle new card structure and add a default set.
-function appendExerciseCardToRoutine(exerciseId, exerciseName) {
+function isRoutineDragEnabled() {
+    return !window.matchMedia('(pointer: coarse)').matches;
+}
+
+function prepareRoutineExerciseCard(cardElement) {
+    if (!cardElement) {
+        return;
+    }
+
+    if (isRoutineDragEnabled()) {
+        cardElement.setAttribute('draggable', 'true');
+        setupDragAndDropListeners(cardElement);
+    } else {
+        cardElement.setAttribute('draggable', 'false');
+    }
+
+    const { tbody } = getRoutineSetsElements(cardElement);
+    if (tbody && !tbody.querySelector('.set-row')) {
+        ensureRoutineSetsEmptyRow(tbody);
+    }
+
+    updateRoutineTypeSummary(cardElement);
+}
+
+const ROUTINE_SET_COLUMNS = 7;
+
+function getRoutineSetsElements(exerciseCard) {
+    if (!exerciseCard) {
+        return { setsContainer: null, tbody: null };
+    }
+    const setsContainer = exerciseCard.querySelector('.sets-container');
+    const tbody = setsContainer ? setsContainer.querySelector('.sets-tbody') : null;
+    return { setsContainer, tbody };
+}
+
+function ensureRoutineSetsEmptyRow(tbody) {
+    if (!tbody || tbody.querySelector('.sets-empty-message')) {
+        return;
+    }
+    const emptyRow = document.createElement('tr');
+    emptyRow.className = 'sets-empty-message';
+    const cell = document.createElement('td');
+    cell.colSpan = ROUTINE_SET_COLUMNS;
+    cell.className = 'text-center text-muted py-3';
+    cell.textContent = 'No sets planned yet.';
+    emptyRow.appendChild(cell);
+    tbody.appendChild(emptyRow);
+}
+
+function updateRoutineTypeSummary(exerciseCard, fallbackTypeDisplay) {
+    if (!exerciseCard) {
+        return;
+    }
+    const summary = exerciseCard.querySelector('.routine-type-summary');
+    if (!summary) {
+        return;
+    }
+
+    const typeSelect = exerciseCard.querySelector('.routine-type-select');
+    if (typeSelect && typeSelect.value) {
+        const selectedOption = typeSelect.options[typeSelect.selectedIndex];
+        summary.textContent = selectedOption ? selectedOption.textContent : 'Custom type';
+        return;
+    }
+
+    const exerciseSelect = exerciseCard.querySelector('.exercise-select');
+    const selectedExerciseOption = exerciseSelect ? exerciseSelect.options[exerciseSelect.selectedIndex] : null;
+    const defaultDisplay = fallbackTypeDisplay
+        || (selectedExerciseOption ? selectedExerciseOption.dataset.defaultTypeDisplay : null)
+        || 'Select Exercise First';
+
+    summary.textContent = `Default (${defaultDisplay})`;
+}
+
+function updateRoutineSpecificTypeLabel(event) {
+    if (event) {
+        event.preventDefault?.();
+    }
+    const select = event?.target || null;
+    const exerciseCard = select ? select.closest('.exercise-routine-card') : null;
+    if (!exerciseCard) {
+        return;
+    }
+    updateRoutineTypeSummary(exerciseCard);
+}
+
+function updateExerciseCardName(event) {
+    if (!event || !event.target) {
+        return;
+    }
+    const selectElement = event.target;
+    const exerciseCard = selectElement.closest('.exercise-routine-card');
+    if (!exerciseCard) {
+        return;
+    }
+
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    const exerciseName = selectedOption?.dataset.name || selectedOption?.text || 'Select Exercise';
+    const defaultTypeDisplay = selectedOption?.dataset.defaultTypeDisplay || 'Select Exercise First';
+
+    const nameDisplay = exerciseCard.querySelector('.exercise-name-display');
+    if (nameDisplay) {
+        nameDisplay.textContent = exerciseName;
+    }
+
+    const routineTypeSelect = exerciseCard.querySelector('.routine-type-select');
+    if (routineTypeSelect && routineTypeSelect.options.length > 0) {
+        const defaultOption = routineTypeSelect.options[0];
+        defaultOption.textContent = `Default (${defaultTypeDisplay})`;
+        if (!routineTypeSelect.value) {
+            updateRoutineTypeSummary(exerciseCard, defaultTypeDisplay);
+        }
+    } else {
+        updateRoutineTypeSummary(exerciseCard, defaultTypeDisplay);
+    }
+}
+
+function appendExerciseCardToRoutine(exerciseId, exerciseName, defaultTypeDisplay, routineSpecificType) {
     const template = document.getElementById('routine-exercise-template');
     if (!template) {
         console.error('#routine-exercise-template not found!');
-        return null; // Return null or throw error
+        return null;
     }
 
     const container = document.getElementById('routine-exercises-container');
@@ -910,442 +2178,894 @@ function appendExerciseCardToRoutine(exerciseId, exerciseName) {
         return null;
     }
 
-    const nextIndex = getNextRoutineExerciseIndex(); // Ensure this gives a unique index
-    const defaultOrder = nextIndex + 1; // Order is 1-based
+    const nextIndex = getNextRoutineExerciseIndex();
+    const defaultOrder = container.querySelectorAll('.exercise-routine-card').length + 1;
+    const fallbackType = defaultTypeDisplay || 'Select Exercise First';
 
     let content = template.innerHTML;
     content = content.replace(/__INDEX__/g, nextIndex)
                      .replace(/__ORDER__/g, defaultOrder)
-                     .replace(/__EXERCISE_NAME__/g, exerciseName || 'Select Exercise');
+                     .replace(/__EXERCISE_NAME__/g, exerciseName || 'Select Exercise')
+                     .replace(/__DEFAULT_TYPE__/g, fallbackType);
 
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = content;
     const newCard = tempDiv.firstElementChild;
-
     if (!newCard) {
-        console.error("Could not create new exercise card from template content.");
+        console.error('Could not create new exercise card from template content.');
         return null;
     }
-    newCard.dataset.index = nextIndex; // Set the data-index attribute
 
-    // Set the selected exercise in the dropdown
+    newCard.dataset.index = String(nextIndex);
+
+    const orderInput = newCard.querySelector('.exercise-order-input');
+    if (orderInput) {
+        orderInput.value = defaultOrder;
+    }
+
+    const emptyMessage = container.querySelector('.routine-empty-message');
+    if (emptyMessage) {
+        emptyMessage.remove();
+    }
+
     const exerciseSelect = newCard.querySelector('.exercise-select');
     if (exerciseSelect && exerciseId) {
         exerciseSelect.value = exerciseId;
-        // Trigger update for name and default type display after setting value
         updateExerciseCardName({ target: exerciseSelect });
-    } else if (exerciseSelect) {
-        // If no exerciseId, ensure default type display is generic
-        const specificTypeSelect = newCard.querySelector('select[name*="routine_specific_exercise_type"]');
-        if (specificTypeSelect && specificTypeSelect.options.length > 0 && specificTypeSelect.options[0].value === '') {
-            specificTypeSelect.options[0].textContent = 'Default (Select Exercise First)';
-        }
+    } else {
+        updateRoutineTypeSummary(newCard, fallbackType);
+    }
+
+    const routineTypeSelect = newCard.querySelector('.routine-type-select');
+    if (routineTypeSelect && routineSpecificType) {
+        routineTypeSelect.value = routineSpecificType;
+        updateRoutineTypeSummary(newCard);
     }
 
     container.appendChild(newCard);
-    setupDragAndDropListeners(newCard); // Add D&D listeners
-    updateRoutineExerciseOrderNumbers(); // Update order numbers for all cards
+    prepareRoutineExerciseCard(newCard);
+    addSetToExerciseCard(newCard);
+    updateRoutineExerciseOrderNumbers();
+    updateRoutineFormCount();
+    updateSetRowFieldVisibility();
 
-    // Automatically add one default set to the new exercise card
-    window.addSetToExerciseCard(newCard); // Pass the new card element directly
-    return newCard; // Return the created card element
+    return newCard;
 }
 
-// Restore window.selectAndAddExerciseToRoutine
-window.selectAndAddExerciseToRoutine = function(event) {
-    const selectElement = event.target;
-    const exerciseId = selectElement.value;
-
-    if (!exerciseId) { // User selected the placeholder "Choose an exercise..."
-        return;
-    }
-
-    const selectedOption = selectElement.options[selectElement.selectedIndex];
-    const exerciseName = selectedOption.dataset.name || selectedOption.text;
-
-    // Call the corrected appendExerciseCardToRoutine
-    const newCard = appendExerciseCardToRoutine(exerciseId, exerciseName);
-
-    if (newCard) {
-        // Optional: Scroll to the new card or highlight it
-    }
-
-    // Close the modal
-    const modal = document.getElementById('add-exercise-to-routine-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
-    // Reset the select for next time (already done in showAddExerciseToRoutineModal, but good practice)
-    selectElement.value = '';
-}
-
-function initializeRoutineForm() {
-    const rpeToggleForDebug = document.getElementById('toggle-rpe-visibility');
-    if (rpeToggleForDebug) {
-        // This log confirmed the initial state was correct, so we can remove it or keep for future.
-        // console.log('[gainz.js] initializeRoutineForm: Initial state of RPE checkbox (id: toggle-rpe-visibility) IS CHECKED:', rpeToggleForDebug.checked);
-    }
-
-    // Parts of this block were causing the issue. We will reintroduce them carefully.
-    const routineExercisesContainer = document.getElementById('routine-exercises-container');
-    if (routineExercisesContainer) {
-        // Initial setup for existing cards from server
-        /* routineExercisesContainer.querySelectorAll('.exercise-routine-card').forEach(card => {
-            setupDragAndDropListeners(card);
-            const exerciseSelect = card.querySelector('.exercise-select');
-            if (exerciseSelect && exerciseSelect.value) {
-                updateExerciseCardName({target: exerciseSelect});
-            }
-        });
-        routineExercisesContainer.addEventListener('dragover', handleDragOver);
-        routineExercisesContainer.addEventListener('drop', handleDrop);
-        */
-    }
-
-    updateRoutineExerciseOrderNumbers(); // Reintroducing this first
-
-    // The main call to update visibility based on checkbox states
-    window.updateSetRowFieldVisibility();
-}
-
-// Initialization on DOMContentLoaded
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded event fired from gainz.js');
-
-    // This block correctly wires up the program form buttons.
-    if (document.getElementById('program-routines-container')) {
-        // initializeProgramForm(); // Removed as per edit hint
-    }
-
-    // New logic for program form scheduling type
-    const weeklyRadio = document.getElementById('scheduling-weekly');
-    const sequentialRadio = document.getElementById('scheduling-sequential');
-    if (weeklyRadio && sequentialRadio) {
-        toggleScheduleType(); // Call on load
-        weeklyRadio.addEventListener('change', toggleScheduleType);
-        sequentialRadio.addEventListener('change', toggleScheduleType);
-    }
-
-    const weeklyPlanner = document.querySelector('.weekly-planner');
-    if (weeklyPlanner) {
-        weeklyPlanner.addEventListener('change', function(event) {
-            if (event.target.classList.contains('add-routine-to-day-select')) {
-                handleAddRoutineToDay(event);
-            }
-        });
-        weeklyPlanner.addEventListener('click', function(event) {
-            if (event.target.classList.contains('btn-close')) {
-                const chip = event.target.closest('.routine-chip');
-                if (chip) {
-                    handleRemoveRoutineFromDay(chip);
-                }
-            }
-        });
-    }
-
-    document.querySelectorAll('[data-function]').forEach(element => {
-        const attrNode = element.getAttributeNode('data-function');
-        if (attrNode) {
-            handle_attribute(element, attrNode);
-        } else {
-            console.warn('Element found by querySelectorAll but getAttributeNode("data-function") is null for:', element);
-        }
-    });
-
-    if (document.getElementById('routineForm')) {
-        initializeRoutineForm();
-    }
-
-    // Start observing the body for dynamically added/changed elements
-    console.log('Starting MutationObserver for data-function attributes...');
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['data-function']
-    });
-});
-
-// Make updateSetRowFieldVisibility explicitly global if not already, for data-function
-window.updateSetRowFieldVisibility = updateSetRowFieldVisibility;
-
-// Helper function to update visibility of optional set fields based on checkboxes
-async function updateSetRowFieldVisibility(event) { // Made async
-    const isInitializationCall = !event;
-    if (isInitializationCall) {
-        console.log('[gainz.js] updateSetRowFieldVisibility: Called during page initialization.');
-    }
-
-    const rpeToggle = document.getElementById('toggle-rpe-visibility');
-    const restToggle = document.getElementById('toggle-rest-time-visibility');
-    const notesToggle = document.getElementById('toggle-notes-visibility');
-
-    // Log the state of the checkbox as seen by THIS function, especially during initialization
-    if (rpeToggle && isInitializationCall) {
-        console.log('[gainz.js] updateSetRowFieldVisibility (init call): RPE checkbox (id: toggle-rpe-visibility) IS CHECKED:', rpeToggle.checked);
-    }
-
-    const showRPE = rpeToggle?.checked;
-    const showRestTime = restToggle?.checked;
-    const showNotes = notesToggle?.checked;
-
-    if (isInitializationCall) {
-        console.log(`[gainz.js] updateSetRowFieldVisibility (init call): showRPE=${showRPE}, showRestTime=${showRestTime}, showNotes=${showNotes}`);
-    }
-
-    // Save states to Redis via backend API call
-    if (event && event.target) { // Check if called by an event on a specific toggle
-        const checkbox = event.target;
-        let preferenceKeyForBackend;
-        switch (checkbox.id) {
-            case 'toggle-rpe-visibility':
-                preferenceKeyForBackend = 'routineForm.showRPE';
-                break;
-            case 'toggle-rest-time-visibility':
-                preferenceKeyForBackend = 'routineForm.showRestTime';
-                break;
-            case 'toggle-notes-visibility':
-                preferenceKeyForBackend = 'routineForm.showNotes';
-                break;
-            default:
-                console.error(`[gainz.js] Unknown checkbox ID for preference saving: ${checkbox.id}`);
-                // Optionally, you might want to return or skip saving if the ID is unknown.
-                // For now, it will proceed and likely result in an unhandled preferenceKeyForBackend.
-                // Consider adding: return;
-        }
-
-        // Only proceed if preferenceKeyForBackend was successfully determined
-        if (preferenceKeyForBackend) {
-            const preferenceValue = checkbox.checked;
-            console.log(`[gainz.js] Attempting to save preference: Key='${preferenceKeyForBackend}', Value=${preferenceValue}`);
-            await httpRequestHelper('/ajax/update_user_preferences/', 'POST', {
-                preference_key: preferenceKeyForBackend, // This will now be correct
-                preference_value: preferenceValue
-            }).then(response => {
-                console.log('[gainz.js] Save preference response:', response);
-                if (!response.ok) {
-                    send_toast(response.data?.message || 'Failed to save preference.', 'danger', 'Preference Error');
-                }
-            }).catch(error => {
-                console.error('[gainz.js] Save preference error:', error);
-                send_toast('Error communicating with server to save preference.', 'danger', 'Network Error');
-            });
-        } else if (checkbox.id) { // Log if key was not determined but it was an attempt to save
-             console.warn(`[gainz.js] Did not save preference for unknown checkbox ID: ${checkbox.id}`);
-        }
-    }
-    // Removed localStorage saving logic
-    // if(rpeToggle) localStorage.setItem('gainz.routineForm.showRPE', showRPE);
-    // if(restToggle) localStorage.setItem('gainz.routineForm.showRestTime', showRestTime);
-    // if(notesToggle) localStorage.setItem('gainz.routineForm.showNotes', showNotes);
-
-    document.querySelectorAll('.set-row').forEach(setRow => {
-        const rpeField = setRow.querySelector('.rpe-field');
-        const restTimeField = setRow.querySelector('.rest-time-field');
-        const notesField = setRow.querySelector('.notes-field');
-
-        if (rpeField) {
-            const newRpeDisplay = showRPE ? 'block' : 'none';
-            if (isInitializationCall) {
-                console.log(`[gainz.js] updateSetRowFieldVisibility (init call): Setting .rpe-field display to: ${newRpeDisplay}`);
-            }
-            rpeField.style.display = newRpeDisplay;
-        }
-        if (restTimeField) restTimeField.style.display = showRestTime ? 'block' : 'none';
-        if (notesField) notesField.style.display = showNotes ? 'block' : 'none';
-    });
-}
-
-// Helper function to update set numbers and input names within an exercise card
-function updateSetNumbers(exerciseCardElement) {
-    const exerciseIndex = exerciseCardElement.dataset.index;
-    const setRows = exerciseCardElement.querySelectorAll('.sets-container .set-row');
-    setRows.forEach((setRow, newSetIndex) => {
-        setRow.dataset.setIndex = newSetIndex;
-
-        const setNumberDisplay = setRow.querySelector('.set-number-display');
-        if (setNumberDisplay) setNumberDisplay.textContent = `Set ${newSetIndex + 1}`;
-
-        const setNumberInput = setRow.querySelector('.set-number-input');
-        if (setNumberInput) setNumberInput.value = newSetIndex + 1;
-
-        // Update name attributes for all inputs in the set row
-        setRow.querySelectorAll('input[name*="planned_sets"], select[name*="planned_sets"], textarea[name*="planned_sets"]').forEach(input => {
-            const oldName = input.getAttribute('name');
-            const newName = oldName.replace(/planned_sets\[\d+\]/, `planned_sets[${newSetIndex}]`);
-            // Also, ensure the exercise index part is correct if it was a placeholder
-            // This is more for newly added cards from template than for re-ordering existing ones
-            const routineExerciseIdInput = exerciseCardElement.querySelector('input[name^="routine_exercise_id_"]');
-            if (routineExerciseIdInput && !routineExerciseIdInput.value) {
-                newName = newName.replace(/routine_exercise\[(?:\|__EXERCISE_INDEX__\|)\]/g, `routine_exercise[${exerciseIndex}]`);
-            }
-            input.setAttribute('name', newName);
-
-            // Update IDs if they follow a similar pattern (important for labels)
-            if (input.id) {
-                const oldId = input.id;
-                const newId = oldId.replace(/planned_sets_\d+_/g, `planned_sets_${newSetIndex}_`).replace(/__EXERCISE_INDEX__/g, exerciseIndex);
-                input.setAttribute('id', newId);
-                const label = document.querySelector(`label[for='${oldId}']`);
-                if (label) label.setAttribute('for', newId);
-            }
-        });
-    });
-}
-
-window.updateExerciseCardName = function(event) {
-    const selectElement = event.target;
-    const exerciseCard = selectElement.closest('.exercise-routine-card');
-    if (!exerciseCard) return;
-
-    const selectedOption = selectElement.options[selectElement.selectedIndex];
-    const exerciseName = selectedOption.dataset.name || 'Exercise';
-
-    const nameDisplay = exerciseCard.querySelector('.exercise-name-display');
-    if (nameDisplay) nameDisplay.textContent = exerciseName;
-
-    // Update the default exercise type in the specific type dropdown
-    const specificTypeSelect = exerciseCard.querySelector('select[name*="routine_specific_exercise_type"]');
-    if (specificTypeSelect && specificTypeSelect.options.length > 0) {
-        const defaultOption = specificTypeSelect.options[0];
-        // Assumption: all_exercises_details (JS object) is available globally or passed appropriately
-        // It should map exercise PK to its details including default type display
-        // For now, we'll just clear it if we don't have the data readily.
-        // This part needs the exercise_type_choices passed to the template AND the actual default type of the selected ex.
-        const exercisePk = selectedOption.value;
-        // Placeholder: In a real scenario, you'd fetch this from a data structure if not on the option itself.
-        // For now, if ex.default_type_display was a data attribute on the option:
-        const defaultTypeDisplay = selectedOption.dataset.defaultTypeDisplay || 'Type';
-        if (defaultOption.value === '') { // Ensure it's the "Default" option
-            defaultOption.textContent = `Default (${defaultTypeDisplay})`;
-        }
-    }
-}
-
-window.addSetToExerciseCard = function(eventOrCardElement) {
-    let exerciseCard;
-    if (eventOrCardElement instanceof HTMLElement) {
+function addSetToExerciseCard(eventOrCardElement) {
+    let exerciseCard = null;
+    if (eventOrCardElement instanceof HTMLElement && eventOrCardElement.classList.contains('exercise-routine-card')) {
         exerciseCard = eventOrCardElement;
-    } else { // It's an event
+    } else if (eventOrCardElement?.target) {
+        eventOrCardElement.preventDefault?.();
         exerciseCard = eventOrCardElement.target.closest('.exercise-routine-card');
     }
 
-    if (!exerciseCard) return;
+    if (!exerciseCard) {
+        return null;
+    }
 
-    const exerciseIndex = exerciseCard.dataset.index;
-    const setsContainer = exerciseCard.querySelector('.sets-container');
-    if (!setsContainer) return;
+    const { tbody } = getRoutineSetsElements(exerciseCard);
+    if (!tbody) {
+        return null;
+    }
 
+    const emptyRow = tbody.querySelector('.sets-empty-message');
+    if (emptyRow) {
+        emptyRow.remove();
+    }
+
+    const existingRows = Array.from(tbody.querySelectorAll('.set-row'));
     const setTemplate = document.getElementById('set-row-template');
     if (!setTemplate) {
         console.error('#set-row-template not found!');
+        return null;
+    }
+
+    const fragment = setTemplate.content.cloneNode(true);
+    const newRow = fragment.querySelector('.set-row');
+    newRow.dataset.setIndex = existingRows.length;
+
+    newRow.querySelectorAll('input, select, textarea').forEach(input => {
+        if (!input.name) {
+            return;
+        }
+        input.name = input.name
+            .replace(/__EXERCISE_INDEX__/g, exerciseCard.dataset.index)
+            .replace(/__SET_INDEX__/g, existingRows.length)
+            .replace(/__SET_NUMBER__/g, existingRows.length + 1);
+
+        if (input.type === 'hidden' && input.name.endsWith('_id')) {
+            input.value = '';
+        } else if (input.classList.contains('set-number-input')) {
+            input.value = existingRows.length + 1;
+        } else {
+            input.value = '';
+        }
+        if (input.dataset) {
+            input.dataset.originalValue = input.value ?? '';
+        }
+    });
+
+    tbody.appendChild(newRow);
+    updateSetNumbers(exerciseCard);
+    updateSetRowFieldVisibility();
+    bindRoutineSetSyncHandlers(exerciseCard);
+    return newRow;
+}
+function removeSetFromExerciseCard(event) {
+    if (event) {
+        event.preventDefault?.();
+    }
+    const trigger = event?.target;
+    const setRow = trigger ? trigger.closest('.set-row') : null;
+    if (!setRow) {
         return;
     }
 
-    const nextSetIndex = setsContainer.querySelectorAll('.set-row').length;
-    const newSetNumber = nextSetIndex + 1;
-
-    const clone = setTemplate.content.cloneNode(true);
-    const newSetRow = clone.querySelector('.set-row');
-    newSetRow.dataset.setIndex = nextSetIndex;
-
-    const setNumberDisplay = newSetRow.querySelector('.set-number-display');
-    if (setNumberDisplay) setNumberDisplay.textContent = `Set ${newSetNumber}`;
-
-    const setNumberInput = newSetRow.querySelector('.set-number-input');
-    if (setNumberInput) setNumberInput.value = newSetNumber;
-
-    // Update name attributes and IDs
-    newSetRow.querySelectorAll('input, select, textarea').forEach(input => {
-        let name = input.getAttribute('name');
-        if (name) {
-            name = name.replace(/__EXERCISE_INDEX__/g, exerciseIndex)
-                       .replace(/__SET_INDEX__/g, nextSetIndex)
-                       .replace(/__SET_NUMBER__/g, newSetNumber); // Though set number is mostly for display
-            input.setAttribute('name', name);
-        }
-        let id = input.getAttribute('id');
-        if (id) {
-            id = id.replace(/__EXERCISE_INDEX__/g, exerciseIndex)
-                   .replace(/__SET_INDEX__/g, nextSetIndex)
-                   .replace(/__SET_NUMBER__/g, newSetNumber);
-            input.setAttribute('id', id);
-            const label = clone.querySelector(`label[for='${id.replace(nextSetIndex, '__SET_INDEX__').replace(exerciseIndex, '__EXERCISE_INDEX__')}']`);
-            if (label) label.setAttribute('for', id);
-        }
-    });
-
-    setsContainer.appendChild(newSetRow);
-    updateSetRowFieldVisibility(); // Apply current visibility settings
-    // Event listeners for new buttons will be handled by the global mutation observer for data-function
-}
-
-window.removeSetFromExerciseCard = function(event) {
-    const setRow = event.target.closest('.set-row');
-    if (!setRow) return;
-
     const exerciseCard = setRow.closest('.exercise-routine-card');
+    const { tbody } = getRoutineSetsElements(exerciseCard);
     setRow.remove();
 
-    if (exerciseCard) {
-        updateSetNumbers(exerciseCard);
+    updateSetNumbers(exerciseCard);
+    if (tbody && !tbody.querySelector('.set-row')) {
+        ensureRoutineSetsEmptyRow(tbody);
     }
 }
 
-window.duplicateSetRow = function(event) {
-    const sourceSetRow = event.target.closest('.set-row');
-    if (!sourceSetRow) return;
+function duplicateSetRow(event) {
+    if (event) {
+        event.preventDefault?.();
+    }
+    const trigger = event?.target;
+    const sourceRow = trigger ? trigger.closest('.set-row') : null;
+    if (!sourceRow) {
+        return;
+    }
 
-    const exerciseCard = sourceSetRow.closest('.exercise-routine-card');
-    if (!exerciseCard) return;
+    const exerciseCard = sourceRow.closest('.exercise-routine-card');
+    const { tbody } = getRoutineSetsElements(exerciseCard);
+    if (!tbody) {
+        return;
+    }
 
-    const setsContainer = exerciseCard.querySelector('.sets-container');
-    if (!setsContainer) return;
+    const emptyRow = tbody.querySelector('.sets-empty-message');
+    if (emptyRow) {
+        emptyRow.remove();
+    }
 
-    const exerciseIndex = exerciseCard.dataset.index;
-    const newSetIndex = setsContainer.querySelectorAll('.set-row').length; // Index for the new row
-    const newSetNumber = newSetIndex + 1;
-
-    const clone = sourceSetRow.cloneNode(true);
-    clone.dataset.setIndex = newSetIndex;
-
-    // Clear the ID field for the new set (so backend treats it as new)
-    const idInput = clone.querySelector('input[name*="_id"]');
-    if (idInput) idInput.value = '';
-
-    const setNumberDisplay = clone.querySelector('.set-number-display');
-    if (setNumberDisplay) setNumberDisplay.textContent = `Set ${newSetNumber}`;
-
-    const setNumberInput = clone.querySelector('.set-number-input');
-    if (setNumberInput) setNumberInput.value = newSetNumber;
-
-    // Update name attributes and IDs for the cloned row
+    const clone = sourceRow.cloneNode(true);
     clone.querySelectorAll('input, select, textarea').forEach(input => {
-        let name = input.getAttribute('name');
-        if (name) {
-            name = name.replace(/planned_sets\[\d+\]/, `planned_sets[${newSetIndex}]`);
-            // Ensure exercise index is correct (especially if source was also from template)
-            name = name.replace(/routine_exercise\[(?:\|__EXERCISE_INDEX__\|)\]/g, `routine_exercise[${exerciseIndex}]`);
-            input.setAttribute('name', name);
-        }
-        let id = input.getAttribute('id');
-        if (id) {
-            const oldSetIndexPattern = /planned_sets_\d+_/; // Matches planned_sets_0_, planned_sets_1_, etc.
-            id = id.replace(oldSetIndexPattern, `planned_sets_${newSetIndex}_`)
-                   .replace(/__EXERCISE_INDEX__/g, exerciseIndex) // if coming from a template placeholder
-                   .replace(/routine_exercise_\d+_/, `routine_exercise_${exerciseIndex}_`); // if coming from an existing item
-            input.setAttribute('id', id);
-            const label = clone.querySelector(`label[for='${input.getAttribute('data-original-id-for-label') || id}']`); // A bit hacky, assumes original ID for label if complex IDs
-            if (label) label.setAttribute('for', id);
+        if (input.type === 'hidden' && input.name && input.name.endsWith('_id')) {
+            input.value = '';
         }
     });
 
-    // Insert after the source row
-    sourceSetRow.parentNode.insertBefore(clone, sourceSetRow.nextSibling);
-
-    // Update numbers for all subsequent sets (including the one just added if it wasn't last)
+    tbody.appendChild(clone);
     updateSetNumbers(exerciseCard);
-    updateSetRowFieldVisibility(); // Apply visibility to the new row
+    updateSetRowFieldVisibility();
+    bindRoutineSetSyncHandlers(container);
+}
+function getRoutineSetFieldKey(input) {
+    const name = input?.name || '';
+    if (name.includes('_target_reps')) {
+        return 'target_reps';
+    }
+    if (name.includes('_target_weight')) {
+        return 'target_weight';
+    }
+    return null;
+}
+
+function normalizeRoutineSetFieldValue(value, fieldKey) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    const trimmed = String(value).trim();
+    if (!trimmed) {
+        return '';
+    }
+    if (fieldKey === 'target_weight') {
+        const numeric = Number(trimmed);
+        return Number.isFinite(numeric) ? numeric : trimmed;
+    }
+    return trimmed;
+}
+
+function toggleSetLock(event) {
+    if (event) {
+        event.preventDefault?.();
+    }
+    const button = event?.target?.closest('.set-lock-btn') || event?.target;
+    const setRow = button ? button.closest('.set-row') : null;
+    if (!setRow) {
+        return;
+    }
+
+    const lockInput = setRow.querySelector('input[name*="_locked"]');
+    const icon = button.querySelector('i') || button;
+
+    if (lockInput && icon) {
+        const isLocked = lockInput.value === '1';
+        lockInput.value = isLocked ? '0' : '1';
+
+        if (isLocked) {
+            // Unlocking
+            button.className = 'btn btn-sm btn-outline-secondary set-lock-btn';
+            icon.className = 'fas fa-unlock';
+            button.title = 'Lock this set from bulk editing';
+        } else {
+            // Locking
+            button.className = 'btn btn-sm btn-warning set-lock-btn';
+            icon.className = 'fas fa-lock';
+            button.title = 'Unlock this set for bulk editing';
+        }
+    }
+}
+
+function captureRoutineSetFieldOriginalValue(event) {
+    const input = event?.target;
+    if (!input) {
+        return;
+    }
+    input.dataset.originalValue = input.value ?? '';
+}
+
+function handleRoutineSetFieldChange(event) {
+    const input = event?.target;
+    if (!input) {
+        return;
+    }
+
+    const fieldKey = getRoutineSetFieldKey(input);
+    const newValue = input.value ?? '';
+    const originalValue = input.dataset.originalValue ?? '';
+    input.dataset.originalValue = newValue;
+
+    if (!fieldKey) {
+        return;
+    }
+
+    const normalizedOriginal = normalizeRoutineSetFieldValue(originalValue, fieldKey);
+    const normalizedNew = normalizeRoutineSetFieldValue(newValue, fieldKey);
+    if (normalizedOriginal === normalizedNew) {
+        return;
+    }
+
+    const exerciseCard = input.closest('.exercise-routine-card');
+    if (!exerciseCard) {
+        return;
+    }
+
+    const selector = `input[name*="_${fieldKey}"]`;
+
+    exerciseCard.querySelectorAll(selector).forEach(otherInput => {
+        if (otherInput === input) {
+            return;
+        }
+
+        // Skip locked sets
+        const otherSetRow = otherInput.closest('.set-row');
+        if (otherSetRow) {
+            const lockInput = otherSetRow.querySelector('input[name*="_locked"]');
+            if (lockInput && lockInput.value === '1') {
+                return;
+            }
+        }
+
+        const otherValue = otherInput.value ?? '';
+        if (normalizeRoutineSetFieldValue(otherValue, fieldKey) !== normalizedOriginal) {
+            return;
+        }
+        otherInput.value = newValue;
+        otherInput.dataset.originalValue = newValue;
+    });
+}
+
+function updateSetNumbers(exerciseCard) {
+    if (!exerciseCard) {
+        return;
+    }
+    const exerciseIndex = exerciseCard.dataset.index;
+    const { tbody } = getRoutineSetsElements(exerciseCard);
+    if (!tbody) {
+        return;
+    }
+
+    const rows = Array.from(tbody.querySelectorAll('.set-row'));
+    rows.forEach((row, index) => {
+        row.dataset.setIndex = index;
+
+        const numberDisplay = row.querySelector('.set-number-display');
+        if (numberDisplay) {
+            numberDisplay.textContent = `Set ${index + 1}`;
+        }
+
+        row.querySelectorAll('input, select, textarea').forEach(input => {
+            if (!input.name) {
+                return;
+            }
+            let name = input.name;
+            name = name.replace(/planned_sets_\d+_/g, `planned_sets_${index}_`)
+                       .replace(/planned_sets\[\d+\]/g, `planned_sets[${index}]`)
+                       .replace(/__SET_INDEX__/g, index)
+                       .replace(/__SET_NUMBER__/g, index + 1);
+            if (exerciseIndex !== undefined && exerciseIndex !== null && exerciseIndex !== "") {
+                name = name.replace(/routine_exercise_\d+_/g, `routine_exercise_${exerciseIndex}_`)
+                           .replace(/routine_exercise\[\d+\]/g, `routine_exercise[${exerciseIndex}]`)
+                           .replace(/__EXERCISE_INDEX__/g, exerciseIndex);
+            }
+            input.name = name;
+
+            if (input.classList.contains('set-number-input')) {
+                input.value = index + 1;
+            }
+        });
+    });
+
+    if (!rows.length) {
+        ensureRoutineSetsEmptyRow(tbody);
+    }
+}
+
+function updateSetRowFieldVisibility() {
+    const showRPE = document.getElementById('toggle-rpe-visibility')?.checked ?? true;
+    const showRest = document.getElementById('toggle-rest-time-visibility')?.checked ?? true;
+    const showNotes = document.getElementById('toggle-notes-visibility')?.checked ?? true;
+
+    document.querySelectorAll('#routine-exercises-container .set-row').forEach(row => {
+        const rpeField = row.querySelector('.rpe-field');
+        if (rpeField) {
+            rpeField.style.display = showRPE ? 'block' : 'none';
+        }
+        const restField = row.querySelector('.rest-time-field');
+        if (restField) {
+            restField.style.display = showRest ? 'block' : 'none';
+        }
+        const notesField = row.querySelector('.notes-field');
+        if (notesField) {
+            notesField.style.display = showNotes ? 'block' : 'none';
+        }
+    });
+}
+
+function addExerciseToRoutineFromForm(event) {
+    if (event) {
+        event.preventDefault?.();
+    }
+
+    const exerciseSelect = document.getElementById('routine-add-exercise-select');
+    const typeSelect = document.getElementById('routine-add-exercise-type');
+
+    if (!exerciseSelect) {
+        return;
+    }
+
+    const exerciseId = exerciseSelect.value;
+    if (!exerciseId) {
+        if (typeof send_toast === 'function') {
+            send_toast('Please select an exercise', 'warning');
+        }
+        return;
+    }
+
+    const selectedOption = exerciseSelect.options[exerciseSelect.selectedIndex];
+    const exerciseName = selectedOption?.dataset.name || selectedOption?.text || 'Select Exercise';
+    const defaultTypeDisplay = selectedOption?.dataset.defaultTypeDisplay || 'Select Exercise First';
+    const routineSpecificType = typeSelect ? typeSelect.value : '';
+
+    const newCard = appendExerciseCardToRoutine(exerciseId, exerciseName, defaultTypeDisplay, routineSpecificType);
+    if (newCard && typeof send_toast === 'function') {
+        send_toast('Exercise added to routine', 'success');
+    }
+
+    if (exerciseSelect) {
+        exerciseSelect.value = '';
+    }
+    if (typeSelect) {
+        typeSelect.value = '';
+    }
+}
+
+function initializeRoutineForm() {
+    const container = document.getElementById('routine-exercises-container');
+    if (!container) {
+        return;
+    }
+
+    container.querySelectorAll('.exercise-routine-card').forEach(card => {
+        prepareRoutineExerciseCard(card);
+        updateRoutineTypeSummary(card);
+    });
+
+    if (!container.dataset.routineListenersBound) {
+        container.addEventListener('dragover', handleDragOver);
+        container.addEventListener('drop', handleDrop);
+        container.dataset.routineListenersBound = 'true';
+    }
+
+    updateRoutineExerciseOrderNumbers();
+    updateRoutineFormCount();
+    updateSetRowFieldVisibility();
+}
+
+window.updateRoutineSpecificTypeLabel = updateRoutineSpecificTypeLabel;
+window.captureRoutineSetFieldOriginalValue = captureRoutineSetFieldOriginalValue;
+window.handleRoutineSetFieldChange = handleRoutineSetFieldChange;
+window.toggleSetLock = toggleSetLock;
+window.captureWorkoutSetOriginalValue = captureWorkoutSetOriginalValue;
+window.handleWorkoutSetChange = handleWorkoutSetChange;
+window.updateExerciseCardName = updateExerciseCardName;
+window.appendExerciseCardToRoutine = appendExerciseCardToRoutine;
+window.addSetToExerciseCard = addSetToExerciseCard;
+window.removeSetFromExerciseCard = removeSetFromExerciseCard;
+window.duplicateSetRow = duplicateSetRow;
+window.updateSetRowFieldVisibility = updateSetRowFieldVisibility;
+window.addExerciseToRoutineFromForm = addExerciseToRoutineFromForm;
+
+// ======================================
+//      WORKOUT EXERCISES DRAG & DROP
+// ======================================
+
+let workoutDraggedItem = null;
+let workoutFloatingClone = null;
+let workoutDragOffsetX = 0;
+let workoutDragOffsetY = 0;
+
+function handleWorkoutExerciseDragStart(event) {
+    workoutDraggedItem = event.target;
+    if (!workoutDraggedItem.classList.contains('workout-exercise-card')) return;
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', workoutDraggedItem.dataset.exerciseId);
+
+    // Create transparent image to hide default ghost
+    const img = new Image();
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    event.dataTransfer.setDragImage(img, 0, 0);
+
+    // Create visual clone
+    workoutFloatingClone = workoutDraggedItem.cloneNode(true);
+    workoutFloatingClone.classList.add('dragging-clone');
+
+    const rect = workoutDraggedItem.getBoundingClientRect();
+    workoutFloatingClone.style.width = `${rect.width}px`;
+    workoutFloatingClone.style.height = `${rect.height}px`;
+
+    document.body.appendChild(workoutFloatingClone);
+
+    workoutDragOffsetX = event.clientX - rect.left;
+    workoutDragOffsetY = event.clientY - rect.top;
+
+    workoutFloatingClone.style.left = `${event.clientX - workoutDragOffsetX}px`;
+    workoutFloatingClone.style.top = `${event.clientY - workoutDragOffsetY}px`;
+
+    setTimeout(() => {
+        if(workoutDraggedItem) workoutDraggedItem.classList.add('drag-source-hidden');
+    }, 0);
+
+    document.addEventListener('dragover', handleWorkoutExerciseDragMouseMove);
+}
+
+function handleWorkoutExerciseDragMouseMove(event) {
+    if (workoutFloatingClone) {
+        workoutFloatingClone.style.left = `${event.clientX - workoutDragOffsetX}px`;
+        workoutFloatingClone.style.top = `${event.clientY - workoutDragOffsetY}px`;
+    }
+}
+
+function handleWorkoutExerciseDragEnd(event) {
+    if (workoutFloatingClone) {
+        document.body.removeChild(workoutFloatingClone);
+        workoutFloatingClone = null;
+    }
+    if (workoutDraggedItem) {
+        workoutDraggedItem.classList.remove('drag-source-hidden');
+        workoutDraggedItem.style.opacity = '';
+    }
+    workoutDraggedItem = null;
+    document.removeEventListener('dragover', handleWorkoutExerciseDragMouseMove);
+}
+
+function handleWorkoutExerciseDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+
+    const container = event.currentTarget;
+    if (!workoutDraggedItem) return;
+
+    const afterElement = getWorkoutDragAfterElement(container, event.clientY, workoutDraggedItem);
+    if (afterElement === undefined && container.lastChild !== workoutDraggedItem) {
+        // Can move to end
+    } else if (afterElement && afterElement !== workoutDraggedItem) {
+        // Can insert before afterElement
+    }
+}
+
+function getWorkoutDragAfterElement(container, y, currentDraggedItem) {
+    const draggableElements = [...container.querySelectorAll('.workout-exercise-card:not(.drag-source-hidden)')];
+
+    return draggableElements.reduce((closest, child) => {
+        if (child === currentDraggedItem) return closest;
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function handleWorkoutExerciseDrop(event) {
+    event.preventDefault();
+    if (workoutDraggedItem) {
+        const container = event.currentTarget;
+        const afterElement = getWorkoutDragAfterElement(container, event.clientY, workoutDraggedItem);
+
+        if (afterElement) {
+            container.insertBefore(workoutDraggedItem, afterElement);
+        } else {
+            container.appendChild(workoutDraggedItem);
+        }
+        workoutDraggedItem.classList.remove('drag-source-hidden');
+
+        // Update order in database for this category container
+        updateWorkoutExerciseOrder(container);
+    }
+}
+
+async function updateWorkoutExerciseOrder(container) {
+    const workoutId = document.getElementById('workout-exercises-container').dataset.workoutId;
+    const exercises = container.querySelectorAll('.workout-exercise-card');
+    const updates = [];
+
+    exercises.forEach((card, index) => {
+        const exerciseId = card.dataset.exerciseId;
+        updates.push({
+            id: exerciseId,
+            order: index + 1
+        });
+    });
+
+    // Send update to backend
+    try {
+        const response = await httpRequestHelper(`/api/workouts/${workoutId}/reorder-exercises/`, 'POST', {
+            exercises: updates
+        });
+
+        if (response.ok) {
+            send_toast('Exercise order updated', 'success');
+        } else {
+            send_toast('Failed to update exercise order', 'danger');
+            // Optionally reload to restore original order
+        }
+    } catch (error) {
+        console.error('Error updating exercise order:', error);
+        send_toast('Error updating exercise order', 'danger');
+    }
+}
+
+function initializeWorkoutExercisesDragDrop() {
+    bindWorkoutSetSyncHandlers(document);
+    const container = document.getElementById('workout-exercises-container');
+    if (!container) return;
+
+    // Set up drag and drop for all exercise cards
+    container.querySelectorAll('.workout-exercise-card').forEach(card => {
+        card.addEventListener('dragstart', handleWorkoutExerciseDragStart);
+        card.addEventListener('dragend', handleWorkoutExerciseDragEnd);
+        // Add touch support for mobile
+        addTouchDragSupport(card, 'workout-exercises');
+    });
+
+    // Set up drop zones for each category
+    container.querySelectorAll('.exercise-category-container').forEach(categoryContainer => {
+        categoryContainer.addEventListener('dragover', handleWorkoutExerciseDragOver);
+        categoryContainer.addEventListener('drop', handleWorkoutExerciseDrop);
+    });
+}
+
+// ======================================
+//      PROGRAM ROUTINES DRAG & DROP
+// ======================================
+
+let programDraggedChip = null;
+let programFloatingClone = null;
+
+const DOUBLE_ACTIVATE_MAX_DELAY = 350;
+const DOUBLE_ACTIVATE_MAX_DISTANCE = 12;
+const ROUTINE_ACTIVATION_HINT = 'Double tap or double click to open routine';
+const doubleActivateState = {
+    lastTapTime: 0,
+    lastTapX: 0,
+    lastTapY: 0,
+    lastTarget: null,
+    resetTimer: null,
+};
+
+function resetDoubleActivateState() {
+    if (doubleActivateState.resetTimer) {
+        clearTimeout(doubleActivateState.resetTimer);
+        doubleActivateState.resetTimer = null;
+    }
+    doubleActivateState.lastTapTime = 0;
+    doubleActivateState.lastTarget = null;
+    doubleActivateState.lastTapX = 0;
+    doubleActivateState.lastTapY = 0;
+}
+
+function attachDoubleActivate(element, callback, options = {}) {
+    if (!element || element.dataset.doubleActivateBound === 'true') {
+        return;
+    }
+
+    element.dataset.doubleActivateBound = 'true';
+
+    const isDragging = typeof options.isDragging === 'function' ? options.isDragging : () => false;
+    const shouldIgnore = typeof options.shouldIgnore === 'function' ? options.shouldIgnore : () => false;
+    const forceTabIndex = options.forceTabIndex !== false;
+
+    if (forceTabIndex && element.tabIndex < 0) {
+        element.tabIndex = 0;
+    }
+
+    element.addEventListener('dblclick', (event) => {
+        if (isDragging() || shouldIgnore(event)) {
+            resetDoubleActivateState();
+            return;
+        }
+        resetDoubleActivateState();
+        callback({ trigger: 'dblclick', event });
+    });
+
+    element.addEventListener('touchend', (event) => {
+        if (isDragging() || shouldIgnore(event) || (event.touches && event.touches.length)) {
+            resetDoubleActivateState();
+            return;
+        }
+
+        const touch = event.changedTouches && event.changedTouches[0];
+        if (!touch) {
+            return;
+        }
+
+        const now = performance.now();
+        const { lastTapTime, lastTapX, lastTapY, lastTarget, resetTimer } = doubleActivateState;
+
+        if (resetTimer) {
+            clearTimeout(resetTimer);
+            doubleActivateState.resetTimer = null;
+        }
+
+        const isSameTarget = lastTarget === element;
+        const withinTime = now - lastTapTime <= DOUBLE_ACTIVATE_MAX_DELAY;
+        const withinDistance = Math.abs(touch.clientX - lastTapX) <= DOUBLE_ACTIVATE_MAX_DISTANCE &&
+                               Math.abs(touch.clientY - lastTapY) <= DOUBLE_ACTIVATE_MAX_DISTANCE;
+
+        if (isSameTarget && withinTime && withinDistance) {
+            resetDoubleActivateState();
+            event.preventDefault();
+            callback({ trigger: 'doubletap', event });
+            return;
+        }
+
+        doubleActivateState.lastTapTime = now;
+        doubleActivateState.lastTapX = touch.clientX;
+        doubleActivateState.lastTapY = touch.clientY;
+        doubleActivateState.lastTarget = element;
+        doubleActivateState.resetTimer = setTimeout(() => {
+            resetDoubleActivateState();
+        }, DOUBLE_ACTIVATE_MAX_DELAY);
+    }, { passive: false });
+
+    element.addEventListener('keydown', (event) => {
+        if (isDragging() || shouldIgnore(event)) {
+            return;
+        }
+
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            resetDoubleActivateState();
+            callback({ trigger: 'keyboard', event });
+        }
+    });
+}
+
+function openRoutineDetail(routineId) {
+    if (!routineId) {
+        return;
+    }
+
+    const url = `/routines/${routineId}/`;
+    const newWindow = window.open(url, '_blank');
+    if (newWindow) {
+        newWindow.opener = null;
+    } else {
+        window.location.assign(url);
+    }
+}
+
+let programDragOffsetX = 0;
+let programDragOffsetY = 0;
+
+function handleProgramRoutineDragStart(event) {
+    programDraggedChip = event.target;
+    if (!programDraggedChip.classList.contains('routine-chip')) return;
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', programDraggedChip.dataset.routineId);
+
+    // Create transparent image to hide default ghost
+    const img = new Image();
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    event.dataTransfer.setDragImage(img, 0, 0);
+
+    // Create visual clone
+    programFloatingClone = programDraggedChip.cloneNode(true);
+    programFloatingClone.classList.add('dragging-clone');
+
+    const rect = programDraggedChip.getBoundingClientRect();
+    programFloatingClone.style.width = `${rect.width}px`;
+    programFloatingClone.style.height = `${rect.height}px`;
+
+    document.body.appendChild(programFloatingClone);
+
+    programDragOffsetX = event.clientX - rect.left;
+    programDragOffsetY = event.clientY - rect.top;
+
+    programFloatingClone.style.left = `${event.clientX - programDragOffsetX}px`;
+    programFloatingClone.style.top = `${event.clientY - programDragOffsetY}px`;
+
+    setTimeout(() => {
+        if(programDraggedChip) programDraggedChip.classList.add('drag-source-hidden');
+    }, 0);
+
+    document.addEventListener('dragover', handleProgramRoutineDragMouseMove);
+}
+
+function handleProgramRoutineDragMouseMove(event) {
+    if (programFloatingClone) {
+        programFloatingClone.style.left = `${event.clientX - programDragOffsetX}px`;
+        programFloatingClone.style.top = `${event.clientY - programDragOffsetY}px`;
+    }
+}
+
+function handleProgramRoutineDragEnd(event) {
+    if (programFloatingClone) {
+        document.body.removeChild(programFloatingClone);
+        programFloatingClone = null;
+    }
+    if (programDraggedChip) {
+        programDraggedChip.classList.remove('drag-source-hidden');
+        programDraggedChip.style.opacity = '';
+    }
+    programDraggedChip = null;
+    document.removeEventListener('dragover', handleProgramRoutineDragMouseMove);
+}
+
+function handleProgramRoutineDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+
+    // Visual feedback: you could add a highlight to the container
+    const container = event.currentTarget;
+    container.classList.add('drag-over');
+}
+
+function handleProgramRoutineDragLeave(event) {
+    const container = event.currentTarget;
+    container.classList.remove('drag-over');
+}
+
+function handleProgramRoutineDrop(event) {
+    event.preventDefault();
+    const container = event.currentTarget;
+    container.classList.remove('drag-over');
+
+    if (programDraggedChip) {
+        const newDayValue = container.closest('.day-column').dataset.dayValue;
+
+        // Update the hidden input's name to reflect the new day
+        const hiddenInput = programDraggedChip.querySelector('input[type="hidden"]');
+        if (hiddenInput) {
+            hiddenInput.name = `weekly_day_${newDayValue}_routines`;
+        }
+
+        // Move the chip to the new container
+        container.appendChild(programDraggedChip);
+        programDraggedChip.classList.remove('drag-source-hidden');
+    }
+}
+
+function setupProgramRoutineDragListeners(chip) {
+    if (!chip) {
+        return;
+    }
+
+    if (chip.dataset.programRoutineListenersBound === 'true') {
+        return;
+    }
+
+    chip.dataset.programRoutineListenersBound = 'true';
+
+    chip.addEventListener('dragstart', (event) => {
+        resetDoubleActivateState();
+        handleProgramRoutineDragStart(event);
+    });
+
+    chip.addEventListener('dragend', (event) => {
+        handleProgramRoutineDragEnd(event);
+        resetDoubleActivateState();
+    });
+
+    addTouchDragSupport(chip, 'program-routines');
+
+    if (!chip.hasAttribute('tabindex')) {
+        chip.tabIndex = 0;
+    }
+
+    const routineName = chip.dataset.routineName || chip.querySelector('.routine-chip-label')?.textContent?.trim() || chip.textContent.trim();
+    const labelText = routineName ? `${routineName}. ${ROUTINE_ACTIVATION_HINT}` : ROUTINE_ACTIVATION_HINT;
+    chip.setAttribute('aria-label', labelText);
+    chip.setAttribute('title', ROUTINE_ACTIVATION_HINT);
+
+    attachDoubleActivate(chip, () => {
+        const routineId = chip.dataset.routineId;
+        if (routineId) {
+            openRoutineDetail(routineId);
+        }
+    }, {
+        isDragging: () => Boolean(programDraggedChip) || touchDragData.isDragging,
+        shouldIgnore: (event) => Boolean(event.target.closest('[data-ignore-double-activate="true"]'))
+    });
+}
+
+function setupSequentialRoutineActivation(row) {
+    if (!row) {
+        return;
+    }
+
+    const routineIdInput = row.querySelector('input[name*="_routine_id"]');
+    const routineNameField = row.querySelector('input[type="text"][readonly]');
+
+    if (!routineIdInput || !routineNameField) {
+        return;
+    }
+
+    routineNameField.dataset.routineId = routineIdInput.value;
+    routineNameField.dataset.routineName = routineNameField.value;
+    routineNameField.setAttribute('title', ROUTINE_ACTIVATION_HINT);
+    const routineLabel = routineNameField.value ? `${routineNameField.value}. ${ROUTINE_ACTIVATION_HINT}` : ROUTINE_ACTIVATION_HINT;
+    routineNameField.setAttribute('aria-label', routineLabel);
+
+    attachDoubleActivate(routineNameField, () => {
+        const routineId = routineIdInput.value;
+        if (routineId) {
+            openRoutineDetail(routineId);
+        }
+    }, {
+        forceTabIndex: false,
+        isDragging: () => touchDragData.isDragging,
+        shouldIgnore: (event) => Boolean(event.target.closest('.remove-pr-btn'))
+    });
+}
+
+function initializeProgramRoutinesDragDrop() {
+    const weeklyContainer = document.getElementById('weekly-schedule-container');
+    if (!weeklyContainer) return;
+
+    // Set up drag and drop for all existing routine chips
+    weeklyContainer.querySelectorAll('.routine-chip').forEach(chip => {
+        setupProgramRoutineDragListeners(chip);
+    });
+
+    // Set up drop zones for each day
+    weeklyContainer.querySelectorAll('.routines-for-day-container').forEach(container => {
+        container.addEventListener('dragover', handleProgramRoutineDragOver);
+        container.addEventListener('dragleave', handleProgramRoutineDragLeave);
+        container.addEventListener('drop', handleProgramRoutineDrop);
+    });
 }
 
 // ======================================
@@ -1390,6 +3110,7 @@ window.handleAddRoutineToProgram = function() { // This function is now globally
     const newRow = tempDiv.firstElementChild; // The new .program-routine-row div
 
     container.appendChild(newRow);
+    setupSequentialRoutineActivation(newRow);
 }
 
 window.handleRemoveProgramRoutine = function(event) { // This function is now globally accessible
@@ -1443,14 +3164,21 @@ function handleAddRoutineToDay(event) {
     // Create the chip
     const chip = document.createElement('div');
     chip.className = 'routine-chip';
+    chip.draggable = true; // Make it draggable
     chip.dataset.routineId = routineId;
+    chip.dataset.routineName = routineName; // Store name for drag and drop
     chip.innerHTML = `
-        <span>${routineName}</span>
-        <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove"></button>
+        <span class="routine-chip-label">${routineName}</span>
+        <div class="d-flex align-items-center">
+            <button type="button" class="btn-close btn-close-white btn-sm" data-ignore-double-activate="true" aria-label="Remove"></button>
+        </div>
         <input type="hidden" name="weekly_day_${dayValue}_routines" value="${routineId}">
     `;
 
     container.appendChild(chip);
+
+    // Set up drag and drop listeners for the new chip
+    setupProgramRoutineDragListeners(chip);
 
     // Reset the select
     select.value = '';
@@ -1459,3 +3187,429 @@ function handleAddRoutineToDay(event) {
 function handleRemoveRoutineFromDay(chipElement) {
     chipElement.remove();
 }
+
+
+// ======================================
+//      MOBILE TOUCH DRAG & DROP SUPPORT
+// ======================================
+
+let touchDragData = {
+    isDragging: false,
+    draggedElement: null,
+    startX: 0,
+    startY: 0,
+    offsetX: 0,
+    offsetY: 0,
+    clone: null,
+    originalParent: null,
+    dragType: null // 'routine-exercises', 'workout-exercises', 'program-routines'
+};
+
+function addTouchDragSupport(element, dragType) {
+    if (!element || element.dataset.touchDragBound === 'true') {
+        return;
+    }
+
+    element.dataset.touchDragBound = 'true';
+    element.addEventListener('touchstart', (e) => handleTouchStart(e, dragType), { passive: false });
+    element.addEventListener('touchmove', handleTouchMove, { passive: false });
+    element.addEventListener('touchend', handleTouchEnd, { passive: false });
+}
+function handleTouchStart(event, dragType) {
+    if (event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    const element = event.currentTarget;
+
+    // Only start drag for draggable elements
+    if (!element.draggable) return;
+
+    touchDragData.isDragging = false; // Will be set to true in touchmove if threshold exceeded
+    touchDragData.draggedElement = element;
+    touchDragData.startX = touch.clientX;
+    touchDragData.startY = touch.clientY;
+    touchDragData.dragType = dragType;
+    touchDragData.originalParent = element.parentNode;
+
+    const rect = element.getBoundingClientRect();
+    touchDragData.offsetX = touch.clientX - rect.left;
+    touchDragData.offsetY = touch.clientY - rect.top;
+
+    // Prevent default to avoid scrolling while potentially dragging
+    event.preventDefault();
+}
+
+function handleTouchMove(event) {
+    if (!touchDragData.draggedElement || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - touchDragData.startX);
+    const deltaY = Math.abs(touch.clientY - touchDragData.startY);
+
+    // Threshold to start dragging (prevents accidental drags)
+    if (!touchDragData.isDragging && (deltaX > 10 || deltaY > 10)) {
+        touchDragData.isDragging = true;
+        startTouchDrag(event);
+    }
+
+    if (touchDragData.isDragging) {
+        updateTouchDrag(event);
+    }
+
+    event.preventDefault();
+}
+
+function startTouchDrag(event) {
+    const element = touchDragData.draggedElement;
+
+    // Create visual clone
+    touchDragData.clone = element.cloneNode(true);
+    touchDragData.clone.classList.add('dragging-clone');
+    touchDragData.clone.style.pointerEvents = 'none';
+    touchDragData.clone.style.transform = 'rotate(5deg)';
+    touchDragData.clone.style.opacity = '0.8';
+
+    const rect = element.getBoundingClientRect();
+    touchDragData.clone.style.width = `${rect.width}px`;
+    touchDragData.clone.style.height = `${rect.height}px`;
+
+    document.body.appendChild(touchDragData.clone);
+
+    // Hide original element
+    element.classList.add('drag-source-hidden');
+
+    // Call appropriate drag start handler
+    simulateDragStart(element);
+}
+
+function updateTouchDrag(event) {
+    if (!touchDragData.clone) return;
+
+    const touch = event.touches[0];
+    touchDragData.clone.style.left = `${touch.clientX - touchDragData.offsetX}px`;
+    touchDragData.clone.style.top = `${touch.clientY - touchDragData.offsetY}px`;
+
+    // Find element under touch (excluding the clone)
+    touchDragData.clone.style.display = 'none';
+    const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    touchDragData.clone.style.display = 'block';
+
+    if (elementBelow) {
+        handleTouchDragOver(elementBelow, touch);
+    }
+}
+
+function handleTouchDragOver(elementBelow, touch) {
+    const draggedElement = touchDragData.draggedElement;
+
+    switch (touchDragData.dragType) {
+        case 'routine-exercises':
+            const routineContainer = document.getElementById('routine-exercises-container');
+            if (routineContainer && routineContainer.contains(elementBelow)) {
+                // Simulate routine exercise reordering
+                const afterElement = getDragAfterElement(routineContainer, touch.clientY, draggedElement);
+                if (afterElement && afterElement !== draggedElement) {
+                    routineContainer.insertBefore(draggedElement, afterElement);
+                } else if (!afterElement) {
+                    routineContainer.appendChild(draggedElement);
+                }
+            }
+            break;
+
+        case 'workout-exercises':
+            const categoryContainer = elementBelow.closest('.exercise-category-container');
+            if (categoryContainer) {
+                const afterElement = getWorkoutDragAfterElement(categoryContainer, touch.clientY, draggedElement);
+                if (afterElement && afterElement !== draggedElement) {
+                    categoryContainer.insertBefore(draggedElement, afterElement);
+                } else if (!afterElement) {
+                    categoryContainer.appendChild(draggedElement);
+                }
+            }
+            break;
+
+        case 'program-routines':
+            const dayContainer = elementBelow.closest('.routines-for-day-container');
+            if (dayContainer && dayContainer !== touchDragData.originalParent) {
+                // Update hidden input for new day
+                const newDayValue = dayContainer.closest('.day-column').dataset.dayValue;
+                const hiddenInput = draggedElement.querySelector('input[type="hidden"]');
+                if (hiddenInput) {
+                    hiddenInput.name = `weekly_day_${newDayValue}_routines`;
+                }
+                dayContainer.appendChild(draggedElement);
+            }
+            break;
+    }
+}
+
+function handleTouchEnd(event) {
+    if (!touchDragData.isDragging) {
+        // Not a drag, might be a tap - reset and allow normal behavior
+        resetTouchDrag();
+        return;
+    }
+
+    event.preventDefault();
+
+    if (touchDragData.draggedElement) {
+        // Restore visibility
+        touchDragData.draggedElement.classList.remove('drag-source-hidden');
+
+        // Call appropriate update functions
+        switch (touchDragData.dragType) {
+            case 'routine-exercises':
+                updateRoutineExerciseOrderNumbers();
+                break;
+            case 'workout-exercises':
+                const container = touchDragData.draggedElement.closest('.exercise-category-container');
+                if (container) {
+                    updateWorkoutExerciseOrder(container);
+                }
+                break;
+            case 'program-routines':
+                // Program routine updates are handled in handleTouchDragOver
+                break;
+        }
+    }
+
+    resetTouchDrag();
+}
+
+function simulateDragStart(element) {
+    // Set the appropriate global drag variables based on drag type
+    switch (touchDragData.dragType) {
+        case 'routine-exercises':
+            draggedItem = element;
+            break;
+        case 'workout-exercises':
+            workoutDraggedItem = element;
+            break;
+        case 'program-routines':
+            programDraggedChip = element;
+            break;
+    }
+}
+
+function resetTouchDrag() {
+    if (touchDragData.clone) {
+        document.body.removeChild(touchDragData.clone);
+    }
+
+    if (touchDragData.draggedElement) {
+        touchDragData.draggedElement.classList.remove('drag-source-hidden');
+    }
+
+    // Reset global drag variables
+    draggedItem = null;
+    workoutDraggedItem = null;
+    programDraggedChip = null;
+
+    touchDragData = {
+        isDragging: false,
+        draggedElement: null,
+        startX: 0,
+        startY: 0,
+        offsetX: 0,
+        offsetY: 0,
+        clone: null,
+        originalParent: null,
+        dragType: null
+    };
+    resetDoubleActivateState();
+}
+
+// ======================================
+//      INITIALIZE TOUCH SUPPORT
+// ======================================
+
+function initializeTouchDragSupport() {
+    // Routine exercises
+    const routineContainer = document.getElementById('routine-exercises-container');
+    if (routineContainer) {
+        routineContainer.querySelectorAll('.exercise-routine-card[draggable="true"]').forEach(card => {
+            addTouchDragSupport(card, 'routine-exercises');
+        });
+    }
+
+    // Workout exercises
+    const workoutContainer = document.getElementById('workout-exercises-container');
+    if (workoutContainer) {
+        workoutContainer.querySelectorAll('.workout-exercise-card[draggable="true"]').forEach(card => {
+            addTouchDragSupport(card, 'workout-exercises');
+        });
+    }
+
+    // Program routine chips
+    const weeklyContainer = document.getElementById('weekly-schedule-container');
+    if (weeklyContainer) {
+        weeklyContainer.querySelectorAll('.routine-chip[draggable="true"]').forEach(chip => {
+            addTouchDragSupport(chip, 'program-routines');
+        });
+    }
+}
+let gainzAppInitialized = false;
+
+function bootstrapGainzApp() {
+    if (gainzAppInitialized) {
+        return;
+    }
+    gainzAppInitialized = true;
+
+    if (!mutationObserverStarted && document.body) {
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['data-function']
+        });
+        mutationObserverStarted = true;
+
+        document.querySelectorAll('[data-function]').forEach(element => {
+            const attr = element.getAttributeNode('data-function');
+            if (attr) {
+                handle_attribute(element, attr);
+            }
+        });
+    }
+
+    initializeRoutineForm();
+    initializeWorkoutExercisesDragDrop();
+    initializeProgramRoutinesDragDrop();
+    initializeTouchDragSupport();
+
+    // Initialize Program Scheduling UI (edit/create program page)
+    try {
+        const weeklyRadio = document.getElementById('scheduling-weekly');
+        const sequentialRadio = document.getElementById('scheduling-sequential');
+        const weeklyContainer = document.getElementById('weekly-schedule-container');
+        const sequentialContainer = document.getElementById('sequential-schedule-container');
+        const sequentialAdder = document.getElementById('sequential-routine-adder');
+
+        if ((weeklyRadio || sequentialRadio) && weeklyContainer && sequentialContainer) {
+            const showWeekly = weeklyRadio ? weeklyRadio.checked : false;
+            if (showWeekly) {
+                weeklyContainer.style.display = 'block';
+                sequentialContainer.style.display = 'none';
+                if (sequentialAdder) sequentialAdder.style.display = 'none';
+                // Ensure drag/drop is active for visible chips
+                initializeProgramRoutinesDragDrop();
+            } else {
+                weeklyContainer.style.display = 'none';
+                sequentialContainer.style.display = 'block';
+                if (sequentialAdder) sequentialAdder.style.display = 'block';
+            }
+
+            // Bind change events for toggling (idempotent on re-run)
+            if (weeklyRadio && !weeklyRadio.dataset.toggleBound) {
+                weeklyRadio.addEventListener('change', window.toggleScheduleType);
+                weeklyRadio.dataset.toggleBound = 'true';
+            }
+            if (sequentialRadio && !sequentialRadio.dataset.toggleBound) {
+                sequentialRadio.addEventListener('change', window.toggleScheduleType);
+                sequentialRadio.dataset.toggleBound = 'true';
+            }
+        }
+    } catch (e) {
+        console.warn('Program scheduling UI init failed (non-fatal):', e);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrapGainzApp);
+} else {
+    bootstrapGainzApp();
+}
+function bindRoutineSetSyncHandlers(root) {
+    const scope = root || document;
+    const inputs = scope.querySelectorAll('#routine-exercises-container input[name*="_target_reps"], #routine-exercises-container input[name*="_target_weight"]');
+    inputs.forEach(input => {
+        if (input.dataset.routineSyncBound === 'true') {
+            return;
+        }
+        input.addEventListener('focus', captureRoutineSetFieldOriginalValue);
+        input.addEventListener('change', handleRoutineSetFieldChange);
+        input.dataset.routineSyncBound = 'true';
+    });
+}
+
+function bindWorkoutSetSyncHandlers(root) {
+    const scope = root || document;
+    const inputs = scope.querySelectorAll('.sets-container [data-field="reps"], .sets-container [data-field="weight"]');
+    inputs.forEach(input => {
+        if (input.dataset.workoutSyncBound === 'true') {
+            return;
+        }
+        input.addEventListener('focus', captureWorkoutSetOriginalValue);
+        input.addEventListener('blur', handleWorkoutSetChange);
+        input.dataset.workoutSyncBound = 'true';
+    });
+}
+
+
+
+// --- Global Workout Delete Modal Handling ---
+(function() {
+    const modalEl = document.getElementById('confirmWorkoutDeleteModal');
+    const confirmBtn = document.getElementById('confirmDeleteWorkoutBtn');
+    const textEl = document.getElementById('confirmDeleteWorkoutText');
+
+    if (!modalEl || !confirmBtn) return;
+
+    // When any trigger opens the modal, populate its state
+    modalEl.addEventListener('show.bs.modal', function(event) {
+        const trigger = event.relatedTarget;
+        if (!trigger) return;
+        const workoutName = trigger.getAttribute('data-workout-name') || 'this workout';
+        const workoutId = trigger.getAttribute('data-workout-id') || '';
+        const deleteUrl = trigger.getAttribute('data-delete-url') || '';
+        if (textEl) textEl.textContent = `Are you sure you want to delete "${workoutName}"?`;
+        confirmBtn.setAttribute('data-workout-id', workoutId);
+        confirmBtn.setAttribute('data-delete-url', deleteUrl);
+        confirmBtn.disabled = false;
+    });
+
+    async function postDelete(url) {
+        const csrfTokenMeta = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = csrfTokenMeta ? csrfTokenMeta.getAttribute('content') : '';
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: new URLSearchParams({ ajax: '1' })
+        });
+        try { return { ok: resp.ok, data: await resp.json() }; }
+        catch { return { ok: resp.ok, data: {} }; }
+    }
+
+    confirmBtn.addEventListener('click', async function() {
+        const url = confirmBtn.getAttribute('data-delete-url');
+        const workoutId = confirmBtn.getAttribute('data-workout-id');
+        if (!url) return;
+        confirmBtn.disabled = true;
+        const result = await postDelete(url);
+        const hideModal = () => {
+            try {
+                const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                modal.hide();
+            } catch (e) {}
+        };
+        if (result.ok && result.data?.status === 'success') {
+            // Try to remove card if present (list view)
+            const card = workoutId ? document.querySelector(`.workout-card[data-workout-id="${workoutId}"]`) : null;
+            if (card) card.remove();
+            hideModal();
+            if (typeof send_toast === 'function') send_toast('Workout deleted', 'success');
+            if (!card) {
+                // Not on list page; redirect to workouts
+                window.location.href = '/workouts/';
+            }
+        } else {
+            if (typeof send_toast === 'function') send_toast('Error deleting workout', 'danger');
+            confirmBtn.disabled = false;
+        }
+    });
+})();

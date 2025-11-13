@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ title|default:"My Profile" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h1 class="card-title h3 mb-0">
+                <i class="fas fa-user-cog me-2"></i>{{ title }}
+            </h1>
+        </div>
+        <div class="card-body">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            {% if errors %}
+                {% for error in errors %}
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- Profile Information Form -->
+            <form method="post" action="{% url 'profile' %}" novalidate>
+                {% csrf_token %}
+                
+                <!-- Basic Information Section -->
+                <div class="row mb-5">
+                    <div class="col-12">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="fas fa-user text-primary me-2"></i>
+                            <h5 class="mb-0 text-primary">Basic Information</h5>
+                        </div>
+                        <p class="text-muted small mb-4">Update your account details and basic profile information.</p>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="username" class="form-label fw-semibold">
+                                        <i class="fas fa-user-tag me-1"></i>Username
+                                    </label>
+                                    <input type="text" class="form-control" id="username" name="username" 
+                                           value="{{ user.username }}" required 
+                                           placeholder="Enter your username">
+                                    <div class="form-text">This is how you'll appear to other users in the app.</div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="email" class="form-label fw-semibold">
+                                        <i class="fas fa-envelope me-1"></i>Email Address
+                                    </label>
+                                    <input type="email" class="form-control" id="email" name="email" 
+                                           value="{{ user.email|default:'' }}" 
+                                           placeholder="Enter your email address">
+                                    <div class="form-text">Used for account recovery and important notifications.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Units Preferences Section -->
+                <div class="row mb-5">
+                    <div class="col-12">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="fas fa-balance-scale text-primary me-2"></i>
+                            <h5 class="mb-0 text-primary">Units Preferences</h5>
+                        </div>
+                        <p class="text-muted small mb-4">Choose your preferred measurement units for weights and other metrics.</p>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="preferred_weight_unit" class="form-label fw-semibold">
+                                        <i class="fas fa-weight me-1"></i>Weight Unit
+                                    </label>
+                                    <select class="form-select" id="preferred_weight_unit" name="preferred_weight_unit">
+                                        {% for value, display in weight_unit_choices %}
+                                            <option value="{{ value }}" {% if timer_prefs.preferred_weight_unit == value %}selected{% endif %}>
+                                                {{ display }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        This unit will be used throughout the app for entering and displaying weights.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Timer Settings Section -->
+                <div class="row mb-5">
+                    <div class="col-12">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="fas fa-stopwatch text-primary me-2"></i>
+                            <h5 class="mb-0 text-primary">Rest Timer Settings</h5>
+                        </div>
+                        <p class="text-muted small mb-4">Configure default rest timer durations for different exercise types and timer behavior preferences.</p>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="primary_timer_seconds" class="form-label fw-semibold">
+                                        <i class="fas fa-dumbbell me-1"></i>Primary Exercises
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="primary_timer_seconds" name="primary_timer_seconds" 
+                                               value="{{ timer_prefs.primary_timer_seconds }}" min="0" max="3600" step="1" data-timer-step="5" required>
+                                        <span class="input-group-text">sec</span>
+                                    </div>
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        For compound movements like squats, deadlifts (default: 180s)
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="secondary_timer_seconds" class="form-label fw-semibold">
+                                        <i class="fas fa-weight-hanging me-1"></i>Secondary Exercises
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="secondary_timer_seconds" name="secondary_timer_seconds" 
+                                               value="{{ timer_prefs.secondary_timer_seconds }}" min="0" max="3600" step="1" data-timer-step="5" required>
+                                        <span class="input-group-text">sec</span>
+                                    </div>
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        For secondary compound movements (default: 120s)
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="accessory_timer_seconds" class="form-label fw-semibold">
+                                        <i class="fas fa-skating me-1"></i>Accessory Exercises
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="accessory_timer_seconds" name="accessory_timer_seconds" 
+                                               value="{{ timer_prefs.accessory_timer_seconds }}" min="0" max="3600" step="1" data-timer-step="5" required>
+                                        <span class="input-group-text">sec</span>
+                                    </div>
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        For isolation and accessory movements (default: 90s)
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <label class="form-label fw-semibold mb-3">
+                                    <i class="fas fa-cogs me-1"></i>Timer Behavior Options
+                                </label>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch mb-3">
+                                            <input class="form-check-input" type="checkbox" id="auto_start_timer" name="auto_start_timer" 
+                                                   value="1" {% if timer_prefs.auto_start_timer %}checked{% endif %}>
+                                            <label class="form-check-label fw-semibold" for="auto_start_timer">
+                                                <i class="fas fa-play me-1"></i>Auto-start Timer
+                                            </label>
+                                            <div class="form-text">Automatically start rest timer after logging each set</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch mb-3">
+                                            <input class="form-check-input" type="checkbox" id="timer_sound_enabled" name="timer_sound_enabled" 
+                                                   value="1" {% if timer_prefs.timer_sound_enabled %}checked{% endif %}>
+                                            <label class="form-check-label fw-semibold" for="timer_sound_enabled">
+                                                <i class="fas fa-volume-up me-1"></i>Timer Sound
+                                            </label>
+                                            <div class="form-text">Play notification sound when timer completes</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Auto-Progression Section -->
+                <div class="row mb-5">
+                    <div class="col-12">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="fas fa-chart-line text-primary me-2"></i>
+                            <h5 class="mb-0 text-primary">Auto-Progression Settings</h5>
+                        </div>
+                        <p class="text-muted small mb-4">
+                            Enable automatic weight and rep adjustments based on your performance feedback. 
+                            When you mark sets as "increase", "stay", or "decrease", the system will automatically adjust future workouts.
+                        </p>
+                        
+                        <div class="mb-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="auto_progression_enabled" name="auto_progression_enabled" 
+                                       value="1" {% if timer_prefs.auto_progression_enabled %}checked{% endif %}>
+                                <label class="form-check-label fw-semibold" for="auto_progression_enabled">
+                                    <i class="fas fa-magic me-1"></i>Enable Auto-Progression
+                                </label>
+                            </div>
+                            <div class="form-text mt-2">
+                                <i class="fas fa-lightbulb me-1"></i>
+                                <strong>How it works:</strong> After each set, provide feedback (👍 increase, ➡️ maintain, 👎 decrease). 
+                                The system will automatically adjust weights or reps for your next workout based on this feedback.
+                            </div>
+                        </div>
+                        
+                        <div class="row" id="auto-progression-details" {% if not timer_prefs.auto_progression_enabled %}style="opacity: 0.6;"{% endif %}>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="default_weight_increment" class="form-label fw-semibold">
+                                        <i class="fas fa-plus-circle me-1"></i>Weight Increment
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="default_weight_increment" name="default_weight_increment" 
+                                               value="{{ timer_prefs.default_weight_increment }}" min="0.25" max="50" step="0.25" required
+                                               {% if not timer_prefs.auto_progression_enabled %}disabled{% endif %}>
+                                        <span class="input-group-text">{{ timer_prefs.preferred_weight_unit }}</span>
+                                    </div>
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Amount to increase/decrease weight when progressing (default: 2.5)
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="default_rep_increment" class="form-label fw-semibold">
+                                        <i class="fas fa-redo me-1"></i>Rep Increment
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="default_rep_increment" name="default_rep_increment" 
+                                               value="{{ timer_prefs.default_rep_increment }}" min="1" max="10" step="1" required
+                                               {% if not timer_prefs.auto_progression_enabled %}disabled{% endif %}>
+                                        <span class="input-group-text">reps</span>
+                                    </div>
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Amount to increase/decrease reps when weight can't be adjusted (default: 1)
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="row">
+                    <div class="col-12">
+                        <hr class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <button type="submit" class="btn btn-success btn-lg">
+                                    <i class="fas fa-save me-2"></i>Save All Settings
+                                </button>
+                                <a href="{% url 'home' %}" class="btn btn-outline-secondary btn-lg ms-2">
+                                    <i class="fas fa-times me-2"></i>Cancel
+                                </a>
+                            </div>
+                            <div class="text-muted small">
+                                <i class="fas fa-shield-alt me-1"></i>
+                                Your preferences are saved securely and applied across all your workouts.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <!-- Coming Soon Section -->
+            <div class="row mb-5">
+                <div class="col-12">
+                    <div class="card bg-light border-2 border-dashed">
+                        <div class="card-body text-center py-5">
+                            <i class="fas fa-wrench fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted mb-2">Exercise-Specific Timer Overrides</h5>
+                            <p class="text-muted mb-0">
+                                Coming soon! Set custom timer durations for individual exercises.
+                                <br>
+                                <small><i class="fas fa-lightbulb me-1"></i>This will override the exercise type defaults above for specific exercises you choose.</small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Enable/disable auto-progression fields based on checkbox
+    document.getElementById('auto_progression_enabled').addEventListener('change', function() {
+        const detailsSection = document.getElementById('auto-progression-details');
+        const inputs = detailsSection.querySelectorAll('input');
+        
+        if (this.checked) {
+            detailsSection.style.opacity = '1';
+            inputs.forEach(input => input.disabled = false);
+        } else {
+            detailsSection.style.opacity = '0.6';
+            inputs.forEach(input => input.disabled = true);
+        }
+    });
+    
+    // Form validation
+    document.querySelector('form').addEventListener('submit', function(e) {
+        // Check for any form validation errors
+        const invalidFields = this.querySelectorAll(':invalid');
+        if (invalidFields.length > 0) {
+            e.preventDefault();
+            return false;
+        }
+    });
+    
+    // Initialize exercise timer overrides functionality
+    if (window.initExerciseTimerOverrides) {
+        window.initExerciseTimerOverrides();
+    }
+
+    // Custom arrow key handling so spinner jumps by 5 but any value is allowed
+    document.querySelectorAll('input[data-timer-step]').forEach(input => {
+        const step = parseInt(input.dataset.timerStep, 10) || 5;
+
+        const applyStep = delta => {
+            const current = parseInt(input.value || '0', 10) || 0;
+            const nextValue = Math.max(0, current + delta);
+            input.value = nextValue;
+            input.dispatchEvent(new Event('input'));
+            input.dispatchEvent(new Event('change'));
+        };
+
+        input.addEventListener('keydown', event => {
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                applyStep(step);
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                applyStep(-step);
+            }
+        });
+    });
+</script>
+{% endblock content %}

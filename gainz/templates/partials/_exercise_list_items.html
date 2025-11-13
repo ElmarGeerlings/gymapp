@@ -6,7 +6,17 @@
                 {% if exercises_in_category %}
                     <div class="exercise-grid">
                         {% for exercise in exercises_in_category %}
-                            <div class="exercise-card">
+                            <div class="exercise-card {% if exercise.is_custom and exercise.user == request.user %}exercise-card-editable{% endif %}"
+                                 {% if exercise.is_custom and exercise.user == request.user %}
+                                 data-function="click->editExercise"
+                                 data-exercise-id="{{ exercise.id }}"
+                                 data-exercise-name="{{ exercise.name }}"
+                                 data-exercise-description="{{ exercise.description }}"
+                                 data-exercise-type="{{ exercise.exercise_type }}"
+                                 data-exercise-categories="{{ exercise.get_category_ids_string }}"
+                                 style="cursor: pointer;"
+                                 title="Click to edit"
+                                 {% endif %}>
                                 <h3>{{ exercise.name }} {% if exercise.is_custom %}<span class="badge bg-secondary">Custom</span>{% endif %}</h3>
                                 <div class="exercise-meta mb-2">
                                     <span class="badge bg-info">{{ exercise.get_exercise_type_display }}</span>
@@ -31,7 +41,17 @@
         {% if uncategorized %}
             <div class="exercise-grid">
                 {% for exercise in uncategorized %}
-                    <div class="exercise-card">
+                    <div class="exercise-card {% if exercise.is_custom and exercise.user == request.user %}exercise-card-editable{% endif %}"
+                         {% if exercise.is_custom and exercise.user == request.user %}
+                         data-function="click->editExercise"
+                         data-exercise-id="{{ exercise.id }}"
+                         data-exercise-name="{{ exercise.name }}"
+                         data-exercise-description="{{ exercise.description }}"
+                         data-exercise-type="{{ exercise.exercise_type }}"
+                         data-exercise-categories="{{ exercise.get_category_ids_string }}"
+                         style="cursor: pointer;"
+                         title="Click to edit"
+                         {% endif %}>
                         <h3>{{ exercise.name }} {% if exercise.is_custom %}<span class="badge bg-secondary">Custom</span>{% endif %}</h3>
                         <div class="exercise-meta mb-2">
                             <span class="badge bg-info">{{ exercise.get_exercise_type_display }}</span>

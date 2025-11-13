@@ -19,23 +19,31 @@
             <div class="row g-2 align-items-end">
                 <div class="col-12 col-md-4">
                     <label for="exercise-search" class="form-label visually-hidden">Search Exercises</label>
-                    <input type="text" id="exercise-search" name="search_query" class="form-control" placeholder="Search exercises..." value="{{ request.GET.search_query }}" data-function="input->debouncedFetchExercises">
+                    <input type="text" id="exercise-search" name="search_query" class="form-control" placeholder="Search exercises..." value="" data-function="input->debouncedFetchExercises">
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md-2">
+                    <label for="custom-filter" class="form-label visually-hidden">Exercise Source</label>
+                    <select name="custom_filter" id="custom-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
+                        <option value="">All Exercises</option>
+                        <option value="custom">Custom Only</option>
+                        <option value="non_custom">Non-Custom Only</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
                     <label for="exercise-type-filter" class="form-label visually-hidden">Exercise Type</label>
                     <select name="exercise_type" id="exercise-type-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
                         <option value="">All Types</option>
                         {% for code, name in exercise_types_for_form %}
-                            <option value="{{ code }}" {% if code == request.GET.exercise_type %}selected{% endif %}>{{ name }}</option>
+                            <option value="{{ code }}">{{ name }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md-2">
                     <label for="category-filter" class="form-label visually-hidden">Category</label>
                     <select name="category" id="category-filter" class="form-select" data-function="change->fetchAndUpdateExerciseList">
                         <option value="">All Categories</option>
                         {% for category in categories_for_form %}
-                            <option value="{{ category.id }}" {% if category.id|stringformat:"s" == request.GET.category %}selected{% endif %}>{{ category.name }}</option>
+                            <option value="{{ category.id }}">{{ category.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -54,9 +62,10 @@
 <div id="add-exercise-modal" class="siu-modal" style="display: none;" data-function="click->close_modal">
     <div class="siu-modal-content">
         <span class="siu-modal-close" data-function="click->close_modal">&times;</span>
-        <h2>Add New Exercise</h2>
+        <h2 id="exercise-modal-title">Add New Exercise</h2>
         <form id="add-exercise-form" method="post" action="/api/exercises/">
             {% csrf_token %}
+            <input type="hidden" id="exercise-id" name="exercise_id" value="">
             <div id="form-errors" class="alert alert-danger" style="display: none;"></div>
 
             <div class="form-group">
@@ -96,13 +105,24 @@
                 <div id="error-exercise_type" class="invalid-feedback" style="display: none;"></div>
             </div>
 
-            <button type="button"
-                    class="btn btn-primary"
-                    data-function="click->saveExercise"
-                    >
-                Save Exercise
-            </button>
-            <button type="button" class="btn btn-secondary siu-modal-close" data-function="click->close_modal">Cancel</button>
+            <div class="d-flex gap-2">
+                <button type="button"
+                        class="btn btn-primary"
+                        id="save-exercise-btn"
+                        data-function="click->saveExercise"
+                        >
+                    Save Exercise
+                </button>
+                <button type="button"
+                        class="btn btn-danger"
+                        id="delete-exercise-btn"
+                        data-function="click->deleteExercise"
+                        style="display: none;"
+                        >
+                    Delete Exercise
+                </button>
+                <button type="button" class="btn btn-secondary siu-modal-close" data-function="click->close_modal">Cancel</button>
+            </div>
         </form>
     </div>
 </div>

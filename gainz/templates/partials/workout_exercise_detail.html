@@ -1,41 +1,155 @@
 {# Template: gainz/templates/partials/workout_exercise_detail.html #}
 {# Context: Expects a `workout_exercise` object #}
 
-<div class="card mb-3">
-    <div class="card-header">
-        <h5>{{ workout_exercise.exercise.name }}</h5>
+<div class="card mb-3 workout-exercise-card" draggable="true" data-exercise-id="{{ workout_exercise.id }}" data-order="{{ workout_exercise.order }}">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">{{ workout_exercise.exercise.name }}</h5>
+        
+        {# Timer section #}
+        <div class="timer-section d-flex align-items-center me-3">
+            <div class="timer-display me-2" data-timer-display data-exercise-id="{{ workout_exercise.id }}">00:00</div>
+            <div class="timer-message small text-muted me-2" data-timer-message data-exercise-id="{{ workout_exercise.id }}"></div>
+            <div class="btn-group btn-group-sm timer-controls" role="group" aria-label="Timer controls">
+                <button type="button" class="btn btn-outline-success timer-start-btn"
+                        data-function="click->startTimer"
+                        data-exercise-id="{{ workout_exercise.id }}"
+                        data-exercise-type="{{ workout_exercise.get_exercise_type }}"
+                        title="Start timer">
+                    <i class="fas fa-play"></i>
+                    <span class="d-none d-sm-inline ms-1">Start</span>
+                </button>
+                <button type="button" class="btn btn-outline-warning timer-pause-btn"
+                        data-function="click->pauseTimer"
+                        data-exercise-id="{{ workout_exercise.id }}"
+                        title="Pause timer">
+                    <i class="fas fa-pause"></i>
+                    <span class="d-none d-sm-inline ms-1">Pause</span>
+                </button>
+                <button type="button" class="btn btn-outline-danger timer-stop-btn"
+                        data-function="click->stopTimer"
+                        data-exercise-id="{{ workout_exercise.id }}"
+                        title="Stop timer">
+                    <i class="fas fa-stop"></i>
+                    <span class="d-none d-sm-inline ms-1">Stop</span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="d-flex gap-2 align-items-center">
+            {# Feedback buttons #}
+            <div class="btn-group btn-group-sm" role="group" aria-label="Performance feedback">
+                <button type="button" class="btn btn-outline-success {% if workout_exercise.performance_feedback == 'increase' %}active{% endif %}"
+                        data-function="click->updateExerciseFeedback"
+                        data-exercise-id="{{ workout_exercise.id }}"
+                        data-feedback="increase"
+                        title="Increase weight/reps next time">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary {% if workout_exercise.performance_feedback == 'stay' %}active{% endif %}"
+                        data-function="click->updateExerciseFeedback"
+                        data-exercise-id="{{ workout_exercise.id }}"
+                        data-feedback="stay"
+                        title="Keep same weight/reps">
+                    <i class="fas fa-equals"></i>
+                </button>
+                <button type="button" class="btn btn-outline-warning {% if workout_exercise.performance_feedback == 'decrease' %}active{% endif %}"
+                        data-function="click->updateExerciseFeedback"
+                        data-exercise-id="{{ workout_exercise.id }}"
+                        data-feedback="decrease"
+                        title="Decrease weight/reps next time">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" 
+                    data-function="click->removeExercise"
+                    data-exercise-id="{{ workout_exercise.id }}"
+                    title="Remove exercise">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
     </div>
     <div class="card-body">
         {% if workout_exercise.notes %}
             <p class="card-text text-muted"><em>{{ workout_exercise.notes|linebreaksbr }}</em></p>
         {% endif %}
 
-        {% if workout_exercise.sets.all %}
-            <div class="table-responsive">
-                <table class="table table-sm table-striped">
-                    <thead>
-                        <tr>
-                            <th>Set</th>
-                            <th>Reps</th>
-                            <th>Weight</th>
-                            <th>Type</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for set in workout_exercise.sets.all %}
+        <div class="sets-container" data-exercise-id="{{ workout_exercise.id }}" data-exercise-name="{{ workout_exercise.exercise.name }}">
+            {% if workout_exercise.sets.all %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
                             <tr>
-                                <td>{{ set.set_number }}</td>
-                                <td>{{ set.reps }}</td>
-                                <td>{{ set.weight }} kg</td> {# Assuming kg, adjust unit if needed #}
-                                <td>{% if set.is_warmup %}Warmup{% else %}Working{% endif %}</td>
+                                <th class="set-header-reps" width="100">Reps</th>
+                                <th class="set-header-weight" width="120">Weight (kg)</th>
+                                <th class="set-header-warmup" width="80">Warmup</th>
+                                <th class="set-header-done" width="80">Done</th>
+                                <th class="set-header-actions" width="40"></th>
                             </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody class="sets-tbody">
+                            {% for set in workout_exercise.sets.all %}
+                                <tr class="set-row{% if set.is_completed %} set-completed{% endif %}"
+                                    data-set-id="{{ set.id }}"
+                                    data-reps="{{ set.reps }}"
+                                    data-weight="{{ set.weight|floatformat:1 }}"
+                                    data-is-completed="{% if set.is_completed %}true{% else %}false{% endif %}">
+                                    <td class="set-reps">
+                                        <input type="number" class="form-control form-control-sm set-reps-input" 
+                                               value="{{ set.reps }}" min="0" step="1"
+                                               data-function="focus->captureWorkoutSetOriginalValue blur->handleWorkoutSetChange"
+                                               data-set-id="{{ set.id }}"
+                                               data-field="reps">
+                                    </td>
+                                    <td class="set-weight">
+                                        <input type="number" class="form-control form-control-sm set-weight-input" 
+                                               value="{{ set.weight|floatformat:1 }}" min="0" step="0.5"
+                                               data-function="focus->captureWorkoutSetOriginalValue blur->handleWorkoutSetChange"
+                                               data-set-id="{{ set.id }}"
+                                               data-field="weight">
+                                    </td>
+                                    <td class="set-warmup text-center">
+                                        <input type="checkbox" class="form-check-input"
+                                               {% if set.is_warmup %}checked{% endif %}
+                                               data-function="change->updateSet"
+                                               data-set-id="{{ set.id }}"
+                                               data-field="is_warmup">
+                                    </td>
+                                    <td class="set-done text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-success mark-set-btn"
+                                                data-function="click->toggleSetCompletion"
+                                                data-set-id="{{ set.id }}"
+                                                data-exercise-id="{{ workout_exercise.id }}"
+                                                data-completed="{% if set.is_completed %}true{% else %}false{% endif %}"
+                                                title="Toggle completion">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="#" class="text-danger"
+                                           data-function="click->deleteSet"
+                                           data-set-id="{{ set.id }}"
+                                           title="Delete set">
+                                            <i class="fas fa-times"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted no-sets-message">No sets recorded for this exercise.</p>
+            {% endif %}
+            
+            {# Simple add set button #}
+            <div class="mt-2">
+                <button class="btn btn-sm btn-outline-primary"
+                        data-function="click->addSet"
+                        data-exercise-id="{{ workout_exercise.id }}"
+                        title="Add set">
+                    <i class="fas fa-plus"></i>
+                </button>
             </div>
-        {% else %}
-            <p class="text-muted">No sets recorded for this exercise.</p>
-        {% endif %}
-        {# Add buttons/forms for adding/editing sets here later if desired #}
+        </div>
     </div>
 </div>

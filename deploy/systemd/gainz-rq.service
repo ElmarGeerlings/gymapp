@@ -1,0 +1,15 @@
+[Unit]
+Description=gainz RQ worker
+After=network.target redis-server.service
+
+[Service]
+User=gainz
+Group=gainz
+WorkingDirectory=/srv/gainz/app
+Environment="PATH=/srv/gainz/app/venv/bin"
+EnvironmentFile=/srv/gainz/gainz.env
+ExecStart=/srv/gainz/app/venv/bin/rq worker --url redis://127.0.0.1:6379/0
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

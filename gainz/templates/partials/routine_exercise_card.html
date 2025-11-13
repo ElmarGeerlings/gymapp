@@ -1,0 +1,139 @@
+<div class="card mb-3 exercise-routine-card workout-exercise-card" data-index="{{ index }}"{% if r_exercise.id %} data-routine-exercise-id="{{ r_exercise.id }}"{% endif %} draggable="true">
+    <div class="card-header d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-2">
+        <div class="d-flex align-items-center gap-3">
+            <span class="badge bg-primary rounded-pill">#<span class="exercise-order">{{ r_exercise.order|default:index|add:1 }}</span></span>
+            <div>
+                <h5 class="mb-0 exercise-name-display">{{ r_exercise.exercise.name|default:'Select Exercise' }}</h5>
+                <small class="text-muted routine-type-summary">
+                    {% if r_exercise.routine_specific_exercise_type %}
+                        {{ r_exercise.get_routine_specific_exercise_type_display }}
+                    {% elif r_exercise.exercise %}
+                        Default ({{ r_exercise.exercise.get_exercise_type_display }})
+                    {% else %}
+                        Default (Select Exercise First)
+                    {% endif %}
+                </small>
+            </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Reorder exercise">
+                <button type="button" class="btn btn-outline-secondary move-up-btn" data-move-direction="up" data-function="click->handleRoutineExerciseMove" title="Move exercise up" aria-label="Move exercise up">
+                    <i class="fas fa-arrow-up"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary move-down-btn" data-move-direction="down" data-function="click->handleRoutineExerciseMove" title="Move exercise down" aria-label="Move exercise down">
+                    <i class="fas fa-arrow-down"></i>
+                </button>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-exercise-btn" data-function="click->removeRoutineExerciseCard" aria-label="Remove exercise">
+                <i class="fas fa-trash me-1"></i>
+                <span class="d-none d-sm-inline">Remove</span>
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <input type="hidden" name="routine_exercise_{{ index }}_id" value="{{ r_exercise.id }}">
+        <input type="hidden" class="exercise-order-input" name="routine_exercise_{{ index }}_order" value="{{ r_exercise.order|default:index|add:1 }}">
+
+        <div class="row g-3 mb-3">
+            <div class="col-12 col-md-6">
+                <label for="exercise_pk_{{ index }}" class="form-label">Exercise</label>
+                <select name="routine_exercise_{{ index }}_exercise_pk" id="exercise_pk_{{ index }}" class="form-select exercise-select" data-function="change->updateExerciseCardName">
+                    <option value="">Select Exercise</option>
+                    {% for ex_dict in all_exercises %}
+                        <option value="{{ ex_dict.pk }}"
+                                data-name="{{ ex_dict.name }}"
+                                data-default-type-display="{{ ex_dict.default_type_display }}"
+                                {% if r_exercise.exercise.pk == ex_dict.pk %}selected{% endif %}>
+                            {{ ex_dict.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-6">
+                <label for="routine_specific_exercise_type_{{ index }}" class="form-label">Exercise Type (Optional)</label>
+                <select name="routine_exercise_{{ index }}_routine_specific_exercise_type" id="routine_specific_exercise_type_{{ index }}" class="form-select routine-type-select" data-function="change->updateRoutineSpecificTypeLabel">
+                    <option value="">{% if r_exercise.exercise %}Default ({{ r_exercise.exercise.get_exercise_type_display }}){% else %}Default (Select Exercise First){% endif %}</option>
+                    {% for type_val, type_display in exercise_type_choices %}
+                        <option value="{{ type_val }}" {% if r_exercise.routine_specific_exercise_type == type_val %}selected{% endif %}>{{ type_display }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="sets-container" data-exercise-index="{{ index }}">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <h6 class="mb-0">Planned Sets</h6>
+                <button type="button" class="btn btn-sm btn-outline-success add-set-btn" data-function="click->addSetToExerciseCard">
+                    <i class="fas fa-plus me-1"></i>Add Set
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="text-nowrap">Set</th>
+                            <th class="text-nowrap">Reps</th>
+                            <th class="text-nowrap">Weight (kg)</th>
+                            <th class="text-nowrap">RPE</th>
+                            <th class="text-nowrap">Rest (s)</th>
+                            <th class="text-nowrap">Notes</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="sets-tbody">
+                        {% for set_plan in r_exercise.planned_sets.all %}
+                            <tr class="set-row" data-set-index="{{ forloop.counter0 }}">
+                                <td class="fw-semibold text-nowrap">
+                                    <span class="set-number-display">Set {{ set_plan.set_number }}</span>
+                                    <input type="hidden" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_id" value="{{ set_plan.id }}">
+                                    <input type="hidden" class="set-number-input" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_set_number" value="{{ set_plan.set_number }}">
+                                </td>
+                                <td class="set-reps">
+                                    <input type="text" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_target_reps" value="{{ set_plan.target_reps|default:'' }}" class="form-control form-control-sm" placeholder="e.g. 8-12" aria-label="Target reps" data-function="focus->captureRoutineSetFieldOriginalValue change->handleRoutineSetFieldChange">
+                                </td>
+                                <td class="set-weight">
+                                    <input type="number" step="0.01" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_target_weight" value="{{ set_plan.target_weight|default:'' }}" class="form-control form-control-sm" placeholder="Weight" aria-label="Target weight" data-function="focus->captureRoutineSetFieldOriginalValue change->handleRoutineSetFieldChange">
+                                </td>
+                                <td class="set-rpe">
+                                    <div class="rpe-field"{% if not show_rpe %} style="display: none;"{% endif %}>
+                                        <input type="number" step="0.1" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_target_rpe" value="{{ set_plan.target_rpe|default:'' }}" class="form-control form-control-sm" placeholder="RPE" aria-label="Target RPE">
+                                    </div>
+                                </td>
+                                <td class="set-rest">
+                                    <div class="rest-time-field"{% if not show_rest %} style="display: none;"{% endif %}>
+                                        <input type="number" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_rest_time_seconds" value="{{ set_plan.rest_time_seconds|default:'' }}" class="form-control form-control-sm" placeholder="Rest" aria-label="Rest time in seconds">
+                                    </div>
+                                </td>
+                                <td class="set-notes">
+                                    <div class="notes-field"{% if not show_notes %} style="display: none;"{% endif %}>
+                                        <input type="text" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_notes" value="{{ set_plan.notes|default:'' }}" class="form-control form-control-sm" placeholder="Set notes" aria-label="Set notes">
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <div class="d-flex align-items-center justify-content-end gap-2">
+                                        <input type="hidden" name="routine_exercise_{{ index }}_planned_sets_{{ forloop.counter0 }}_locked" value="0">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary set-lock-btn" data-function="click->toggleSetLock" title="Lock this set from bulk editing" aria-label="Lock set from bulk editing">
+                                            <i class="fas fa-unlock"></i>
+                                        </button>
+                                        <div class="btn-group btn-group-sm" role="group" aria-label="Set actions">
+                                            <button type="button" class="btn btn-outline-secondary duplicate-set-btn" data-function="click->duplicateSetRow" title="Duplicate set" aria-label="Duplicate set">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger remove-set-btn" data-function="click->removeSetFromExerciseCard" title="Remove set" aria-label="Remove set">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr class="sets-empty-message">
+                                <td colspan="8" class="text-center text-muted py-3">No sets planned yet.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

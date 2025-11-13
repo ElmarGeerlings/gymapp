@@ -5,11 +5,12 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from gainz.exercises.models import Exercise, ExerciseCategory
 from gainz.exercises.serializers import ExerciseSerializer, ExerciseCategorySerializer
-from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet, ProgramRoutine
+from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program, Routine, RoutineExercise, RoutineExerciseSet, ProgramRoutine, UserTimerPreference, ExerciseTimerOverride, ProgramTimerPreference, RoutineTimerPreference
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
-from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404
+from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404, FileResponse
 from django.template.loader import render_to_string
 from django.db.models import Q
 import datetime # Add datetime import
@@ -18,8 +19,50 @@ from django.utils import timezone # Added for timezone.now()
 from django.urls import reverse # Add import for reverse
 from django.contrib import messages # Added for messages
 from django.core.cache import cache # Added for Redis cache
-from django_rq import get_queue # Added for direct Redis access via django-rq
+import statistics
+from collections import defaultdict
+from django.contrib.staticfiles import finders
+from django.contrib.staticfiles.storage import staticfiles_storage
 import json # Moved import json here
+from datetime import timedelta
+from django.contrib.auth.models import User
+from django.contrib.auth import login
+from django.core.management import call_command
+from io import StringIO
+from gainz.workouts.utils import WorkoutParser
+from decimal import Decimal
+from django.db.models import F, Sum, Min, Max, Avg
+from .utils.progress_tracking import (
+    get_progress_metrics, analyze_strength_trends,
+    get_top_exercises_by_volume, get_exercise_progress,
+    get_personal_records_summary, get_personal_records
+)
+
+# Make Redis optional for deployments without Redis
+def get_redis_connection():
+    try:
+        # Use django_redis which respects our SSL configuration in settings.py
+        from django_redis import get_redis_connection as django_redis_conn
+        return django_redis_conn("default")
+    except:
+        return None
+
+def renumber_exercises_by_type(workout):
+    """Renumber exercises maintaining type hierarchy: Primary > Secondary > Accessory
+    Preserves relative order within each type group."""
+    PRIORITY = {'primary': 3, 'secondary': 2, 'accessory': 1}
+
+    # Get all exercises and sort by type priority (descending), then by current order
+    all_exercises = list(workout.exercises.all())
+    all_exercises.sort(key=lambda ex: (
+        -PRIORITY.get(ex.get_exercise_type(), 1),  # Higher priority first
+        ex.order  # Then by current order within type
+    ))
+
+    # Renumber sequentially
+    for index, exercise in enumerate(all_exercises):
+        exercise.order = index
+        exercise.save()
 
 # Exercise ViewSets
 class ExerciseCategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -40,6 +83,19 @@ class ExerciseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user, is_custom=True)
 
+    def perform_update(self, serializer):
+        # Only allow updating custom exercises owned by the user
+        exercise = self.get_object()
+        if not exercise.is_custom or exercise.user != self.request.user:
+            raise PermissionDenied("You can only edit your own custom exercises.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        # Only allow deleting custom exercises owned by the user
+        if not instance.is_custom or instance.user != self.request.user:
+            raise PermissionDenied("You can only delete your own custom exercises.")
+        instance.delete()
+
 # Workout ViewSets
 class WorkoutViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutSerializer
@@ -51,15 +107,169 @@ class WorkoutViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def _renumber_exercises_by_type(self, workout):
+        """Renumber exercises maintaining type hierarchy: Primary > Secondary > Accessory
+        Preserves relative order within each type group."""
+        return renumber_exercises_by_type(workout)
+
     @action(detail=True, methods=['post'])
     def add_exercise(self, request, pk=None):
         workout = self.get_object()
-        serializer = WorkoutExerciseSerializer(data=request.data)
+
+        # Get the current exercise ID to determine insertion position
+        current_exercise_id = request.data.get('current_exercise_id')
+
+        # Get exercise type override if provided
+        exercise_type_override = request.data.get('exercise_type')
+
+        # Calculate the appropriate order for the new exercise
+        new_order = self._calculate_exercise_order(workout, request.data.get('exercise'), current_exercise_id, exercise_type_override)
+
+        # Add the calculated order to the request data
+        mutable_data = request.data.copy()
+        mutable_data['order'] = new_order
+
+        serializer = WorkoutExerciseSerializer(data=mutable_data)
 
         if serializer.is_valid():
-            serializer.save(workout=workout)
+            workout_exercise = serializer.save(workout=workout)
+
+            # Renumber all exercises to be sequential after insertion, maintaining type hierarchy
+            self._renumber_exercises_by_type(workout)
+
+            # Refresh serializer data with updated order
+            serializer = WorkoutExerciseSerializer(workout_exercise)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def _calculate_exercise_order(self, workout, new_exercise_id, current_exercise_id, exercise_type_override=None):
+        """
+        Calculate the appropriate order for a new exercise based on:
+        - Exercise type hierarchy (primary > secondary > accessory)
+        - Current exercise position
+        - Priority-based insertion rules:
+          * Higher priority type -> insert as LAST of that type
+          * Same priority type -> insert AFTER current
+          * Lower priority type -> insert as FIRST of that type
+        """
+        # Priority mapping: primary (3) > secondary (2) > accessory (1)
+        PRIORITY = {'primary': 3, 'secondary': 2, 'accessory': 1}
+
+        # Get the new exercise type (use override if provided, otherwise from exercise)
+        if exercise_type_override:
+            new_exercise_type = exercise_type_override
+        else:
+            try:
+                new_exercise = Exercise.objects.get(id=new_exercise_id)
+                new_exercise_type = new_exercise.exercise_type
+            except Exercise.DoesNotExist:
+                return 0
+
+        new_priority = PRIORITY.get(new_exercise_type, 1)
+
+        # Get all existing exercises in this workout
+        existing_exercises = list(workout.exercises.prefetch_related('exercise').order_by('order'))
+
+        # If no current exercise specified or no exercises exist
+        if not current_exercise_id or not existing_exercises:
+            # Find exercises of the same type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return max(ex.order for ex in same_type) + 1
+            else:
+                # No exercises of this type yet, find insertion point based on type hierarchy
+                if new_exercise_type == 'primary':
+                    return 0
+                elif new_exercise_type == 'secondary':
+                    primaries = [ex for ex in existing_exercises if ex.get_exercise_type() == 'primary']
+                    if primaries:
+                        return max(ex.order for ex in primaries) + 1
+                    else:
+                        return 0
+                else:  # accessory
+                    return max([ex.order for ex in existing_exercises], default=0) + 1
+
+        # Find the current exercise
+        current_exercise = None
+        for ex in existing_exercises:
+            if ex.id == int(current_exercise_id):
+                current_exercise = ex
+                break
+
+        if not current_exercise:
+            # Current exercise not found, place at end of same type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return max(ex.order for ex in same_type) + 1
+            else:
+                return max([ex.order for ex in existing_exercises], default=0) + 1
+
+        current_type = current_exercise.get_exercise_type()
+        current_priority = PRIORITY.get(current_type, 1)
+
+        # Apply priority-based insertion rules
+        if new_priority > current_priority:
+            # Higher priority: insert as LAST of new type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return max(ex.order for ex in same_type) + 1
+            else:
+                # No exercises of this type yet, insert at appropriate boundary
+                if new_exercise_type == 'primary':
+                    return 0
+                elif new_exercise_type == 'secondary':
+                    primaries = [ex for ex in existing_exercises if ex.get_exercise_type() == 'primary']
+                    if primaries:
+                        return max(ex.order for ex in primaries) + 1
+                    else:
+                        return 0
+                else:  # accessory
+                    return max([ex.order for ex in existing_exercises], default=0) + 1
+
+        elif new_priority == current_priority:
+            # Same priority: insert AFTER current
+            return current_exercise.order + 1
+
+        else:  # new_priority < current_priority
+            # Lower priority: insert as FIRST of new type
+            same_type = [ex for ex in existing_exercises if ex.get_exercise_type() == new_exercise_type]
+            if same_type:
+                return min(ex.order for ex in same_type)
+            else:
+                # No exercises of this type yet, insert at appropriate boundary
+                if new_exercise_type == 'accessory':
+                    return max([ex.order for ex in existing_exercises], default=0) + 1
+                elif new_exercise_type == 'secondary':
+                    primaries = [ex for ex in existing_exercises if ex.get_exercise_type() == 'primary']
+                    if primaries:
+                        return max(ex.order for ex in primaries) + 1
+                    else:
+                        return 0
+                else:  # primary (shouldn't happen if current is higher)
+                    return 0
+
+    @action(detail=True, methods=['post'], url_path='reorder-exercises')
+    def reorder_exercises(self, request, pk=None):
+        workout = self.get_object()
+        exercises_data = request.data.get('exercises', [])
+
+        if not exercises_data:
+            return Response({'error': 'No exercises data provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            for exercise_data in exercises_data:
+                exercise_id = exercise_data.get('id')
+                new_order = exercise_data.get('order')
+
+                if exercise_id and new_order is not None:
+                    WorkoutExercise.objects.filter(
+                        id=exercise_id,
+                        workout=workout
+                    ).update(order=new_order)
+
+            return Response({'success': True, 'message': 'Exercise order updated successfully'})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class WorkoutExerciseViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutExerciseSerializer
@@ -67,6 +277,12 @@ class WorkoutExerciseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return WorkoutExercise.objects.filter(workout__user=self.request.user)
+
+    def perform_destroy(self, instance):
+        """Override destroy to renumber exercises after deletion, maintaining type hierarchy."""
+        workout = instance.workout
+        instance.delete()
+        renumber_exercises_by_type(workout)
 
 class ExerciseSetViewSet(viewsets.ModelViewSet):
     serializer_class = ExerciseSetSerializer
@@ -101,7 +317,8 @@ def workout_detail(request, workout_id):
     workout = get_object_or_404(Workout, id=workout_id, user=request.user)
 
     # Fetch WorkoutExercises related to this workout, prefetching related Exercise and Sets
-    workout_exercises = workout.exercises.prefetch_related('exercise', 'sets').all()
+    # Order by the order field to respect user's custom ordering
+    workout_exercises = workout.exercises.prefetch_related('exercise', 'sets').order_by('order')
 
     # Group exercises by type using the get_exercise_type method
     primary_exercises = []
@@ -117,15 +334,30 @@ def workout_detail(request, workout_id):
         else: # Default or accessory
             accessory_exercises.append(workout_exercise)
 
+    # Get all exercises for the add exercise dropdown
+    all_exercises_for_form = Exercise.objects.filter(
+        models.Q(is_custom=False) |
+        models.Q(is_custom=True, user=request.user)
+    ).order_by('name')
+
+    # Get exercise type choices for the dropdown
+    exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
+
     context = {
         'workout': workout,
         'primary_exercises': primary_exercises,
         'secondary_exercises': secondary_exercises,
         'accessory_exercises': accessory_exercises,
+        'all_exercises_for_form': all_exercises_for_form,
+        'exercise_type_choices': exercise_type_choices,
         'title': f"Workout: {workout.name}" # Added a title for the page
     }
 
-    return render(request, 'workout_detail.html', context)
+    # Check for device_type cookie to determine template
+    device_type = request.COOKIES.get('device_type')
+    template_name = 'workout_detail_mobile.html' if device_type == 'mobile' else 'workout_detail.html'
+
+    return render(request, template_name, context)
 
 def home(request):
     """Homepage view that redirects to the workout list or shows a welcome page"""
@@ -146,9 +378,26 @@ def workout_list(request):
     """Display a list of the user's workouts"""
     workouts = Workout.objects.filter(user=request.user).order_by('-date')
 
+    # Build routine options for "Choose" modal
+    active_program = Program.objects.filter(user=request.user, is_active=True).first()
+    active_program_routines = []
+    if active_program:
+        active_program_routines = [
+            pr.routine for pr in ProgramRoutine.objects.filter(program=active_program)
+            .select_related('routine').order_by('order')
+        ]
+
+    # All user routines
+    all_user_routines = Routine.objects.filter(user=request.user).order_by('name')
+    # Routines not in active program (if any)
+    other_routines = all_user_routines.exclude(id__in=[r.id for r in active_program_routines])
+
     context = {
         'workouts': workouts,
-        'title': 'My Workouts'
+        'title': 'My Workouts',
+        'active_program': active_program,
+        'active_program_routines': active_program_routines,
+        'other_routines': other_routines,
     }
 
     return render(request, 'workout_list.html', context)
@@ -160,6 +409,7 @@ def exercise_list(request):
     search_query = request.GET.get('search_query', '')
     exercise_type_filter = request.GET.get('exercise_type', '')
     category_filter = request.GET.get('category', '')
+    custom_filter = request.GET.get('custom_filter', '')
 
     exercises = Exercise.objects.prefetch_related('categories').select_related('user').order_by('name')
 
@@ -175,7 +425,14 @@ def exercise_list(request):
     if category_filter:
         exercises = exercises.filter(categories__id=category_filter)
 
-    exercises = exercises.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user))
+    # Apply custom filter
+    if custom_filter == 'custom':
+        exercises = exercises.filter(is_custom=True, user=request.user)
+    elif custom_filter == 'non_custom':
+        exercises = exercises.filter(is_custom=False)
+    else:
+        # Default: show all exercises (non-custom and user's custom)
+        exercises = exercises.filter(Q(is_custom=False) | Q(is_custom=True, user=request.user))
 
     exercises_by_category = {}
     uncategorized_exercises = []
@@ -203,6 +460,7 @@ def exercise_list(request):
         'current_search_query': search_query,
         'current_exercise_type': exercise_type_filter,
         'current_category': category_filter,
+        'current_custom_filter': custom_filter,
         'request': request
     }
 
@@ -216,17 +474,69 @@ def exercise_list(request):
 
 @login_required
 def routine_list(request):
-    """Display a list of the user's programs and routines."""
-    # Fetch programs with their routines prefetched
-    programs = Program.objects.filter(user=request.user).prefetch_related('routines').order_by('name')
+    """Display routines with optional filtering by program.
 
-    # Fetch standalone routines (those not assigned to any program)
-    routines = Routine.objects.filter(user=request.user).order_by('name')
+    Default: if a program is active, show routines from that program (and select it in the dropdown).
+    If no active program, show all routines and select "All Routines".
+    Supports `?program=all` or `?program=<id>` to filter explicitly.
+    """
+    programs = Program.objects.filter(user=request.user).order_by('name')
+    active_program = programs.filter(is_active=True).first()
+
+    program_param = request.GET.get('program')  # 'all' | <program_id>
+    selected_program = None
+
+    # Determine routines queryset
+    if program_param == 'all':
+        routines = Routine.objects.filter(user=request.user).order_by('name')
+        current_program_filter = 'all'
+    elif program_param and program_param.isdigit():
+        selected_program = programs.filter(id=int(program_param)).first()
+        if selected_program:
+            routines = Routine.objects.filter(
+                user=request.user,
+                program_associations__program=selected_program
+            ).distinct().order_by('name')
+            current_program_filter = str(selected_program.id)
+        else:
+            # Invalid program id: fall back to default logic
+            if active_program:
+                selected_program = active_program
+                routines = Routine.objects.filter(
+                    user=request.user,
+                    program_associations__program=selected_program
+                ).distinct().order_by('name')
+                current_program_filter = str(selected_program.id)
+            else:
+                routines = Routine.objects.filter(user=request.user).order_by('name')
+                current_program_filter = 'all'
+    else:
+        # Default: use active program if present; otherwise show all
+        if active_program:
+            selected_program = active_program
+            routines = Routine.objects.filter(
+                user=request.user,
+                program_associations__program=selected_program
+            ).distinct().order_by('name')
+            current_program_filter = str(selected_program.id)
+        else:
+            routines = Routine.objects.filter(user=request.user).order_by('name')
+            current_program_filter = 'all'
+
+    # Title hint
+    if selected_program:
+        title = f'Routines in: {selected_program.name}'
+    elif current_program_filter == 'all':
+        title = 'All Routines'
+    else:
+        title = 'Your Routines'
 
     context = {
         'programs': programs,
         'routines': routines,
-        'title': 'My Routines & Programs'
+        'selected_program': selected_program,
+        'current_program_filter': current_program_filter,
+        'title': title,
     }
     return render(request, 'routine_list.html', context)
 
@@ -254,7 +564,7 @@ def routine_create(request):
     exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
 
     user_id = request.user.id
-    redis_conn = get_queue().connection
+    redis_conn = get_redis_connection()
     user_preferences = {}
     preference_definitions = {
         'show_rpe': {'key_suffix': 'routineForm.showRPE', 'default': False},
@@ -268,10 +578,13 @@ def routine_create(request):
         # if pref_name == 'show_rpe':
         #     cache_key = f"test_rpe_preference_user_{user_id}"
 
-        retrieved_value_bytes = redis_conn.get(cache_key)
-        if retrieved_value_bytes is not None:
-            retrieved_value_str = retrieved_value_bytes.decode('utf-8')
-            user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+        if redis_conn:
+            retrieved_value_bytes = redis_conn.get(cache_key)
+            if retrieved_value_bytes is not None:
+                retrieved_value_str = retrieved_value_bytes.decode('utf-8')
+                user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+            else:
+                user_preferences[pref_name] = pref_info['default']
         else:
             user_preferences[pref_name] = pref_info['default']
 
@@ -377,7 +690,7 @@ def routine_update(request, routine_id):
     exercise_type_choices = Exercise.EXERCISE_TYPE_CHOICES
 
     user_id = request.user.id
-    redis_conn = get_queue().connection
+    redis_conn = get_redis_connection()
     user_preferences = {}
     preference_definitions = {
         'show_rpe': {'key_suffix': 'routineForm.showRPE', 'default': False},
@@ -391,10 +704,13 @@ def routine_update(request, routine_id):
         # if pref_name == 'show_rpe':
         #     cache_key = f"test_rpe_preference_user_{user_id}"
 
-        retrieved_value_bytes = redis_conn.get(cache_key)
-        if retrieved_value_bytes is not None:
-            retrieved_value_str = retrieved_value_bytes.decode('utf-8')
-            user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+        if redis_conn:
+            retrieved_value_bytes = redis_conn.get(cache_key)
+            if retrieved_value_bytes is not None:
+                retrieved_value_str = retrieved_value_bytes.decode('utf-8')
+                user_preferences[pref_name] = retrieved_value_str.lower() == 'true'
+            else:
+                user_preferences[pref_name] = pref_info['default']
         else:
             user_preferences[pref_name] = pref_info['default']
 
@@ -607,44 +923,83 @@ def program_update(request, program_id):
 
     if request.method == 'POST':
         with transaction.atomic():
+            old_scheduling_type = program.scheduling_type
+            new_scheduling_type = request.POST.get('scheduling_type', 'weekly')
+
             program.name = request.POST.get('name', program.name)
             program.description = request.POST.get('description', program.description)
             program.is_active = request.POST.get('is_active') == 'on'
-            program.scheduling_type = request.POST.get('scheduling_type', 'weekly')
+            program.scheduling_type = new_scheduling_type
             program.save()
 
-            # Clear existing routines for this program
-            program.program_routines.all().delete()
+            # If scheduling type changed, preserve routines but adjust their structure
+            if old_scheduling_type != new_scheduling_type:
+                existing_routines = list(program.program_routines.select_related('routine').order_by('order', 'assigned_day').all())
+                program.program_routines.all().delete()
 
-            if program.scheduling_type == 'weekly':
-                # Process weekly schedule
-                for day_val, day_name in ProgramRoutine._meta.get_field('assigned_day').choices:
-                    routine_ids = request.POST.getlist(f'weekly_day_{day_val}_routines')
-                    for i, r_id in enumerate(routine_ids):
-                        routine = get_object_or_404(Routine, id=r_id, user=request.user)
+                if new_scheduling_type == 'sequential':
+                    # Convert from weekly to sequential - preserve order
+                    for i, program_routine in enumerate(existing_routines):
                         ProgramRoutine.objects.create(
                             program=program,
-                            routine=routine,
-                            assigned_day=day_val,
-                            order=i + 1 # Order within the day
-                        )
-            else: # Sequential
-                # Process sequential schedule
-                i = 0
-                while f'program_routine_{i}_routine_id' in request.POST:
-                    routine_id = request.POST.get(f'program_routine_{i}_routine_id')
-                    order = request.POST.get(f'program_routine_{i}_order')
-                    if routine_id and order:
-                        routine = get_object_or_404(Routine, id=routine_id, user=request.user)
-                        ProgramRoutine.objects.create(
-                            program=program,
-                            routine=routine,
-                            order=int(order),
+                            routine=program_routine.routine,
+                            order=i + 1,
                             assigned_day=None
                         )
-                    i += 1
+                else:  # Converting to weekly
+                    # Convert from sequential to weekly - distribute across days
+                    days = [0, 1, 2, 3, 4, 5, 6]  # Monday to Sunday
+                    for i, program_routine in enumerate(existing_routines):
+                        assigned_day = days[i % len(days)]  # Cycle through days
+                        # Check if there's already a routine on this day and adjust order
+                        existing_on_day = ProgramRoutine.objects.filter(
+                            program=program,
+                            assigned_day=assigned_day
+                        ).count()
+                        ProgramRoutine.objects.create(
+                            program=program,
+                            routine=program_routine.routine,
+                            order=existing_on_day + 1,  # Proper order within the day
+                            assigned_day=assigned_day
+                        )
+            else:
+                # Same scheduling type - process normal updates
+                program.program_routines.all().delete()
 
-            return redirect('program-list')
+                if program.scheduling_type == 'weekly':
+                    # Process weekly schedule
+                    for day_val, day_name in ProgramRoutine._meta.get_field('assigned_day').choices:
+                        routine_ids = request.POST.getlist(f'weekly_day_{day_val}_routines')
+                        for i, r_id in enumerate(routine_ids):
+                            routine = get_object_or_404(Routine, id=r_id, user=request.user)
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                assigned_day=day_val,
+                                order=i + 1 # Order within the day
+                            )
+                else: # Sequential
+                    # Process sequential schedule
+                    i = 0
+                    while f'program_routine_{i}_routine_id' in request.POST:
+                        routine_id = request.POST.get(f'program_routine_{i}_routine_id')
+                        order = request.POST.get(f'program_routine_{i}_order')
+                        if routine_id and order:
+                            routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                order=int(order),
+                                assigned_day=None
+                            )
+                        i += 1
+
+            # If scheduling type changed, redirect back to edit page to show the converted routines
+            if old_scheduling_type != new_scheduling_type:
+                messages.success(request, f'Program converted from {old_scheduling_type} to {new_scheduling_type} scheduling. Routines have been automatically rearranged.')
+                return redirect('program-update', program_id=program.id)
+            else:
+                return redirect('program-list')
 
     # GET request logic remains the same
     all_user_routines = Routine.objects.filter(user=request.user)
@@ -687,141 +1042,140 @@ def program_list(request):
     return render(request, 'program_list.html', context)
 
 @login_required
+def program_activate(request, program_id):
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+    program.is_active = True
+    program.save()
+    messages.success(request, f'"{program.name}" has been activated.')
+    return redirect('program-list')
+
+@login_required
+def program_deactivate(request, program_id):
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+    program.is_active = False
+    program.save()
+    messages.success(request, f'"{program.name}" has been deactivated.')
+    return redirect('program-list')
+
+@login_required
 def start_workout_from_routine(request, routine_id):
+    """
+    Directly creates a workout from a routine and redirects to the workout detail page.
+    Skips the intermediate form page.
+    """
     routine = get_object_or_404(Routine, id=routine_id, user=request.user)
-    routine_exercises_with_sets = []
     today = datetime.date.today()
-    prefilled_workout_name = None
 
-    if request.method == 'GET' and request.GET.get('source') == 'smart-start':
-        # Auto-generate workout name: "Routine Name #X"
-        completed_count = Workout.objects.filter(user=request.user, routine_source=routine).count()
-        prefilled_workout_name = f"{routine.name} #{completed_count + 1}"
+    # Auto-generate workout name: "Routine Name #X"
+    completed_count = Workout.objects.filter(user=request.user, routine_source=routine).count()
+    workout_name = f"{routine.name} #{completed_count + 1}"
 
-    for re in routine.exercises.prefetch_related('planned_sets', 'exercise').order_by('order'):
-        sets_data = []
-        for set_template in re.planned_sets.all().order_by('set_number'):
-            prefill = get_prefill_data(request.user, set_template, today)
-            sets_data.append({
-                'template': set_template,
-                'prefill_reps': prefill.get('reps'),
-                'prefill_weight': prefill.get('weight'),
-            })
-        routine_exercises_with_sets.append({
-            'routine_exercise': re,
-            'exercise': re.exercise,
-            'sets': sets_data
-        })
+    # Determine last workout for this routine (to clone if present)
+    last_workout = Workout.objects.filter(
+        user=request.user,
+        routine_source=routine
+    ).order_by('-date').first()
 
-    if request.method == 'POST':
-        try:
-            with transaction.atomic():
-                workout_name = request.POST.get('workout_name', routine.name) # Default to routine name if not provided
-                workout_notes = request.POST.get('workout_notes', '')
+    # Create the Workout instance
+    new_workout = Workout.objects.create(
+        user=request.user,
+        name=workout_name,
+        notes="",
+        date=datetime.datetime.now(),
+        routine_source=routine
+    )
 
-                # Create the Workout instance
-                new_workout = Workout.objects.create(
-                    user=request.user,
-                    name=workout_name,
-                    notes=workout_notes,
-                    date=datetime.datetime.now(), # Use current datetime
-                    routine_source=routine
+    if last_workout:
+        # Clone last session structure: exercises and sets, preserving order and links
+        for prev_we in last_workout.exercises.prefetch_related('sets', 'exercise').order_by('order'):
+            new_we = WorkoutExercise.objects.create(
+                workout=new_workout,
+                exercise=prev_we.exercise,
+                order=prev_we.order,
+                notes="",  # do not copy notes
+                routine_exercise_source=prev_we.routine_exercise_source,
+                exercise_type=prev_we.exercise_type,
+                performance_feedback=prev_we.performance_feedback
+            )
+            for prev_set in prev_we.sets.all().order_by('set_number'):
+                ExerciseSet.objects.create(
+                    workout_exercise=new_we,
+                    set_number=prev_set.set_number,
+                    reps=prev_set.reps,
+                    weight=prev_set.weight,
+                    is_warmup=prev_set.is_warmup
+                )
+        return redirect('workout-detail', workout_id=new_workout.id)
+    else:
+        # First time with this routine: use planned template + prefill
+        for routine_exercise in routine.exercises.prefetch_related('planned_sets', 'exercise').order_by('order'):
+            # Create WorkoutExercise based on routine exercise
+            workout_exercise = WorkoutExercise.objects.create(
+                workout=new_workout,
+                exercise=routine_exercise.exercise,
+                order=routine_exercise.order,
+                notes="",
+                routine_exercise_source=routine_exercise,
+                exercise_type=routine_exercise.routine_specific_exercise_type or routine_exercise.exercise.exercise_type
+            )
+
+            # Create sets based on planned sets with intelligent prefill
+            for set_template in routine_exercise.planned_sets.all().order_by('set_number'):
+                prefill = get_prefill_data(request.user, set_template, today)
+                reps = prefill.get('reps', 0) or 0
+                weight = prefill.get('weight', 0) or 0
+
+                ExerciseSet.objects.create(
+                    workout_exercise=workout_exercise,
+                    set_number=set_template.set_number,
+                    reps=reps,
+                    weight=weight,
+                    is_warmup=set_template.is_warmup if hasattr(set_template, 'is_warmup') else False
                 )
 
-                # Process each exercise and its sets
-                exercise_idx = 0
-                while True:
-                    # Check if the routine_exercise_id for the current index exists in POST
-                    # This also implicitly checks if there are more exercises to process based on form naming
-                    routine_exercise_id_key = f'routine_exercise_id_{exercise_idx}'
-                    if routine_exercise_id_key not in request.POST:
-                        break # No more exercises submitted
+        return redirect('workout-detail', workout_id=new_workout.id)
 
-                    routine_exercise_id = request.POST.get(routine_exercise_id_key)
-                    exercise_notes = request.POST.get(f'exercise_notes_{exercise_idx}', '')
+@login_required
+def start_empty_workout(request):
+    """
+    Creates an empty workout without any routine and redirects to the workout detail page.
+    Users can add exercises manually on the detail page.
+    """
+    # Count total workouts for naming
+    workout_count = Workout.objects.filter(user=request.user).count()
 
-                    try:
-                        source_routine_exercise = RoutineExercise.objects.get(id=routine_exercise_id, routine=routine)
-                    except RoutineExercise.DoesNotExist:
-                        # This should ideally not happen if form is generated correctly
-                        # but good to handle. Maybe log an error or skip.
-                        exercise_idx += 1
-                        continue
+    # Create empty workout
+    new_workout = Workout.objects.create(
+        user=request.user,
+        name=f"Workout #{workout_count + 1}",
+        notes="",
+        date=datetime.datetime.now(),
+        routine_source=None  # No routine source for freestyle workout
+    )
 
-                    # Create WorkoutExercise
-                    workout_exercise_instance = WorkoutExercise.objects.create(
-                        workout=new_workout,
-                        exercise=source_routine_exercise.exercise,
-                        order=source_routine_exercise.order, # Use order from RoutineExercise
-                        notes=exercise_notes,
-                        routine_exercise_source=source_routine_exercise,
-                        exercise_type=source_routine_exercise.routine_specific_exercise_type or source_routine_exercise.exercise.exercise_type
-                    )
+    # Redirect to the workout detail page where user can add exercises
+    return redirect('workout-detail', workout_id=new_workout.id)
 
-                    # Process sets for this WorkoutExercise
-                    set_idx = 0
-                    while True:
-                        # Check for presence of a set field for this exercise_idx and set_idx
-                        # Using set_template_id as a key, assuming every submitted set will have it
-                        set_template_id_key = f'set_template_id_{exercise_idx}_{set_idx}'
-                        if set_template_id_key not in request.POST:
-                            break # No more sets for this exercise
+@login_required
+def clear_workout(request, workout_id):
+    """
+    Removes all exercises from an existing workout.
+    """
+    workout = get_object_or_404(Workout, id=workout_id, user=request.user)
 
-                        # We don't strictly need set_template_id for creating ExerciseSet,
-                        # but it confirms the set was part of the form submission for this loop.
-                        # set_template_id = request.POST.get(set_template_id_key)
+    if request.method == 'POST':
+        # Delete all workout exercises (this will cascade delete all sets)
+        workout.exercises.all().delete()
 
-                        reps_str = request.POST.get(f'reps_{exercise_idx}_{set_idx}')
-                        weight_str = request.POST.get(f'weight_{exercise_idx}_{set_idx}')
-                        is_warmup = request.POST.get(f'is_warmup_{exercise_idx}_{set_idx}') == 'true'
+        # Clear the routine source to make it a freestyle workout
+        workout.routine_source = None
+        workout.save()
 
-                        # Only save the set if reps and weight are provided
-                        if reps_str and weight_str:
-                            try:
-                                reps = int(reps_str)
-                                weight = float(weight_str)
+        # Redirect back to the workout detail page
+        return redirect('workout-detail', workout_id=workout.id)
 
-                                # Get the set number from the original template if possible, or just increment
-                                # For simplicity, we'll use the set_idx + 1 as set_number for the logged set.
-                                # The original template set_number is available via set_data.template.set_number in GET
-                                # but for POST, we need to be careful. We assume the order is maintained.
-                                # A more robust way would be to pass set_template.set_number in a hidden field for each set.
-                                # For now, using sequential set_number for logged sets.
-
-                                ExerciseSet.objects.create(
-                                    workout_exercise=workout_exercise_instance,
-                                    set_number=set_idx + 1, # Simple sequential set number for logged sets
-                                    reps=reps,
-                                    weight=weight,
-                                    is_warmup=is_warmup
-                                )
-                            except (ValueError, TypeError):
-                                # Invalid number for reps/weight, skip this set or log error
-                                pass # Silently skip malformed set data for now
-                        set_idx += 1
-                    exercise_idx += 1
-
-                return redirect('workout-detail', workout_id=new_workout.id)
-        except Exception as e:
-            # Log the error e
-            # Add a message to Django messages framework or pass error to context
-            # For now, re-rendering the form with a generic error might be complex
-            # as we need to reconstruct routine_exercises_with_sets with submitted data
-            # A simple redirect or a dedicated error page might be better initially.
-            # Or, for a more user-friendly approach, one would repopulate the form.
-            # For now, just printing error and re-rendering the initial GET version of the page.
-            print(f"Error processing start_workout_from_routine POST: {e}")
-            # This will lose user's input on error, which is not ideal.
-            # Consider adding Django messages framework for error feedback.
-
-    # GET request or if POST fails and we fall through (not ideal error handling yet)
-    context = {
-        'routine': routine,
-        'routine_exercises_with_sets': routine_exercises_with_sets,
-        'title': f'Start Workout: {routine.name}',
-        'prefilled_workout_name': prefilled_workout_name
-    }
-    return render(request, 'start_workout_from_routine.html', context)
+    # If not POST, redirect to workout detail
+    return redirect('workout-detail', workout_id=workout.id)
 
 @login_required
 def workout_update(request, workout_id):
@@ -870,7 +1224,11 @@ def workout_delete(request, workout_id):
     workout = get_object_or_404(Workout, id=workout_id, user=request.user)
     if request.method == 'POST':
         workout.delete()
-        # Optionally, add a success message using Django's messages framework
+        # If AJAX request, return JSON instead of redirect
+        is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.POST.get('ajax') == '1'
+        if is_ajax:
+            return JsonResponse({'status': 'success'})
+        # Fallback to redirect for non-AJAX
         return redirect('workout-list')
 
     context = {
@@ -878,6 +1236,182 @@ def workout_delete(request, workout_id):
         'title': f'Delete Workout: {workout.name}'
     }
     return render(request, 'workout_confirm_delete.html', context)
+
+@login_required
+def ajax_update_program_scheduling(request, program_id):
+    """
+    AJAX endpoint to update program scheduling type and convert routines between weekly and sequential
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        program = get_object_or_404(Program, id=program_id, user=request.user)
+
+        # Parse JSON body
+        import json
+        data = json.loads(request.body)
+        new_scheduling_type = data.get('scheduling_type')
+        current_routines = data.get('routines', None)  # Get current state from frontend
+
+        if new_scheduling_type not in ['weekly', 'sequential']:
+            return JsonResponse({'error': 'Invalid scheduling type'}, status=400)
+
+        old_scheduling_type = program.scheduling_type
+
+        if old_scheduling_type == new_scheduling_type:
+            return JsonResponse({'success': True, 'message': 'No change needed'})
+
+        with transaction.atomic():
+            program.scheduling_type = new_scheduling_type
+            program.save()
+
+            # If frontend provides current routines state, use that instead of auto-converting
+            if current_routines:
+                # Clear existing program routines
+                program.program_routines.all().delete()
+
+                # Re-create based on frontend state
+                if new_scheduling_type == 'weekly':
+                    # current_routines should be a dict with day numbers as keys
+                    for day_str, routines in current_routines.items():
+                        day_num = int(day_str)
+                        for idx, routine_data in enumerate(routines):
+                            routine_id = routine_data.get('routine_id')
+                            if routine_id:
+                                try:
+                                    routine = Routine.objects.get(id=routine_id, user=request.user)
+                                    ProgramRoutine.objects.create(
+                                        program=program,
+                                        routine=routine,
+                                        assigned_day=day_num,
+                                        order=idx + 1
+                                    )
+                                except Routine.DoesNotExist:
+                                    continue
+                else:  # sequential
+                    # current_routines should be a list
+                    for idx, routine_data in enumerate(current_routines):
+                        routine_id = routine_data.get('routine_id')
+                        if routine_id:
+                            try:
+                                routine = Routine.objects.get(id=routine_id, user=request.user)
+                                ProgramRoutine.objects.create(
+                                    program=program,
+                                    routine=routine,
+                                    order=idx + 1,
+                                    assigned_day=None
+                                )
+                            except Routine.DoesNotExist:
+                                continue
+            else:
+                # Fallback to auto-conversion if no state provided
+                existing_routines = list(program.program_routines.select_related('routine').order_by('order', 'assigned_day').all())
+
+                if new_scheduling_type == 'weekly' and old_scheduling_type == 'sequential':
+                    # Converting from sequential to weekly - distribute routines across days
+                    days = [0, 1, 2, 3, 4, 5, 6]  # Monday to Sunday
+                    for i, pr in enumerate(existing_routines):
+                        pr.assigned_day = days[i % 7]  # Distribute evenly across week
+                        pr.save()
+
+                elif new_scheduling_type == 'sequential' and old_scheduling_type == 'weekly':
+                    # Converting from weekly to sequential - set order based on day and preserve sequence
+                    ordered_prs = sorted(existing_routines, key=lambda x: (x.assigned_day or 0, x.order))
+                    for i, pr in enumerate(ordered_prs):
+                        pr.order = i + 1
+                        pr.assigned_day = None  # Clear day assignment
+                        pr.save()
+
+        # Return the updated routine assignments
+        updated_routines = []
+        for pr in program.program_routines.select_related('routine').order_by('order', 'assigned_day'):
+            updated_routines.append({
+                'id': pr.id,
+                'routine_id': pr.routine.id,
+                'routine_name': pr.routine.name,
+                'order': pr.order,
+                'assigned_day': pr.assigned_day
+            })
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Successfully converted to {new_scheduling_type} scheduling',
+            'routines': updated_routines,
+            'scheduling_type': new_scheduling_type
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def ajax_restore_program_state(request, program_id):
+    """
+    AJAX endpoint to restore program to a previous state
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        program = get_object_or_404(Program, id=program_id, user=request.user)
+
+        # Parse JSON body
+        import json
+        data = json.loads(request.body)
+        original_state = data.get('original_state')
+
+        if not original_state:
+            return JsonResponse({'error': 'No original state provided'}, status=400)
+
+        with transaction.atomic():
+            # Restore scheduling type
+            program.scheduling_type = original_state.get('scheduling_type', 'sequential')
+            program.save()
+
+            # Clear existing program routines
+            program.program_routines.all().delete()
+
+            # Restore routines based on scheduling type
+            if program.scheduling_type == 'weekly':
+                weekly_routines = original_state.get('weekly_routines', {})
+                for day, routines in weekly_routines.items():
+                    day_num = int(day)
+                    for routine_data in routines:
+                        routine_id = routine_data.get('routine_id')
+                        if routine_id:
+                            try:
+                                routine = Routine.objects.get(id=routine_id, user=request.user)
+                                ProgramRoutine.objects.create(
+                                    program=program,
+                                    routine=routine,
+                                    assigned_day=day_num,
+                                    order=routine_data.get('order', 0)
+                                )
+                            except Routine.DoesNotExist:
+                                continue
+            else:  # sequential
+                sequential_routines = original_state.get('sequential_routines', [])
+                for routine_data in sequential_routines:
+                    routine_id = routine_data.get('routine_id')
+                    if routine_id:
+                        try:
+                            routine = Routine.objects.get(id=routine_id, user=request.user)
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                order=routine_data.get('order', 0),
+                                assigned_day=None
+                            )
+                        except Routine.DoesNotExist:
+                            continue
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Program state restored successfully'
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 def simple_api_test(request):
     """
@@ -996,33 +1530,76 @@ def start_next_workout(request):
             if program_routine_today:
                 next_routine = program_routine_today.routine
 
-        else: # Sequential schedule logic
-            last_workout = Workout.objects.filter(
+        else: # Sequential schedule logic - Smart scheduling for Mon/Wed/Fri/Sun pattern
+            # Get the last few workouts to understand the pattern
+            recent_workouts = Workout.objects.filter(
                 user=user,
                 routine_source__program_associations__program=active_program
-            ).order_by('-date').first()
+            ).order_by('-date')[:10]  # Look at last 10 workouts
 
-            next_order = 1
-            if last_workout and last_workout.routine_source:
-                last_program_routine = ProgramRoutine.objects.filter(
-                    program=active_program,
-                    routine=last_workout.routine_source
-                ).first()
-                if last_program_routine:
-                    next_order = last_program_routine.order + 1
+            # Count how many times each routine has been done this week
+            from datetime import timedelta
+            week_start = timezone.now().date() - timedelta(days=timezone.now().weekday())
+            this_week_workouts = Workout.objects.filter(
+                user=user,
+                routine_source__program_associations__program=active_program,
+                date__gte=week_start
+            ).select_related('routine_source')
 
-            next_program_routine = ProgramRoutine.objects.filter(
-                program=active_program,
-                order__gte=next_order
-            ).order_by('order').select_related('routine').first()
+            # Get all program routines ordered
+            all_program_routines = list(ProgramRoutine.objects.filter(
+                program=active_program
+            ).order_by('order').select_related('routine'))
 
-            if not next_program_routine:  # Wrap around to the start
-                next_program_routine = ProgramRoutine.objects.filter(
-                    program=active_program
-                ).order_by('order').select_related('routine').first()
+            if not all_program_routines:
+                next_routine = None
+            else:
+                # Determine expected workout based on day of week pattern (Mon=0, Wed=2, Fri=4, Sun=6)
+                today_weekday = timezone.now().weekday()
+                days_since_week_start = (timezone.now().date() - week_start).days
 
-            if next_program_routine:
-                next_routine = next_program_routine.routine
+                # Map your workout pattern: Mon(0)->A, Wed(2)->B, Fri(4)->C, Sun(6)->D
+                expected_workout_map = {
+                    0: 0,  # Monday -> routine A (index 0)
+                    1: 0,  # Tuesday -> still routine A (in case shifted)
+                    2: 1,  # Wednesday -> routine B (index 1)
+                    3: 2,  # Thursday -> routine C (in case Friday shifted)
+                    4: 2,  # Friday -> routine C (index 2)
+                    5: 2,  # Saturday -> routine C (in case Friday shifted)
+                    6: 3,  # Sunday -> routine D (index 3)
+                }
+
+                # Get expected routine index for today
+                expected_index = expected_workout_map.get(today_weekday, 0)
+
+                # But also check what was actually done this week
+                completed_this_week = set()
+                for workout in this_week_workouts:
+                    for i, pr in enumerate(all_program_routines):
+                        if pr.routine == workout.routine_source:
+                            completed_this_week.add(i)
+                            break
+
+                # Find the next routine that hasn't been done this week
+                next_routine = None
+                for i in range(expected_index, len(all_program_routines)):
+                    if i not in completed_this_week and i < len(all_program_routines):
+                        next_routine = all_program_routines[i].routine
+                        break
+
+                # If nothing found from expected index onwards, or if we're past Sunday,
+                # just follow the sequential pattern
+                if not next_routine:
+                    last_workout = recent_workouts.first() if recent_workouts else None
+                    if last_workout and last_workout.routine_source:
+                        for i, pr in enumerate(all_program_routines):
+                            if pr.routine == last_workout.routine_source:
+                                next_index = (i + 1) % len(all_program_routines)
+                                next_routine = all_program_routines[next_index].routine
+                                break
+                    else:
+                        # First workout ever
+                        next_routine = all_program_routines[0].routine
 
     if next_routine:
         redirect_url = reverse('start-workout-from-routine', args=[next_routine.id])
@@ -1055,15 +1632,18 @@ def update_user_preferences(request):
             # if preference_key_suffix == 'routineForm.showRPE':
             #     cache_key = f"test_rpe_preference_user_{user_id}"
 
-            redis_conn = get_queue().connection
+            redis_conn = get_redis_connection()
             if isinstance(preference_value, bool):
                 value_to_store = "true" if preference_value else "false"
             else:
                 value_to_store = str(preference_value)
 
             try:
-                redis_conn.set(cache_key, value_to_store)
-                return JsonResponse({'status': 'success', 'message': 'Preference saved via django-rq.'})
+                if redis_conn:
+                    redis_conn.set(cache_key, value_to_store)
+                    return JsonResponse({'status': 'success', 'message': 'Preference saved via django-rq.'})
+                else:
+                    return JsonResponse({'status': 'warning', 'message': 'Redis not available, preference not saved.'})
             except Exception as e:
                 return JsonResponse({'status': 'error', 'message': f'Failed to save to Redis: {e}'}, status=500)
         else:
@@ -1075,3 +1655,1335 @@ def update_user_preferences(request):
 def health_check(request):
     """Simple health check endpoint"""
     return HttpResponse("OK", content_type="text/plain")
+
+@login_required
+def api_timer_preferences(request):
+    """API endpoint to fetch and save user timer preferences"""
+    if request.method == 'GET':
+        try:
+            # Try to get existing preferences
+            timer_prefs, created = UserTimerPreference.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    'primary_timer_seconds': 180,
+                    'secondary_timer_seconds': 120,
+                    'accessory_timer_seconds': 90,
+                    'auto_start_timer': False,
+                    'timer_sound_enabled': True,
+                    'preferred_weight_unit': 'kg',
+                }
+            )
+
+            return JsonResponse({
+                'primary_timer_seconds': timer_prefs.primary_timer_seconds,
+                'secondary_timer_seconds': timer_prefs.secondary_timer_seconds,
+                'accessory_timer_seconds': timer_prefs.accessory_timer_seconds,
+                'auto_start_timer': timer_prefs.auto_start_timer,
+                'timer_sound_enabled': timer_prefs.timer_sound_enabled,
+                'preferred_weight_unit': timer_prefs.preferred_weight_unit,
+            })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    elif request.method == 'POST':
+        try:
+            # Parse JSON data from request body
+            data = json.loads(request.body.decode('utf-8'))
+
+            # Get or create user timer preferences
+            timer_prefs, created = UserTimerPreference.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    'primary_timer_seconds': 180,
+                    'secondary_timer_seconds': 120,
+                    'accessory_timer_seconds': 90,
+                    'auto_start_timer': False,
+                    'timer_sound_enabled': True,
+                    'preferred_weight_unit': 'kg',
+                }
+            )
+
+            # Validate and update fields
+            errors = {}
+
+            # Validate primary_timer_seconds (0-3600 seconds)
+            if 'primary_timer_seconds' in data:
+                try:
+                    primary_timer = int(data['primary_timer_seconds'])
+                    if 0 <= primary_timer <= 3600:
+                        timer_prefs.primary_timer_seconds = primary_timer
+                    else:
+                        errors['primary_timer_seconds'] = 'Must be between 0 and 3600 seconds'
+                except (ValueError, TypeError):
+                    errors['primary_timer_seconds'] = 'Must be a valid integer'
+
+            # Validate secondary_timer_seconds (0-3600 seconds)
+            if 'secondary_timer_seconds' in data:
+                try:
+                    secondary_timer = int(data['secondary_timer_seconds'])
+                    if 0 <= secondary_timer <= 3600:
+                        timer_prefs.secondary_timer_seconds = secondary_timer
+                    else:
+                        errors['secondary_timer_seconds'] = 'Must be between 0 and 3600 seconds'
+                except (ValueError, TypeError):
+                    errors['secondary_timer_seconds'] = 'Must be a valid integer'
+
+            # Validate accessory_timer_seconds (0-3600 seconds)
+            if 'accessory_timer_seconds' in data:
+                try:
+                    accessory_timer = int(data['accessory_timer_seconds'])
+                    if 0 <= accessory_timer <= 3600:
+                        timer_prefs.accessory_timer_seconds = accessory_timer
+                    else:
+                        errors['accessory_timer_seconds'] = 'Must be between 0 and 3600 seconds'
+                except (ValueError, TypeError):
+                    errors['accessory_timer_seconds'] = 'Must be a valid integer'
+
+            # Validate auto_start_timer (boolean)
+            if 'auto_start_timer' in data:
+                if isinstance(data['auto_start_timer'], bool):
+                    timer_prefs.auto_start_timer = data['auto_start_timer']
+                else:
+                    errors['auto_start_timer'] = 'Must be a boolean value'
+
+            # Validate timer_sound_enabled (boolean)
+            if 'timer_sound_enabled' in data:
+                if isinstance(data['timer_sound_enabled'], bool):
+                    timer_prefs.timer_sound_enabled = data['timer_sound_enabled']
+                else:
+                    errors['timer_sound_enabled'] = 'Must be a boolean value'
+
+            # Validate preferred_weight_unit (choices: kg/lbs)
+            if 'preferred_weight_unit' in data:
+                valid_units = [choice[0] for choice in UserTimerPreference.WEIGHT_UNIT_CHOICES]
+                weight_unit = data['preferred_weight_unit']
+                if weight_unit in valid_units:
+                    timer_prefs.preferred_weight_unit = weight_unit
+                else:
+                    errors['preferred_weight_unit'] = f'Must be one of: {", ".join(valid_units)}'
+
+            # Return validation errors if any
+            if errors:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Validation failed',
+                    'errors': errors
+                }, status=400)
+
+            # Save the updated preferences
+            timer_prefs.save()
+
+            # Return success response with updated data
+            return JsonResponse({
+                'success': True,
+                'message': 'Timer preferences updated successfully',
+                'data': {
+                    'primary_timer_seconds': timer_prefs.primary_timer_seconds,
+                    'secondary_timer_seconds': timer_prefs.secondary_timer_seconds,
+                    'accessory_timer_seconds': timer_prefs.accessory_timer_seconds,
+                    'auto_start_timer': timer_prefs.auto_start_timer,
+                    'timer_sound_enabled': timer_prefs.timer_sound_enabled,
+                    'preferred_weight_unit': timer_prefs.preferred_weight_unit,
+                }
+            })
+
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid JSON data'
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+    return JsonResponse({'error': 'Only GET and POST requests allowed'}, status=405)
+
+# Health check view for Railway deployment
+def health_check(request):
+    """Simple health check endpoint for Railway"""
+    return HttpResponse("OK", content_type="text/plain")
+
+# Development data generation view (REMOVE IN PRODUCTION!)
+@login_required
+def generate_sample_data(request):
+    """Generate sample data for development purposes only"""
+    if request.method == 'POST':
+        try:
+            # Create a string buffer to capture command output
+            out = StringIO()
+
+            # Run both populate commands
+            call_command('populate_exercises', stdout=out)
+            call_command('populate_data', user=request.user.username, stdout=out)
+
+            # Get the output
+            output = out.getvalue()
+
+            messages.success(request, 'Sample data generated successfully!')
+
+            # Return JSON response for AJAX request
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'status': 'success',
+                    'message': 'Sample data generated successfully!',
+                    'output': output
+                })
+
+            return redirect('home')
+
+        except Exception as e:
+            error_msg = f'Error generating sample data: {str(e)}'
+            messages.error(request, error_msg)
+
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'status': 'error',
+                    'message': error_msg
+                }, status=500)
+
+            return redirect('home')
+
+    # GET request not allowed for this view
+    return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+# User registration view
+def register(request):
+    """Simple user registration with username and password"""
+    if request.method == 'POST':
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '')
+
+        errors = []
+
+        # Basic validation
+        if not username:
+            errors.append('Username is required.')
+        if not password:
+            errors.append('Password is required.')
+
+        # Check if username already exists
+        if username and User.objects.filter(username=username).exists():
+            errors.append('Username already taken.')
+
+        if not errors:
+            try:
+                # Create user
+                user = User.objects.create_user(
+                    username=username,
+                    password=password
+                )
+                # Log the user in
+                login(request, user)
+                messages.success(request, f'Welcome {username}! Your account has been created.')
+                return redirect('home')
+            except Exception as e:
+                errors.append('An error occurred creating your account. Please try again.')
+
+        context = {
+            'errors': errors,
+            'username': username,
+            'title': 'Sign Up'
+        }
+        return render(request, 'register.html', context)
+
+    context = {
+        'title': 'Sign Up'
+    }
+    return render(request, 'register.html', context)
+
+@login_required
+def import_routine(request):
+    """Import program from pasted workout text"""
+    parser = WorkoutParser()
+
+    if request.method == 'POST':
+        program_name = request.POST.get('program_name', '').strip()
+        workout_text = request.POST.get('workout_text', '').strip()
+        create_missing = request.POST.get('create_missing') == 'on'
+
+        errors = []
+
+        if not program_name:
+            errors.append('Program name is required.')
+        if not workout_text:
+            errors.append('Workout text is required.')
+
+        if not errors:
+            try:
+                with transaction.atomic():
+                    # Parse the workout text into separate days
+                    workout_days = parser.parse_workout_days(workout_text)
+
+                    if not workout_days:
+                        errors.append('No exercises could be parsed from the text. Please check the format.')
+                    else:
+                        # Create the program first
+                        program = Program.objects.create(
+                            user=request.user,
+                            name=program_name,
+                            description=f'Imported from text on {timezone.now().strftime("%Y-%m-%d %H:%M")}',
+                            is_active=not Program.objects.filter(user=request.user, is_active=True).exists(),  # Make active if no other active program
+                            scheduling_type='sequential'
+                        )
+
+                        total_exercises = 0
+                        created_exercises = []
+                        skipped_exercises = []
+                        routine_names = []
+
+                        # Day names for routines
+                        day_names = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+
+                        for day_index, day_exercises in enumerate(workout_days):
+                            if not day_exercises:
+                                continue
+
+                            # Create routine for this day
+                            day_name = day_names[day_index] if day_index < len(day_names) else f'Day {day_index + 1}'
+                            routine_name = f'{program_name} - {day_name}'
+                            routine_names.append(routine_name)
+
+                            routine = Routine.objects.create(
+                                user=request.user,
+                                name=routine_name,
+                                description=f'Day {day_index + 1} - Imported on {timezone.now().strftime("%Y-%m-%d %H:%M")}'
+                            )
+
+                            # Process each exercise for this day
+                            exercise_order = 0
+
+                            for parsed_ex in day_exercises:
+                                exercise_name = parsed_ex['exercise_name']
+
+                                # Find or create the exercise
+                                exercise = parser.find_or_create_exercise(exercise_name)
+
+                                if not exercise:
+                                    if create_missing:
+                                        # Create the exercise
+                                        exercise = Exercise.objects.create(
+                                            name=exercise_name,
+                                            description=f'Auto-created from import',
+                                            is_custom=True,
+                                            user=request.user,
+                                            exercise_type='accessory'
+                                        )
+                                        if exercise_name not in created_exercises:
+                                            created_exercises.append(exercise_name)
+                                    else:
+                                        if exercise_name not in skipped_exercises:
+                                            skipped_exercises.append(exercise_name)
+                                        continue
+
+                                # Create RoutineExercise
+                                routine_exercise = RoutineExercise.objects.create(
+                                    routine=routine,
+                                    exercise=exercise,
+                                    order=exercise_order
+                                )
+                                exercise_order += 1
+                                total_exercises += 1
+
+                                # Create RoutineExerciseSet entries
+                                sets = parsed_ex['sets']
+                                reps = parsed_ex['reps']
+                                weight = parsed_ex['weight']
+
+                                for set_num in range(1, sets + 1):
+                                    RoutineExerciseSet.objects.create(
+                                        routine_exercise=routine_exercise,
+                                        set_number=set_num,
+                                        target_reps=reps,
+                                        target_weight=Decimal(str(weight)) if weight else None
+                                    )
+
+                            # Link routine to program
+                            ProgramRoutine.objects.create(
+                                program=program,
+                                routine=routine,
+                                order=day_index + 1
+                            )
+
+                        # Success message
+                        messages.success(request, f'Program "{program_name}" created with {len(workout_days)} routines ({", ".join(routine_names)}) and {total_exercises} total exercises.')
+
+                        if created_exercises:
+                            messages.info(request, f'Created {len(created_exercises)} new exercises: {", ".join(created_exercises)}')
+
+                        if skipped_exercises:
+                            messages.warning(request, f'Skipped {len(skipped_exercises)} unknown exercises: {", ".join(skipped_exercises)}')
+
+                        return redirect('program-list')
+
+            except Exception as e:
+                errors.append(f'Error importing program: {str(e)}')
+
+        context = {
+            'title': 'Import Program',
+            'program_name': program_name,
+            'workout_text': workout_text,
+            'create_missing': create_missing,
+            'errors': errors
+        }
+        return render(request, 'import_routine.html', context)
+
+    # GET request
+    context = {
+        'title': 'Import Program',
+        'sample_format': """OHP 3x5 70
+Pull ups 3x10
+Triceps 4x10 40
+Laterals 4x10 14"""
+    }
+    return render(request, 'import_routine.html', context)
+
+@login_required
+def import_single_routine(request):
+    """Import a single Routine from pasted workout text (no Program created)."""
+    parser = WorkoutParser()
+
+    if request.method == 'POST':
+        routine_name = request.POST.get('routine_name', '').strip()
+        workout_text = request.POST.get('workout_text', '').strip()
+        create_missing = request.POST.get('create_missing') == 'on'
+
+        errors = []
+
+        if not routine_name:
+            errors.append('Routine name is required.')
+        if not workout_text:
+            errors.append('Workout text is required.')
+
+        if not errors:
+            try:
+                with transaction.atomic():
+                    # Create the routine first
+                    routine = Routine.objects.create(
+                        user=request.user,
+                        name=routine_name,
+                        description=f'Imported from text on {timezone.now().strftime("%Y-%m-%d %H:%M")}',
+                    )
+
+                    parsed_exercises = parser.parse_workout_text(workout_text)
+                    if not parsed_exercises:
+                        errors.append('No exercises could be parsed from the text. Please check the format.')
+                        # Fall through to render form with error
+                    else:
+                        created_exercises = []
+                        skipped_exercises = []
+                        total_exercises = 0
+                        exercise_order = 1
+
+                        for parsed_ex in parsed_exercises:
+                            exercise_name = parsed_ex['exercise_name']
+
+                            # Find or create the exercise
+                            exercise = parser.find_or_create_exercise(exercise_name)
+
+                            if not exercise:
+                                if create_missing:
+                                    exercise = Exercise.objects.create(
+                                        name=exercise_name,
+                                        description='Auto-created from import',
+                                        is_custom=True,
+                                        user=request.user,
+                                        exercise_type='accessory'
+                                    )
+                                    if exercise_name not in created_exercises:
+                                        created_exercises.append(exercise_name)
+                                else:
+                                    if exercise_name not in skipped_exercises:
+                                        skipped_exercises.append(exercise_name)
+                                    continue
+
+                            # Create RoutineExercise
+                            routine_exercise = RoutineExercise.objects.create(
+                                routine=routine,
+                                exercise=exercise,
+                                order=exercise_order
+                            )
+                            exercise_order += 1
+                            total_exercises += 1
+
+                            # Create RoutineExerciseSet entries
+                            sets = parsed_ex['sets']
+                            reps = parsed_ex['reps']
+                            weight = parsed_ex['weight']
+
+                            for set_num in range(1, sets + 1):
+                                RoutineExerciseSet.objects.create(
+                                    routine_exercise=routine_exercise,
+                                    set_number=set_num,
+                                    target_reps=reps,
+                                    target_weight=Decimal(str(weight)) if weight else None
+                                )
+
+                        # Success message
+                        messages.success(
+                            request,
+                            f'Routine "{routine_name}" created with {total_exercises} exercises.'
+                        )
+
+                        if created_exercises:
+                            messages.info(
+                                request,
+                                f'Created {len(created_exercises)} new exercises: {", ".join(created_exercises)}'
+                            )
+
+                        if skipped_exercises:
+                            messages.warning(
+                                request,
+                                f'Skipped {len(skipped_exercises)} unknown exercises: {", ".join(skipped_exercises)}'
+                            )
+
+                        return redirect('routine-detail', routine_id=routine.id)
+
+            except Exception as e:
+                errors.append(f'Error importing routine: {str(e)}')
+
+        # Render with errors
+        context = {
+            'title': 'Import Routine',
+            'routine_name': routine_name,
+            'workout_text': workout_text,
+            'create_missing': create_missing,
+            'errors': errors,
+        }
+        return render(request, 'import_single_routine.html', context)
+
+    # GET request
+    context = {
+        'title': 'Import Routine',
+        'sample_format': """OHP 3x5 70\nPull ups 3x10\nTriceps 4x10 40""",
+    }
+    return render(request, 'import_single_routine.html', context)
+
+@login_required
+def profile(request):
+    """User profile view with basic info and timer preferences"""
+    user = request.user
+
+    # Get or create user timer preferences
+    timer_prefs, created = UserTimerPreference.objects.get_or_create(
+        user=user,
+        defaults={
+            'primary_timer_seconds': 180,
+            'secondary_timer_seconds': 120,
+            'accessory_timer_seconds': 90,
+            'auto_start_timer': False,
+            'timer_sound_enabled': True,
+            'auto_progression_enabled': False,
+            'default_weight_increment': 2.5,
+            'default_rep_increment': 1,
+        }
+    )
+
+    if request.method == 'POST':
+        # Handle basic profile update (username and email)
+        new_username = request.POST.get('username', '').strip()
+        new_email = request.POST.get('email', '').strip()
+        preferred_weight_unit = request.POST.get('preferred_weight_unit', 'kg')
+
+        # Get timer preferences
+        primary_timer_seconds = request.POST.get('primary_timer_seconds', '180')
+        secondary_timer_seconds = request.POST.get('secondary_timer_seconds', '120')
+        accessory_timer_seconds = request.POST.get('accessory_timer_seconds', '90')
+        auto_start_timer = request.POST.get('auto_start_timer') == '1'
+        timer_sound_enabled = request.POST.get('timer_sound_enabled') == '1'
+
+        # Get auto-progression preferences
+        auto_progression_enabled = request.POST.get('auto_progression_enabled') == '1'
+        default_weight_increment = request.POST.get('default_weight_increment', '2.5')
+        default_rep_increment = request.POST.get('default_rep_increment', '1')
+
+        errors = []
+
+        if not new_username:
+            errors.append('Username is required.')
+        elif new_username != user.username and User.objects.filter(username=new_username).exists():
+            errors.append('Username already taken.')
+
+        # Validate weight unit choice
+        valid_units = [choice[0] for choice in UserTimerPreference.WEIGHT_UNIT_CHOICES]
+        if preferred_weight_unit not in valid_units:
+            errors.append('Invalid weight unit selection.')
+
+        # Validate timer fields
+        try:
+            primary_timer_int = int(primary_timer_seconds)
+            if not (10 <= primary_timer_int <= 3600):
+                errors.append('Primary timer must be between 10 and 3600 seconds.')
+        except (ValueError, TypeError):
+            errors.append('Primary timer must be a valid integer.')
+
+        try:
+            secondary_timer_int = int(secondary_timer_seconds)
+            if not (10 <= secondary_timer_int <= 3600):
+                errors.append('Secondary timer must be between 10 and 3600 seconds.')
+        except (ValueError, TypeError):
+            errors.append('Secondary timer must be a valid integer.')
+
+        try:
+            accessory_timer_int = int(accessory_timer_seconds)
+            if not (10 <= accessory_timer_int <= 3600):
+                errors.append('Accessory timer must be between 10 and 3600 seconds.')
+        except (ValueError, TypeError):
+            errors.append('Accessory timer must be a valid integer.')
+
+        # Validate auto-progression fields
+        try:
+            default_weight_increment_decimal = Decimal(default_weight_increment)
+            if default_weight_increment_decimal < 0:
+                errors.append('Weight increment must be positive.')
+        except (ValueError, TypeError):
+            errors.append('Weight increment must be a valid number.')
+
+        try:
+            default_rep_increment_int = int(default_rep_increment)
+            if default_rep_increment_int < 1:
+                errors.append('Rep increment must be at least 1.')
+        except (ValueError, TypeError):
+            errors.append('Rep increment must be a valid integer.')
+
+        if not errors:
+            try:
+                # Update user basic info
+                user.username = new_username
+                user.email = new_email
+                user.save()
+
+                # Update timer preferences (all fields)
+                timer_prefs.preferred_weight_unit = preferred_weight_unit
+                timer_prefs.primary_timer_seconds = int(primary_timer_seconds)
+                timer_prefs.secondary_timer_seconds = int(secondary_timer_seconds)
+                timer_prefs.accessory_timer_seconds = int(accessory_timer_seconds)
+                timer_prefs.auto_start_timer = auto_start_timer
+                timer_prefs.timer_sound_enabled = timer_sound_enabled
+                timer_prefs.auto_progression_enabled = auto_progression_enabled
+                timer_prefs.default_weight_increment = Decimal(default_weight_increment)
+                timer_prefs.default_rep_increment = int(default_rep_increment)
+                timer_prefs.save()
+
+                messages.success(request, 'Profile and timer settings updated successfully!')
+                return redirect('profile')
+            except Exception as e:
+                errors.append(f'Error updating profile: {str(e)}')
+
+        context = {
+            'title': 'My Profile',
+            'user': user,
+            'timer_prefs': timer_prefs,
+            'weight_unit_choices': UserTimerPreference.WEIGHT_UNIT_CHOICES,
+            'errors': errors,
+        }
+        return render(request, 'profile.html', context)
+
+    # GET request
+    context = {
+        'title': 'My Profile',
+        'user': user,
+        'timer_prefs': timer_prefs,
+        'weight_unit_choices': UserTimerPreference.WEIGHT_UNIT_CHOICES,
+    }
+    return render(request, 'profile.html', context)
+
+# ============================================================================
+# EXERCISE TIMER OVERRIDE API ENDPOINTS
+# ============================================================================
+
+@login_required
+def api_exercise_timer_overrides(request):
+    """API endpoint to manage exercise timer overrides (GET/POST)"""
+    if request.method == 'GET':
+        try:
+            # Get all timer overrides for the current user
+            overrides = ExerciseTimerOverride.objects.filter(
+                user=request.user
+            ).select_related('exercise').order_by('exercise__name')
+
+            override_data = []
+            for override in overrides:
+                override_data.append({
+                    'id': override.id,
+                    'exercise_id': override.exercise.id,
+                    'exercise_name': override.exercise.name,
+                    'exercise_category': override.exercise.category.name if override.exercise.category else None,
+                    'timer_seconds': override.timer_seconds,
+                })
+
+            return JsonResponse({
+                'overrides': override_data
+            })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    elif request.method == 'POST':
+        try:
+            # Parse JSON data from request body
+            data = json.loads(request.body.decode('utf-8'))
+
+            exercise_id = data.get('exercise_id')
+            timer_seconds = data.get('timer_seconds')
+
+            # Validate required fields
+            errors = {}
+
+            if not exercise_id:
+                errors['exercise_id'] = ['Exercise is required.']
+
+            if not timer_seconds:
+                errors['timer_seconds'] = ['Timer duration is required.']
+            else:
+                try:
+                    timer_seconds_int = int(timer_seconds)
+                    if timer_seconds_int < 10:
+                        errors['timer_seconds'] = ['Timer duration must be at least 10 seconds.']
+                    elif timer_seconds_int > 3600:
+                        errors['timer_seconds'] = ['Timer duration must be no more than 3600 seconds (1 hour).']
+                except (ValueError, TypeError):
+                    errors['timer_seconds'] = ['Timer duration must be a valid number.']
+
+            if errors:
+                return JsonResponse({'errors': errors}, status=400)
+
+            # Validate exercise exists and user has access
+            try:
+                exercise = Exercise.objects.get(
+                    Q(id=exercise_id) &
+                    (Q(is_custom=False) | Q(created_by=request.user))
+                )
+            except Exercise.DoesNotExist:
+                return JsonResponse({'errors': {'exercise_id': ['Exercise not found.']}}, status=400)
+
+            # Create or update the timer override
+            override, created = ExerciseTimerOverride.objects.update_or_create(
+                user=request.user,
+                exercise=exercise,
+                defaults={'timer_seconds': timer_seconds_int}
+            )
+
+            return JsonResponse({
+                'success': True,
+                'created': created,
+                'override': {
+                    'id': override.id,
+                    'exercise_id': override.exercise.id,
+                    'exercise_name': override.exercise.name,
+                    'exercise_category': override.exercise.category.name if override.exercise.category else None,
+                    'timer_seconds': override.timer_seconds,
+                }
+            })
+
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON data.'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+@login_required
+def api_exercise_timer_override_delete(request, override_id):
+    """API endpoint to delete a specific exercise timer override (DELETE)"""
+    if request.method == 'DELETE':
+        try:
+            override = get_object_or_404(
+                ExerciseTimerOverride,
+                id=override_id,
+                user=request.user
+            )
+
+            override_data = {
+                'id': override.id,
+                'exercise_name': override.exercise.name,
+                'timer_seconds': override.timer_seconds,
+            }
+
+            override.delete()
+
+            return JsonResponse({
+                'success': True,
+                'deleted_override': override_data
+            })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+@login_required
+def api_exercises_search(request):
+    """API endpoint to search exercises for dropdown selection"""
+    if request.method == 'GET':
+        try:
+            search_query = request.GET.get('q', '').strip()
+            limit = min(int(request.GET.get('limit', 50)), 100)  # Max 100 results
+
+            # Build queryset - user can access built-in exercises and their custom ones
+            exercises = Exercise.objects.filter(
+                Q(is_custom=False) | Q(created_by=request.user)
+            )
+
+            # Apply search filter if provided
+            if search_query:
+                exercises = exercises.filter(
+                    Q(name__icontains=search_query) |
+                    Q(category__name__icontains=search_query)
+                ).distinct()
+
+            # Order by name and limit results
+            exercises = exercises.select_related('category').order_by('name')[:limit]
+
+            exercise_data = []
+            for exercise in exercises:
+                exercise_data.append({
+                    'id': exercise.id,
+                    'name': exercise.name,
+                    'category': exercise.category.name if exercise.category else 'Uncategorized',
+                    'exercise_type': exercise.exercise_type,
+                })
+
+            return JsonResponse({
+                'exercises': exercise_data,
+                'total': len(exercise_data)
+            })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+# ============================================================================
+# PROGRAM AND ROUTINE TIMER PREFERENCES API ENDPOINTS
+# ============================================================================
+
+@login_required
+def api_program_timer_preferences(request, program_id):
+    """API endpoint to manage program timer preferences (GET/POST)"""
+    # Verify user owns the program
+    program = get_object_or_404(Program, id=program_id, user=request.user)
+
+    if request.method == 'GET':
+        try:
+            # Get program timer preferences if they exist
+            prefs = getattr(program, 'timer_preferences', None)
+
+            if prefs:
+                return JsonResponse({
+                    'primary_timer_seconds': prefs.primary_timer_seconds,
+                    'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                    'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                    'auto_start_timer': prefs.auto_start_timer,
+                })
+            else:
+                # Return null values if no preferences set
+                return JsonResponse({
+                    'primary_timer_seconds': None,
+                    'secondary_timer_seconds': None,
+                    'accessory_timer_seconds': None,
+                    'auto_start_timer': None,
+                })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+
+            # Get or create program timer preferences
+            prefs, created = ProgramTimerPreference.objects.get_or_create(program=program)
+
+            # Update fields if provided
+            if 'primary_timer_seconds' in data:
+                prefs.primary_timer_seconds = data['primary_timer_seconds'] if data['primary_timer_seconds'] else None
+            if 'secondary_timer_seconds' in data:
+                prefs.secondary_timer_seconds = data['secondary_timer_seconds'] if data['secondary_timer_seconds'] else None
+            if 'accessory_timer_seconds' in data:
+                prefs.accessory_timer_seconds = data['accessory_timer_seconds'] if data['accessory_timer_seconds'] else None
+            if 'auto_start_timer' in data:
+                prefs.auto_start_timer = data['auto_start_timer'] if data['auto_start_timer'] is not None else None
+
+            prefs.save()
+
+            return JsonResponse({
+                'success': True,
+                'primary_timer_seconds': prefs.primary_timer_seconds,
+                'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                'auto_start_timer': prefs.auto_start_timer,
+            })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+@login_required
+def api_routine_timer_preferences(request, routine_id):
+    """API endpoint to manage routine timer preferences (GET/POST)"""
+    # Verify user owns the routine
+    routine = get_object_or_404(Routine, id=routine_id, user=request.user)
+
+    if request.method == 'GET':
+        try:
+            # Get routine timer preferences if they exist
+            prefs = getattr(routine, 'timer_preferences', None)
+
+            if prefs:
+                return JsonResponse({
+                    'primary_timer_seconds': prefs.primary_timer_seconds,
+                    'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                    'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                    'auto_start_timer': prefs.auto_start_timer,
+                })
+            else:
+                # Return null values if no preferences set
+                return JsonResponse({
+                    'primary_timer_seconds': None,
+                    'secondary_timer_seconds': None,
+                    'accessory_timer_seconds': None,
+                    'auto_start_timer': None,
+                })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+
+            # Get or create routine timer preferences
+            prefs, created = RoutineTimerPreference.objects.get_or_create(routine=routine)
+
+            # Update fields if provided
+            if 'primary_timer_seconds' in data:
+                prefs.primary_timer_seconds = data['primary_timer_seconds'] if data['primary_timer_seconds'] else None
+            if 'secondary_timer_seconds' in data:
+                prefs.secondary_timer_seconds = data['secondary_timer_seconds'] if data['secondary_timer_seconds'] else None
+            if 'accessory_timer_seconds' in data:
+                prefs.accessory_timer_seconds = data['accessory_timer_seconds'] if data['accessory_timer_seconds'] else None
+            if 'auto_start_timer' in data:
+                prefs.auto_start_timer = data['auto_start_timer'] is not None and data['auto_start_timer']
+
+            prefs.save()
+
+            return JsonResponse({
+                'success': True,
+                'primary_timer_seconds': prefs.primary_timer_seconds,
+                'secondary_timer_seconds': prefs.secondary_timer_seconds,
+                'accessory_timer_seconds': prefs.accessory_timer_seconds,
+                'auto_start_timer': prefs.auto_start_timer,
+            })
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed.'}, status=405)
+
+
+def normalize_rep_range(rep_range, min_reps=None, max_reps=None):
+    """Return sanitized rep range selector and optional min/max bounds."""
+
+    valid_ranges = {'', 'low', 'mid', 'high', 'custom'}
+    normalized = (rep_range or '').strip().lower()
+    if normalized not in valid_ranges:
+        normalized = ''
+
+    min_value = max_value = None
+    if normalized == 'custom':
+        try:
+            min_value = int(min_reps)
+        except (TypeError, ValueError):
+            min_value = 1
+        try:
+            max_value = int(max_reps)
+        except (TypeError, ValueError):
+            max_value = min_value
+
+        min_value = max(1, min_value)
+        min_value = min(30, min_value)
+        max_value = max(1, max_value)
+        max_value = min(30, max_value)
+        if max_value < min_value:
+            max_value = min_value
+
+    return normalized, min_value, max_value
+
+
+def aggregate_exercise_sets_for_chart(sets, chart_type='1rm', comparison_type='average'):
+    """Aggregate exercise sets to a single data point per workout."""
+    chart_type = (chart_type or '1rm').lower()
+    comparison_type = (comparison_type or 'average').lower()
+
+    workouts = defaultdict(lambda: {
+        'date': None,
+        'estimates': [],
+        'weights': [],
+        'volumes': [],
+    })
+
+    for set_obj in sets:
+        if getattr(set_obj, 'is_warmup', False):
+            continue
+
+        if set_obj.weight is None or set_obj.reps is None:
+            continue
+
+        workout = set_obj.workout_exercise.workout
+        entry = workouts[workout.id]
+        if entry['date'] is None:
+            entry['date'] = workout.date
+
+        volume_value = float(set_obj.get_volume())
+        entry['volumes'].append(volume_value)
+        entry['weights'].append(float(set_obj.weight))
+
+        if set_obj.is_valid_for_1rm():
+            estimate = set_obj.get_best_1rm_estimate()
+            if estimate is not None:
+                entry['estimates'].append(float(estimate))
+
+    points = []
+    for workout_id, entry in sorted(
+        workouts.items(),
+        key=lambda item: item[1]['date'] or timezone.now(),
+    ):
+        estimates = entry['estimates']
+        weights = entry['weights']
+        volumes = entry['volumes']
+
+        if comparison_type in ('peak', 'heaviest'):
+            estimate_value = max(estimates) if estimates else None
+            weight_value = max(weights) if weights else None
+        else:
+            estimate_value = statistics.mean(estimates) if estimates else None
+            weight_value = statistics.mean(weights) if weights else None
+
+        volume_total = sum(volumes) if volumes else 0
+        y_value = volume_total if chart_type == 'volume' else estimate_value
+        iso_date = (entry['date'] or timezone.now()).isoformat()
+        points.append({
+            'x': iso_date,
+            'date': iso_date,
+            'y': float(y_value) if y_value is not None else None,
+            'estimated_1rm': float(estimate_value) if estimate_value is not None else None,
+            'weight': float(weight_value) if weight_value is not None else None,
+            'volume': float(volume_total),
+            'workout_id': workout_id,
+        })
+
+    return points
+
+@login_required
+def progress_overview(request):
+    """Dashboard showing exercise progress trends and statistics"""
+
+    # Get filtering parameters
+    period_days = int(request.GET.get('period', '30'))
+    selected_rep_range = request.GET.get('rep_range', '')
+    selected_chart_type = request.GET.get('chart_type', '1rm')
+    custom_min_reps = request.GET.get('min_reps', '')
+    custom_max_reps = request.GET.get('max_reps', '')
+
+    metrics = get_progress_metrics(request.user, period_days)
+    top_exercises = get_top_exercises_by_volume(
+        request.user,
+        period_days,
+        limit=6,
+        with_volume=True,
+    )
+
+    exercise_options = list(
+        Exercise.objects.filter(
+            workoutexercise__workout__user=request.user,
+            workoutexercise__sets__isnull=False
+        )
+        .distinct()
+        .order_by('name')
+        .values('id', 'name')
+    )
+
+    selected_exercise_id = request.GET.get('exercise', '')
+
+    context = {
+        'metrics': metrics,
+        'top_exercises': top_exercises,
+        'exercise_options': exercise_options,
+        'period_days': period_days,
+        'selected_exercise_id': selected_exercise_id,
+        'selected_rep_range': selected_rep_range,
+        'selected_chart_type': selected_chart_type,
+        'custom_min_reps': custom_min_reps,
+        'custom_max_reps': custom_max_reps,
+        'title': 'Progress Overview'
+    }
+
+    return render(request, 'progress/overview.html', context)
+
+
+@login_required
+def exercise_progress_detail(request, exercise_id):
+    """Detailed progress view for a specific exercise"""
+
+    exercise = get_object_or_404(Exercise, id=exercise_id)
+
+    # Verify user can access this exercise
+    if exercise.is_custom and exercise.user != request.user:
+        raise Http404("Exercise not found")
+
+    # Get filtering parameters
+    try:
+        period_days = max(1, int(request.GET.get('period', '90')))
+    except (TypeError, ValueError):
+        period_days = 90
+
+    raw_rep_range = request.GET.get('rep_range', '')
+    rep_range, min_reps_value, max_reps_value = normalize_rep_range(
+        raw_rep_range,
+        request.GET.get('min_reps'),
+        request.GET.get('max_reps'),
+    )
+
+    comparison_type = (request.GET.get('comparison', 'average') or 'average').lower()
+    if comparison_type == 'heaviest':
+        comparison_type = 'peak'
+    if comparison_type not in ('average', 'peak'):
+        comparison_type = 'average'
+
+    chart_type = (request.GET.get('chart_type', '1rm') or '1rm').lower()
+    if chart_type not in ('1rm', 'volume'):
+        chart_type = '1rm'
+
+    custom_min_reps = str(min_reps_value) if min_reps_value is not None else ''
+    custom_max_reps = str(max_reps_value) if max_reps_value is not None else ''
+
+    # Get exercise sets with filtering
+    sets_query = ExerciseSet.objects.filter(
+        workout_exercise__workout__user=request.user,
+        workout_exercise__exercise=exercise,
+        workout_exercise__workout__date__gte=timezone.now() - timedelta(days=period_days)
+    ).select_related('workout_exercise__workout')
+
+    # Apply rep range filtering
+    if rep_range == 'low':
+        sets_query = sets_query.filter(reps__range=(1, 3))
+    elif rep_range == 'mid':
+        sets_query = sets_query.filter(reps__range=(4, 6))
+    elif rep_range == 'high':
+        sets_query = sets_query.filter(reps__gte=7)
+    elif rep_range == 'custom' and min_reps_value is not None and max_reps_value is not None:
+        sets_query = sets_query.filter(reps__range=(min_reps_value, max_reps_value))
+
+    ordered_sets = list(sets_query.order_by('workout_exercise__workout__date', 'set_number'))
+
+    # Build chart data
+    progress_data = get_exercise_progress(request.user, exercise, period_days)
+    chart_data = aggregate_exercise_sets_for_chart(ordered_sets, chart_type, comparison_type)
+
+    non_warmup_sets = [
+        s for s in ordered_sets
+        if not getattr(s, 'is_warmup', False)
+    ]
+    recent_sets = []
+    for set_obj in sorted(
+        non_warmup_sets,
+        key=lambda s: (
+            s.workout_exercise.workout.date,
+            s.workout_exercise.workout.id,
+            getattr(s, 'set_number', 0),
+        ),
+        reverse=True,
+    )[:10]:
+        estimated_1rm = set_obj.get_best_1rm_estimate() if set_obj.is_valid_for_1rm() else None
+        recent_sets.append({
+            'date': set_obj.workout_exercise.workout.date,
+            'weight': set_obj.weight,
+            'reps': set_obj.reps,
+            'estimated_1rm': estimated_1rm,
+        })
+
+    context = {
+        'exercise': exercise,
+        'chart_data': chart_data,
+        'progress_data': progress_data,
+        'recent_sets': recent_sets,
+        'period_days': period_days,
+        'rep_range': rep_range,
+        'comparison_type': comparison_type,
+        'chart_type': chart_type,
+        'custom_min_reps': custom_min_reps,
+        'custom_max_reps': custom_max_reps,
+        'title': f'{exercise.name} Progress'
+    }
+
+    return render(request, 'progress/exercise_detail.html', context)
+
+
+@login_required
+def api_exercise_chart_data(request, exercise_id):
+    """API endpoint for exercise chart data with filtering"""
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    try:
+        exercise = get_object_or_404(Exercise, id=exercise_id)
+
+        # Verify access
+        if exercise.is_custom and exercise.user != request.user:
+            return JsonResponse({'error': 'Access denied'}, status=403)
+
+        # Get parameters
+        try:
+            period_days = max(1, int(request.GET.get('period', '90')))
+        except (TypeError, ValueError):
+            period_days = 90
+
+        rep_range, min_reps_value, max_reps_value = normalize_rep_range(
+            request.GET.get('rep_range', ''),
+            request.GET.get('min_reps'),
+            request.GET.get('max_reps'),
+        )
+
+        comparison_type = (request.GET.get('comparison', 'average') or 'average').lower()
+        if comparison_type == 'heaviest':
+            comparison_type = 'peak'
+        if comparison_type not in ('average', 'peak'):
+            comparison_type = 'average'
+
+        chart_type = (request.GET.get('chart_type', '1rm') or '1rm').lower()
+        if chart_type not in ('1rm', 'volume'):
+            chart_type = '1rm'
+
+        # Query sets with filtering
+        sets_query = ExerciseSet.objects.filter(
+            workout_exercise__workout__user=request.user,
+            workout_exercise__exercise=exercise,
+            workout_exercise__workout__date__gte=timezone.now() - timedelta(days=period_days)
+        ).select_related('workout_exercise__workout')
+
+        # Apply rep range filter
+        if rep_range == 'low':
+            sets_query = sets_query.filter(reps__range=(1, 3))
+        elif rep_range == 'mid':
+            sets_query = sets_query.filter(reps__range=(4, 6))
+        elif rep_range == 'high':
+            sets_query = sets_query.filter(reps__gte=7)
+        elif rep_range == 'custom':
+            if min_reps_value is not None and max_reps_value is not None:
+                sets_query = sets_query.filter(reps__range=(min_reps_value, max_reps_value))
+
+        ordered_sets = list(sets_query.order_by('workout_exercise__workout__date', 'set_number'))
+        chart_data = aggregate_exercise_sets_for_chart(ordered_sets, chart_type, comparison_type)
+
+        return JsonResponse({
+            'success': True,
+            'data': chart_data,
+            'exercise_name': exercise.name,
+            'chart_type': chart_type,
+            'period_days': period_days,
+            'rep_range': rep_range,
+            'comparison_type': comparison_type,
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def api_progress_filter_options(request):
+    """Get available filtering options for progress views"""
+
+    try:
+        # Get user's exercises with recorded sets
+        exercises_with_data = Exercise.objects.filter(
+            workoutexercise__workout__user=request.user,
+            workoutexercise__sets__isnull=False
+        ).distinct().order_by('name')
+
+        exercise_options = [
+            {'id': ex.id, 'name': ex.name, 'type': ex.exercise_type}
+            for ex in exercises_with_data
+        ]
+
+        # Get date ranges with data
+        oldest_workout = Workout.objects.filter(user=request.user).aggregate(
+            Min('date')
+        )['date__min']
+
+        date_ranges = [
+            {'value': 7, 'label': '1 Week'},
+            {'value': 30, 'label': '1 Month'},
+            {'value': 90, 'label': '3 Months'},
+            {'value': 180, 'label': '6 Months'},
+            {'value': 365, 'label': '1 Year'},
+        ]
+
+        if oldest_workout:
+            days_since_oldest = (timezone.now().date() - oldest_workout.date()).days
+            date_ranges.append({'value': days_since_oldest, 'label': 'All Time'})
+
+        return JsonResponse({
+            'exercises': exercise_options,
+            'date_ranges': date_ranges,
+            'rep_ranges': [
+                {'value': '', 'label': 'All Rep Ranges'},
+                {'value': 'low', 'label': 'Low Reps (1-3)'},
+                {'value': 'mid', 'label': 'Mid Reps (4-6)'},
+                {'value': 'high', 'label': 'High Reps (7+)'},
+                {'value': 'custom', 'label': 'Custom Range'},
+            ]
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def progress_pr_history(request):
+    period_days = int(request.GET.get('period', '365'))
+    exercise_id = request.GET.get('exercise')
+    exercise = None
+    if exercise_id:
+        exercise = get_object_or_404(Exercise, id=exercise_id)
+        if exercise.is_custom and exercise.user != request.user:
+            raise Http404('Exercise not found')
+
+    summary = get_personal_records_summary(request.user, period_days)
+    records = get_personal_records(request.user, period_days, exercise)[:50]
+
+    context = {
+        'summary': summary,
+        'records': records,
+        'selected_period': period_days,
+        'selected_exercise': exercise,
+        'exercises': Exercise.objects.filter(workoutexercise__workout__user=request.user).distinct().order_by('name'),
+        'title': 'Personal Records'
+    }
+    return render(request, 'progress/pr_history.html', context)
+
+def service_worker(request):
+    """Serve the service worker JavaScript for background timer notifications.
+
+    Served at '/service-worker.js' so the worker can control the root scope.
+    Uses staticfiles finders so this works in development without collectstatic.
+    """
+    # Try to locate the file via staticfiles finders (works in DEBUG without collectstatic)
+    path = finders.find('service-worker.js')
+    if not path:
+        # Fallback to storage (e.g., after collectstatic)
+        try:
+            file_handle = staticfiles_storage.open('service-worker.js', mode='rb')
+        except FileNotFoundError:
+            raise Http404('Service worker file not found.')
+    else:
+        file_handle = open(path, 'rb')
+
+    response = FileResponse(file_handle, content_type='application/javascript')
+    response['Cache-Control'] = 'no-cache'
+    response['Service-Worker-Allowed'] = '/'
+    return response
+
+>>>>>>> 1c2946ec4ec9fa8b17360c91a11b197e2153a7ac

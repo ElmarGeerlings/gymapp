@@ -1,0 +1,15 @@
+[Unit]
+Description=gainz gunicorn daemon
+After=network.target
+
+[Service]
+User=gainz
+Group=gainz
+WorkingDirectory=/srv/gainz/app
+Environment="PATH=/srv/gainz/app/venv/bin"
+EnvironmentFile=/srv/gainz/gainz.env
+ExecStart=/srv/gainz/app/venv/bin/gunicorn --workers 3 --bind unix:/srv/gainz/app/gainz.sock gainz.wsgi:application
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

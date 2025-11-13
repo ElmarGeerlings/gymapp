@@ -5,27 +5,39 @@ import datetime
 import random
 
 from gainz.exercises.models import ExerciseCategory, Exercise
-from gainz.workouts.models import Program, Routine, RoutineExercise, Workout, WorkoutExercise, ExerciseSet
+from gainz.workouts.models import Program, Routine, RoutineExercise, RoutineExerciseSet, Workout, WorkoutExercise, ExerciseSet
 
 User = get_user_model()
 
 class Command(BaseCommand):
     help = 'Populates the database with sample data for the Gainz application'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--user',
+            type=str,
+            help='Username to create sample data for',
+        )
+
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Starting data population...'))
 
-        # 0. Get or create a user
-        user, created = User.objects.get_or_create(
-            username='testuser',
-            defaults={'email': 'testuser@example.com'}
-        )
-        if created:
-            user.set_password('testpassword123')
-            user.save()
-            self.stdout.write(self.style.SUCCESS(f'User "testuser" created with password "testpassword123"'))
+        # 0. Get the user
+        username = options.get('user')
+        if username:
+            try:
+                user = User.objects.get(username=username)
+                self.stdout.write(self.style.SUCCESS(f'Creating sample data for user: {user.username}'))
+            except User.DoesNotExist:
+                self.stdout.write(self.style.ERROR(f'User "{username}" does not exist.'))
+                return
         else:
-            self.stdout.write(self.style.WARNING(f'User "testuser" already exists.'))
+            # If no user specified, get the first superuser or first user
+            user = User.objects.filter(is_superuser=True).first() or User.objects.first()
+            if not user:
+                self.stdout.write(self.style.ERROR('No users exist. Please create a user first.'))
+                return
+            self.stdout.write(self.style.WARNING(f'No user specified, using: {user.username}'))
 
         # 1. Create Exercise Categories
         categories_data = [
@@ -57,7 +69,7 @@ class Command(BaseCommand):
             {"name": "Leg Press", "exercise_type": "secondary", "categories": [categories["Legs"]], "description": "Machine-based leg exercise."},
             {"name": "Lateral Raise", "exercise_type": "accessory", "categories": [categories["Shoulders"]], "description": "Isolation exercise for lateral deltoids."},
             {"name": "Plank", "exercise_type": "accessory", "categories": [categories["Core"]], "description": "Core stability exercise."},
-            {"name": "Leg Extension", "exercise_type": "accessory", "categories": [categories["Legs"]], "description": "Isolation for quads.", "user": user, "is_custom": True},
+            {"name": "Leg Extension", "exercise_type": "accessory", "categories": [categories["Legs"]], "description": "Isolation for quads."},
         ]
 
         created_exercises = {}
@@ -105,21 +117,47 @@ class Command(BaseCommand):
 
         # 5. Add RoutineExercises
         routine_exercises_data = [
-            {"exercise": created_exercises["Squat"], "order": 0, "target_sets": 3, "target_reps": "5-8", "target_rest_seconds": 120},
-            {"exercise": created_exercises["Bench Press"], "order": 1, "target_sets": 3, "target_reps": "5-8", "target_rest_seconds": 120},
-            {"exercise": created_exercises["Overhead Press"], "order": 2, "target_sets": 3, "target_reps": "8-12", "target_rest_seconds": 90},
+            {"exercise": created_exercises["Squat"], "order": 0, "sets_data": [
+                {"set_number": 1, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 2, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 3, "target_reps": "5-8", "rest_time_seconds": 120},
+            ]},
+            {"exercise": created_exercises["Bench Press"], "order": 1, "sets_data": [
+                {"set_number": 1, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 2, "target_reps": "5-8", "rest_time_seconds": 120},
+                {"set_number": 3, "target_reps": "5-8", "rest_time_seconds": 120},
+            ]},
+            {"exercise": created_exercises["Overhead Press"], "order": 2, "sets_data": [
+                {"set_number": 1, "target_reps": "8-12", "rest_time_seconds": 90},
+                {"set_number": 2, "target_reps": "8-12", "rest_time_seconds": 90},
+                {"set_number": 3, "target_reps": "8-12", "rest_time_seconds": 90},
+            ]},
         ]
         for i, re_data in enumerate(routine_exercises_data):
              # Ensure exercise exists before trying to create RoutineExercise
             if re_data["exercise"]:
+                sets_data = re_data.pop("sets_data", [])
                 re, created = RoutineExercise.objects.get_or_create(
                     routine=routine,
                     exercise=re_data["exercise"],
-                    order=i, # Use enumerate index for order to ensure uniqueness if name isn't unique
-                    defaults=re_data
+                    order=re_data["order"],
+                    defaults={}
                 )
                 if created:
                     self.stdout.write(self.style.SUCCESS(f'Added {re_data["exercise"].name} to routine {routine.name}'))
+                    
+                    # Create RoutineExerciseSet objects for this RoutineExercise
+                    for set_data in sets_data:
+                        res, set_created = RoutineExerciseSet.objects.get_or_create(
+                            routine_exercise=re,
+                            set_number=set_data["set_number"],
+                            defaults={
+                                "target_reps": set_data["target_reps"],
+                                "rest_time_seconds": set_data.get("rest_time_seconds")
+                            }
+                        )
+                        if set_created:
+                            self.stdout.write(self.style.SUCCESS(f'  Added Set {set_data["set_number"]} to {re_data["exercise"].name}'))
             else:
                 self.stdout.write(self.style.ERROR(f'Could not add exercise to routine, exercise data missing.'))
 
@@ -176,17 +214,23 @@ class Command(BaseCommand):
                 ]
 
             for idx, we_data in enumerate(exercises_for_this_workout):
+                base_exercise = we_data['exercise_model']
+                exercise_type = base_exercise.exercise_type or 'accessory'
                 wo_exercise, created = WorkoutExercise.objects.get_or_create(
                     workout=workout_instance,
-                    exercise=we_data['exercise_model'],
+                    exercise=base_exercise,
                     order=idx, # use current index for order
                     defaults={
-                        'notes': f'Performed {we_data["exercise_model"].name}',
-                        'routine_exercise_source': we_data.get('routine_exercise_source')
+                        'notes': f'Performed {base_exercise.name}',
+                        'routine_exercise_source': we_data.get('routine_exercise_source'),
+                        'exercise_type': exercise_type,
                     }
                 )
+                if not created and wo_exercise.exercise_type != exercise_type:
+                    wo_exercise.exercise_type = exercise_type
+                    wo_exercise.save(update_fields=['exercise_type'])
                 if created:
-                    self.stdout.write(self.style.SUCCESS(f'Added {we_data["exercise_model"].name} to workout {workout_instance.name}'))
+                    self.stdout.write(self.style.SUCCESS(f'Added {base_exercise.name} to workout {workout_instance.name}'))
 
                     # Add 3 sets for each WorkoutExercise
                     for i in range(1, 4):

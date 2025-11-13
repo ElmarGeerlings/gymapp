@@ -10,6 +10,24 @@
                 <a href="{% url 'workout-list' %}" class="button-primary">
                     <i class="fas fa-dumbbell me-2"></i>View My Workouts
                 </a>
+                
+                {# Development only button - REMOVE IN PRODUCTION! #}
+                <div class="mt-4 p-3 border border-warning rounded bg-warning bg-opacity-10">
+                    <h5 class="text-warning mb-2">
+                        <i class="fas fa-exclamation-triangle"></i> Development Tools
+                    </h5>
+                    <p class="small text-muted mb-2">For testing purposes only - will be removed in production</p>
+                    <form method="post" action="{% url 'generate-sample-data' %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-warning btn-sm" 
+                                onclick="return confirm('This will generate sample exercises, workouts, and programs. Continue?');">
+                            <i class="fas fa-database me-1"></i> Generate Sample Data
+                        </button>
+                    </form>
+                    <p class="small text-muted mt-2 mb-0">
+                        Creates sample exercises, programs, routines, and workouts for your account
+                    </p>
+                </div>
             {% else %}
                 <a href="{% url 'login' %}" class="button-primary">
                     <i class="fas fa-sign-in-alt me-2"></i>Login

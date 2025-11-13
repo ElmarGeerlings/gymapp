@@ -13,9 +13,21 @@
                 <a href="{% url 'workout-update' workout.id %}" class="btn btn-sm btn-outline-primary">
                     <i class="fas fa-edit me-1"></i><span class="d-none d-sm-inline">Edit</span>
                 </a>
-                <a href="{% url 'workout-delete' workout.id %}" class="btn btn-sm btn-outline-danger">
+                <form method="post" action="{% url 'clear-workout' workout.id %}" style="display: inline;" onsubmit="return confirm('Are you sure you want to clear all exercises from this workout?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-warning">
+                        <i class="fas fa-eraser me-1"></i><span class="d-none d-sm-inline">Clear</span>
+                    </button>
+                </form>
+                <button type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#confirmWorkoutDeleteModal"
+                        data-workout-id="{{ workout.id }}"
+                        data-workout-name="{{ workout.name }}"
+                        data-delete-url="{% url 'workout-delete' workout.id %}">
                     <i class="fas fa-trash me-1"></i><span class="d-none d-sm-inline">Delete</span>
-                </a>
+                </button>
             </div>
         </div>
         <p class="workout-date text-muted mt-1">{{ workout.date|date:"l, F j, Y, P" }}</p>
@@ -32,32 +44,40 @@
             No exercises have been logged for this workout yet.
         </div>
     {% else %}
-        {% if primary_exercises %}
-            <div class="exercise-category-section mb-4">
-                <h2 class="h4 mb-3">Primary Lifts</h2>
-                {% for wo_exercise in primary_exercises %}
-                    {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
-                {% endfor %}
-            </div>
-        {% endif %}
+        <div id="workout-exercises-container" data-workout-id="{{ workout.id }}">
+            {% if primary_exercises %}
+                <div class="exercise-category-section mb-4">
+                    <h2 class="h4 mb-3">Primary Lifts</h2>
+                    <div class="exercise-category-container" data-category="primary">
+                        {% for wo_exercise in primary_exercises %}
+                            {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
 
-        {% if secondary_exercises %}
-            <div class="exercise-category-section mb-4">
-                <h2 class="h4 mb-3">Secondary Lifts</h2>
-                {% for wo_exercise in secondary_exercises %}
-                    {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
-                {% endfor %}
-            </div>
-        {% endif %}
+            {% if secondary_exercises %}
+                <div class="exercise-category-section mb-4">
+                    <h2 class="h4 mb-3">Secondary Lifts</h2>
+                    <div class="exercise-category-container" data-category="secondary">
+                        {% for wo_exercise in secondary_exercises %}
+                            {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
 
-        {% if accessory_exercises %}
-            <div class="exercise-category-section mb-4">
-                <h2 class="h4 mb-3">Accessory Lifts</h2>
-                {% for wo_exercise in accessory_exercises %}
-                    {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
-                {% endfor %}
-            </div>
-        {% endif %}
+            {% if accessory_exercises %}
+                <div class="exercise-category-section mb-4">
+                    <h2 class="h4 mb-3">Accessory Lifts</h2>
+                    <div class="exercise-category-container" data-category="accessory">
+                        {% for wo_exercise in accessory_exercises %}
+                            {% include "partials/workout_exercise_detail.html" with workout_exercise=wo_exercise workout=workout %}
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
     {% endif %}
 
     {# Add Exercise to Workout Section - Form #}
@@ -98,3 +118,5 @@
 
 </div>
 {% endblock content %}
+
+

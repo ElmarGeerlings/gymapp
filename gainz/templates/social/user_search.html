@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Find Users - Gainz{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-search me-2"></i>Find Users</h2>
+                <a href="{% url 'social:feed' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Back to Feed
+                </a>
+            </div>
+
+            <!-- Search Form -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="GET" class="d-flex">
+                        <input type="text" class="form-control me-2" name="q" 
+                               placeholder="Search by username, first name, or last name..." 
+                               value="{{ query }}" autofocus>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Search Results -->
+            {% if query %}
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            Search Results for "{{ query }}"
+                            {% if users %}
+                                <span class="badge bg-primary">{{ users.count }} found</span>
+                            {% endif %}
+                        </h5>
+                    </div>
+                    
+                    <div class="card-body">
+                        {% if users %}
+                            {% for user in users %}
+                                <div class="user-result d-flex align-items-center justify-content-between p-3 {% if not forloop.last %}border-bottom{% endif %}">
+                                    <div class="d-flex align-items-center">
+                                        <div class="me-3">
+                                            {% if user.social_profile.profile_picture %}
+                                                <img src="{{ user.social_profile.profile_picture }}" alt="{{ user.username }}" 
+                                                     class="rounded-circle" style="width: 50px; height: 50px; object-fit: cover;">
+                                            {% else %}
+                                                <i class="fas fa-user-circle fa-3x text-primary"></i>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <div>
+                                            <h6 class="mb-1">
+                                                <a href="{% url 'social:profile' user.username %}" class="text-decoration-none">
+                                                    {{ user.username }}
+                                                </a>
+                                            </h6>
+                                            {% if user.first_name or user.last_name %}
+                                                <p class="text-muted mb-1 small">{{ user.first_name }} {{ user.last_name }}</p>
+                                            {% endif %}
+                                            
+                                            {% if user.social_profile.bio %}
+                                                <p class="text-muted mb-1 small">{{ user.social_profile.bio|truncatewords:10 }}</p>
+                                            {% endif %}
+                                            
+                                            <div class="d-flex gap-3 small text-muted">
+                                                <span>{{ user.social_profile.get_followers_count }} followers</span>
+                                                <span>{{ user.social_profile.get_following_count }} following</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        {% if user.is_followed_by_current_user %}
+                                            <button class="btn btn-sm btn-outline-danger follow-btn"
+                                                    data-username="{{ user.username }}"
+                                                    data-function="click->toggleFollow">
+                                                <i class="fas fa-user-minus me-1"></i>
+                                                <span class="follow-text">Unfollow</span>
+                                            </button>
+                                        {% else %}
+                                            <button class="btn btn-sm btn-primary follow-btn"
+                                                    data-username="{{ user.username }}"
+                                                    data-function="click->toggleFollow">
+                                                <i class="fas fa-user-plus me-1"></i>
+                                                <span class="follow-text">Follow</span>
+                                            </button>
+                                        {% endif %}
+                                        
+                                        <a href="{% url 'social:profile' user.username %}" class="btn btn-sm btn-outline-secondary ms-2">
+                                            View Profile
+                                        </a>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-4">
+                                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                                <h6 class="text-muted">No users found</h6>
+                                <p class="text-muted">Try searching with different keywords.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% else %}
+                <!-- Instructions -->
+                <div class="text-center py-5">
+                    <i class="fas fa-search fa-4x text-muted mb-3"></i>
+                    <h4 class="text-muted">Find Other Users</h4>
+                    <p class="text-muted">
+                        Search for other users by their username, first name, or last name<br>
+                        to follow them and see their workouts in your feed.
+                    </p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Follow functionality
+window.toggleFollow = function(event) {
+    const button = event.target.closest('button');
+    const username = button.dataset.username;
+    
+    fetch(`/social/api/follow/${username}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const icon = button.querySelector('i');
+        const text = button.querySelector('.follow-text');
+        
+        if (data.following) {
+            button.classList.remove('btn-primary');
+            button.classList.add('btn-outline-danger');
+            icon.className = 'fas fa-user-minus me-1';
+            text.textContent = 'Unfollow';
+        } else {
+            button.classList.remove('btn-outline-danger');
+            button.classList.add('btn-primary');
+            icon.className = 'fas fa-user-plus me-1';
+            text.textContent = 'Follow';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+};
+</script>
+{% endblock %}
