@@ -1,4 +1,4 @@
-91.98.229.71 {
+elgainz.com, www.elgainz.com {
     # Handle static files
     @static {
         file {
