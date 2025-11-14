@@ -2985,5 +2985,3 @@ def service_worker(request):
     response['Cache-Control'] = 'no-cache'
     response['Service-Worker-Allowed'] = '/'
     return response
-
->>>>>>> 1c2946ec4ec9fa8b17360c91a11b197e2153a7ac

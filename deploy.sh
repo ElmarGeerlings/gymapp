@@ -37,6 +37,13 @@ ssh -o StrictHostKeyChecking=no $SERVER << EOF
     echo -e "${YELLOW}Collecting static files...${NC}"
     sudo -u gainz bash -lc "cd $APP_DIR && source venv/bin/activate && python manage.py collectstatic --noinput"
 
+    # Update systemd service file if it exists in repo
+    if [ -f "$APP_DIR/deploy/systemd/gainz.service" ]; then
+        echo -e "${YELLOW}Updating systemd service file...${NC}"
+        sudo cp $APP_DIR/deploy/systemd/gainz.service /etc/systemd/system/gainz.service
+        sudo systemctl daemon-reload
+    fi
+
     # Restart services
     echo -e "${YELLOW}Restarting services...${NC}"
     sudo systemctl restart gainz
