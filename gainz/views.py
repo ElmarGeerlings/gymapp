@@ -12,7 +12,7 @@ from gainz.workouts.models import Workout, WorkoutExercise, ExerciseSet, Program
 from gainz.workouts.serializers import WorkoutSerializer, WorkoutExerciseSerializer, ExerciseSetSerializer
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404, FileResponse
 from django.template.loader import render_to_string
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 import datetime # Add datetime import
 from gainz.workouts.utils import get_prefill_data # Add get_prefill_data import
 from django.utils import timezone # Added for timezone.now()
@@ -318,7 +318,10 @@ def workout_detail(request, workout_id):
 
     # Fetch WorkoutExercises related to this workout, prefetching related Exercise and Sets
     # Order by the order field to respect user's custom ordering
-    workout_exercises = workout.exercises.prefetch_related('exercise', 'sets').order_by('order')
+    workout_exercises = workout.exercises.prefetch_related(
+        'exercise',
+        Prefetch('sets', queryset=ExerciseSet.objects.order_by('set_number'))
+    ).order_by('order')
 
     # Group exercises by type using the get_exercise_type method
     primary_exercises = []
@@ -1087,7 +1090,10 @@ def start_workout_from_routine(request, routine_id):
 
     if last_workout:
         # Clone last session structure: exercises and sets, preserving order and links
-        for prev_we in last_workout.exercises.prefetch_related('sets', 'exercise').order_by('order'):
+        for prev_we in last_workout.exercises.prefetch_related(
+            'exercise',
+            Prefetch('sets', queryset=ExerciseSet.objects.order_by('set_number'))
+        ).order_by('order'):
             new_we = WorkoutExercise.objects.create(
                 workout=new_workout,
                 exercise=prev_we.exercise,

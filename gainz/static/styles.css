@@ -1577,3 +1577,60 @@ html {
     margin-bottom: 0 !important;
   }
 }
+
+/* Mobile-specific Styles */
+.timer-section {
+    display: block !important;
+    text-align: center;
+}
+
+.timer-display {
+    display: block;
+    margin: 0 auto 1rem auto;
+    font-size: 2.5rem !important;
+}
+
+.timer-message {
+    display: block;
+    margin-bottom: 1rem;
+}
+
+.exercise-indicators .indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #dee2e6;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.exercise-indicators .indicator.active {
+    background-color: #007bff;
+}
+
+.exercise-indicators .indicator:hover {
+    background-color: #6c757d;
+}
+
+.exercise-indicators .indicator.active:hover {
+    background-color: #0056b3;
+}
+
+.timer-section {
+    border: 2px solid #e9ecef;
+}
+
+.feedback-section .btn {
+    min-width: 90px;
+}
+
+@media (max-width: 768px) {
+    .feedback-section .btn {
+        min-width: 80px;
+        font-size: 0.875rem;
+    }
+
+    .timer-display {
+        font-size: 1.75rem !important;
+    }
+}

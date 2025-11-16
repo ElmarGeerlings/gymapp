@@ -466,8 +466,6 @@ async function toggleScheduleType() {
     }
 }
 
-// Expose for data-function or manual binding
-window.toggleScheduleType = toggleScheduleType;
 
 // ======================================
 //      HTTP REQUEST HELPER (Optional)
@@ -740,7 +738,7 @@ function clearFormErrors(formId) {
 // ======================================
 
 // UI update function using httpRequestHelper
-window.handle_and_morph = async function(event) { // Made async to use await with httpRequestHelper
+async function handle_and_morph(event) { // Made async to use await with httpRequestHelper
     if (event.type === 'keydown' && event.key !== 'Enter') {
         return;
     }
@@ -1519,7 +1517,28 @@ async function toggleSetCompletion(event) {
     }
 
     button.dataset.completed = (!isCurrentlyCompleted).toString();
+    
+    // DEBUG: Log state before update
+    const debugBefore = {
+        isCurrentlyCompleted,
+        buttonClasses: Array.from(button.classList),
+        buttonDataset: button.dataset.completed,
+        computedBg: window.getComputedStyle(button).backgroundColor,
+        computedColor: window.getComputedStyle(button).color,
+        computedBorder: window.getComputedStyle(button).borderColor,
+        rowClasses: row ? Array.from(row.classList) : null,
+        rowOpacity: row ? window.getComputedStyle(row).opacity : null,
+        buttonActive: button.matches(':active'),
+        buttonFocus: button.matches(':focus')
+    };
+    console.log('🔍 DEBUG toggleSetCompletion - BEFORE update:', debugBefore);
+    
     if (!isCurrentlyCompleted) {
+        // Clear any inline styles that might be overriding (from previous undo action)
+        button.style.removeProperty('background-color');
+        button.style.removeProperty('color');
+        button.style.removeProperty('border-color');
+        
         button.classList.remove('btn-outline-success');
         button.classList.add('btn-success', 'text-white');
         send_toast('Set marked complete', 'success');
@@ -1529,13 +1548,91 @@ async function toggleSetCompletion(event) {
         send_toast('Set marked incomplete', 'info');
     }
 
+    // DEBUG: Log state after class update
+    const debugAfter = {
+        buttonClasses: Array.from(button.classList),
+        computedBg: window.getComputedStyle(button).backgroundColor,
+        computedColor: window.getComputedStyle(button).color,
+        computedBorder: window.getComputedStyle(button).borderColor,
+        buttonActive: button.matches(':active'),
+        buttonFocus: button.matches(':focus')
+    };
+    console.log('🔍 DEBUG toggleSetCompletion - AFTER class update:', debugAfter);
+
+    // Force repaint and remove focus/hover to ensure visual update on mobile
+    // Mobile browsers can keep buttons in :hover state after touch, which overrides outline styles
+    button.blur();
+    
+    // On mobile, buttons can stay in :hover state after touch, causing Bootstrap's :hover
+    // styles to override the outline button appearance. We need to explicitly set styles
+    // to match the outline button appearance when undoing (isCurrentlyCompleted = true means we're undoing).
+    if (isCurrentlyCompleted && button.classList.contains('btn-outline-success')) {
+        // Button should be outline style (transparent bg, green border/text)
+        // Explicitly set styles to override any :hover state using !important
+        const outlineColor = 'rgb(25, 135, 84)'; // Bootstrap's success green
+        
+        // Use setProperty with important flag (third parameter)
+        button.style.setProperty('background-color', 'transparent', 'important');
+        button.style.setProperty('color', outlineColor, 'important');
+        button.style.setProperty('border-color', outlineColor, 'important');
+        
+        // Force a repaint to apply the inline styles
+        void button.offsetHeight;
+        
+        // Poll for when hover state clears, then remove inline styles
+        // Mobile browsers can keep hover state for a long time after touch
+        const checkHoverCleared = () => {
+            if (!button.matches(':hover')) {
+                // Hover state has cleared, safe to remove inline styles
+                button.style.removeProperty('background-color');
+                button.style.removeProperty('color');
+                button.style.removeProperty('border-color');
+            } else {
+                // Still in hover, check again in 100ms
+                setTimeout(checkHoverCleared, 100);
+            }
+        };
+        
+        // Start checking after initial delay (mobile hover can persist for 500ms+)
+        setTimeout(checkHoverCleared, 500);
+    }
+    
+    void button.offsetHeight; // Force reflow/repaint
+
+    // DEBUG: Log state after blur/reflow
+    const debugAfterBlur = {
+        buttonClasses: Array.from(button.classList),
+        computedBg: window.getComputedStyle(button).backgroundColor,
+        computedColor: window.getComputedStyle(button).color,
+        computedBorder: window.getComputedStyle(button).borderColor,
+        buttonActive: button.matches(':active'),
+        buttonFocus: button.matches(':focus')
+    };
+    console.log('🔍 DEBUG toggleSetCompletion - AFTER blur/reflow:', debugAfterBlur);
+
     if (document.getElementById('exercise-card-container') &&
         window.mobileSetController && typeof window.mobileSetController.handleSetCompletionChange === 'function') {
+        console.log('🔍 DEBUG toggleSetCompletion - About to call handleSetCompletionChange');
         window.mobileSetController.handleSetCompletionChange({
             exerciseId: exerciseId,
             setId: setId,
             isCompleted: !isCurrentlyCompleted
         });
+        
+        // DEBUG: Log state after handleSetCompletionChange (with delay to catch async effects)
+        setTimeout(() => {
+            const debugAfterHandler = {
+                buttonClasses: Array.from(button.classList),
+                computedBg: window.getComputedStyle(button).backgroundColor,
+                computedColor: window.getComputedStyle(button).color,
+                computedBorder: window.getComputedStyle(button).borderColor,
+                rowClasses: row ? Array.from(row.classList) : null,
+                rowOpacity: row ? window.getComputedStyle(row).opacity : null,
+                buttonActive: button.matches(':active'),
+                buttonFocus: button.matches(':focus')
+            };
+            console.log('🔍 DEBUG toggleSetCompletion - AFTER handleSetCompletionChange (100ms delay):', debugAfterHandler);
+        }, 100);
     }
 }
 
@@ -1640,7 +1737,7 @@ async function removeExercise(event) {
 
 // Refresh the mobile workout navigation UI after dynamic changes (e.g., deletion)
 // Rebuilds indicators, reindexes cards, updates counter and prev/next handlers.
-window.refreshMobileWorkoutUI = function(preferredIndex = null) {
+function refreshMobileWorkoutUI(preferredIndex = null) {
     const container = document.getElementById('exercise-card-container');
     if (!container) return;
 
@@ -1786,7 +1883,7 @@ function debounce(func, delay) {
 }
 
 // Make this function global for data-function
-window.fetchAndUpdateExerciseList = async function() {
+async function fetchAndUpdateExerciseList() {
     const form = document.getElementById('exercise-filter-form');
     if (!form) return;
 
@@ -1847,7 +1944,7 @@ window.fetchAndUpdateExerciseList = async function() {
 }
 
 // Make this debounced function global for data-function
-window.debouncedFetchExercises = debounce(window.fetchAndUpdateExerciseList, 300);
+window.debouncedFetchExercises = debounce(fetchAndUpdateExerciseList, 300);
 
 // ======================================
 //      ROUTINE FORM FUNCTIONS
@@ -1928,7 +2025,7 @@ function updateRoutineFormCount() {
 //     updateRoutineFormCount();
 // }
 
-window.removeRoutineExerciseCard = function(event) {
+function removeRoutineExerciseCard(event) {
     const container = document.getElementById('routine-exercises-container');
     const button = event.target;
     const cardToRemove = button.closest('.exercise-routine-card');
@@ -1948,7 +2045,7 @@ window.removeRoutineExerciseCard = function(event) {
 
 
 
-window.handleRoutineExerciseMove = function(event) {
+function handleRoutineExerciseMove(event) {
     const trigger = event.target.closest('[data-move-direction]');
     if (!trigger) return;
 
@@ -1973,7 +2070,7 @@ window.handleRoutineExerciseMove = function(event) {
 };
 
 // --- Routine Form Modal Functions ---
-window.showAddExerciseToRoutineModal = function(event) {
+function showAddExerciseToRoutineModal(event) {
     const modal = document.getElementById('add-exercise-to-routine-modal');
     if (modal) {
         // Reset the select input and clear any previous error messages
@@ -2670,19 +2767,6 @@ function initializeRoutineForm() {
     updateSetRowFieldVisibility();
 }
 
-window.updateRoutineSpecificTypeLabel = updateRoutineSpecificTypeLabel;
-window.captureRoutineSetFieldOriginalValue = captureRoutineSetFieldOriginalValue;
-window.handleRoutineSetFieldChange = handleRoutineSetFieldChange;
-window.toggleSetLock = toggleSetLock;
-window.captureWorkoutSetOriginalValue = captureWorkoutSetOriginalValue;
-window.handleWorkoutSetChange = handleWorkoutSetChange;
-window.updateExerciseCardName = updateExerciseCardName;
-window.appendExerciseCardToRoutine = appendExerciseCardToRoutine;
-window.addSetToExerciseCard = addSetToExerciseCard;
-window.removeSetFromExerciseCard = removeSetFromExerciseCard;
-window.duplicateSetRow = duplicateSetRow;
-window.updateSetRowFieldVisibility = updateSetRowFieldVisibility;
-window.addExerciseToRoutineFromForm = addExerciseToRoutineFromForm;
 
 // ======================================
 //      WORKOUT EXERCISES DRAG & DROP
@@ -3153,7 +3237,7 @@ function initializeProgramRoutinesDragDrop() {
 //      PROGRAM FORM FUNCTIONS
 // ======================================
 
-window.handleAddRoutineToProgram = function() { // This function is now globally accessible
+function handleAddRoutineToProgram() { // This function is now globally accessible
     const select = document.getElementById('add-routine-select');
     const selectedOption = select.options[select.selectedIndex];
     if (!selectedOption || !selectedOption.value) {
@@ -3194,7 +3278,7 @@ window.handleAddRoutineToProgram = function() { // This function is now globally
     setupSequentialRoutineActivation(newRow);
 }
 
-window.handleRemoveProgramRoutine = function(event) { // This function is now globally accessible
+function handleRemoveProgramRoutine(event) { // This function is now globally accessible
     const row = event.target.closest('.program-routine-row');
     if (!row) return;
 
@@ -3599,11 +3683,7 @@ function bootstrapGainzApp() {
     }
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bootstrapGainzApp);
-} else {
-    bootstrapGainzApp();
-}
+document.addEventListener('DOMContentLoaded', bootstrapGainzApp);
 function bindRoutineSetSyncHandlers(root) {
     const scope = root || document;
     const inputs = scope.querySelectorAll('#routine-exercises-container input[name*="_target_reps"], #routine-exercises-container input[name*="_target_weight"]');
@@ -3794,17 +3874,28 @@ function updateRowDOM(setId, exerciseId, newReps, newIsAmrap, newWeight) {
         if (typeof newWeight === 'number') {
             row.dataset.weight = newWeight.toFixed(1);
             const btns = row.querySelectorAll('.set-weight .set-open-modal');
-            btns.forEach(b => b.textContent = newWeight.toFixed(1));
+            btns.forEach(b => {
+                b.textContent = newWeight.toFixed(1);
+                b.dataset.currentWeight = newWeight.toFixed(1);
+            });
         }
         row.dataset.isAmrap = newIsAmrap ? 'true' : 'false';
         if (newIsAmrap) {
             row.dataset.reps = '';
             const btns = row.querySelectorAll('.set-reps .set-open-modal');
-            btns.forEach(b => b.innerHTML = '&infin;');
+            btns.forEach(b => {
+                b.innerHTML = '&infin;';
+                b.dataset.isAmrap = 'true';
+                b.dataset.currentReps = '';
+            });
         } else if (typeof newReps === 'number') {
             row.dataset.reps = String(newReps);
             const btns = row.querySelectorAll('.set-reps .set-open-modal');
-            btns.forEach(b => b.textContent = String(newReps));
+            btns.forEach(b => {
+                b.textContent = String(newReps);
+                b.dataset.currentReps = String(newReps);
+                b.dataset.isAmrap = 'false';
+            });
         }
     }
 
@@ -3967,3 +4058,615 @@ function closeSetEditModal(event) {
     }
     saveAndClose();
 }
+
+// =====================================
+//      MOBILE WORKOUT CONTROLLER
+// =====================================
+
+const DEFAULT_TIMER_PREFS = {
+    primary_timer_seconds: 180,
+    secondary_timer_seconds: 120,
+    accessory_timer_seconds: 90
+};
+
+function getDefaultTimerPrefs() {
+    return {
+        primary_timer_seconds: DEFAULT_TIMER_PREFS.primary_timer_seconds,
+        secondary_timer_seconds: DEFAULT_TIMER_PREFS.secondary_timer_seconds,
+        accessory_timer_seconds: DEFAULT_TIMER_PREFS.accessory_timer_seconds
+    };
+}
+
+function createMobileWorkoutController() {
+    const controller = {
+        cards: [],
+        indicators: [],
+        prevBtn: null,
+        nextBtn: null,
+        currentNumSpan: null,
+        totalNumSpan: null,
+        setState: {},
+        currentIndex: 0,
+        init() {
+            this.setupSwipeHandling();
+            this.refresh(0);
+        },
+        refresh(preferredIndex = null, preferredExerciseId = null) {
+            this.captureDomRefs();
+            this.pruneStaleSetState();
+            const total = this.cards.length;
+
+            if (!total) {
+                if (this.prevBtn) this.prevBtn.disabled = true;
+                if (this.nextBtn) this.nextBtn.disabled = true;
+                if (this.currentNumSpan) this.currentNumSpan.textContent = '0';
+                if (this.totalNumSpan) this.totalNumSpan.textContent = '0';
+                this.currentIndex = 0;
+                return;
+            }
+
+            this.cards.forEach(card => this.initialiseCard(card));
+            this.updateTotalCounter();
+            const targetIndex = this.resolveTargetIndex(preferredIndex, preferredExerciseId);
+            this.showExercise(targetIndex);
+        },
+        captureDomRefs() {
+            this.cards = Array.from(document.querySelectorAll('#exercise-card-container .exercise-card'));
+            this.indicators = Array.from(document.querySelectorAll('.exercise-indicators .indicator'));
+            this.currentNumSpan = document.getElementById('current-exercise-num');
+            this.totalNumSpan = document.getElementById('total-exercises-num');
+            this.prevBtn = this.replaceWithClone(document.getElementById('prev-exercise'));
+            this.nextBtn = this.replaceWithClone(document.getElementById('next-exercise'));
+            this.bindNavigationButtons();
+            this.bindIndicatorClicks();
+        },
+        replaceWithClone(btn) {
+            if (!btn) return null;
+            const clone = btn.cloneNode(true);
+            btn.replaceWith(clone);
+            return clone;
+        },
+        bindNavigationButtons() {
+            if (this.prevBtn) {
+                this.prevBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    if (this.currentIndex > 0) {
+                        this.showExercise(this.currentIndex - 1);
+                    }
+                });
+            }
+            if (this.nextBtn) {
+                this.nextBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    if (this.currentIndex < this.cards.length - 1) {
+                        this.showExercise(this.currentIndex + 1);
+                    }
+                });
+            }
+        },
+        bindIndicatorClicks() {
+            this.indicators.forEach((indicator, idx) => {
+                indicator.addEventListener('click', () => {
+                    this.showExercise(idx);
+                });
+            });
+        },
+        pruneStaleSetState() {
+            const validIds = new Set();
+            this.cards.forEach(card => {
+                const exerciseId = card.querySelector('.workout-exercise-card')?.dataset.exerciseId;
+                if (exerciseId) {
+                    validIds.add(exerciseId);
+                }
+            });
+            Object.keys(this.setState).forEach(id => {
+                if (!validIds.has(id)) {
+                    delete this.setState[id];
+                }
+            });
+        },
+        resolveTargetIndex(preferredIndex, preferredExerciseId = null) {
+            const total = this.cards.length;
+            if (!total) return 0;
+
+            if (preferredExerciseId) {
+                const exerciseIndex = this.cards.findIndex(card => {
+                    const exerciseCard = card.querySelector('.workout-exercise-card');
+                    return exerciseCard && exerciseCard.dataset.exerciseId == preferredExerciseId;
+                });
+                if (exerciseIndex >= 0) {
+                    return exerciseIndex;
+                }
+            }
+
+            if (typeof preferredIndex === 'number' && !Number.isNaN(preferredIndex)) {
+                if (preferredIndex < 0) return 0;
+                if (preferredIndex > total - 1) return total - 1;
+                return preferredIndex;
+            }
+
+            const visibleIndex = this.cards.findIndex(card => !card.classList.contains('d-none'));
+            if (visibleIndex >= 0) {
+                return visibleIndex;
+            }
+
+            if (this.currentIndex < total) {
+                return this.currentIndex;
+            }
+
+            return total - 1;
+        },
+        initialiseCard(card) {
+            const exerciseCard = card.querySelector('.workout-exercise-card');
+            if (!exerciseCard) return;
+            const exerciseId = exerciseCard.dataset.exerciseId;
+            if (!exerciseId) return;
+
+            const setRows = card.querySelectorAll('.set-row');
+            setRows.forEach((row, index) => {
+                row.dataset.setIndex = index;
+                const isCompleted = row.dataset.isCompleted === 'true';
+                row.classList.toggle('set-completed', isCompleted);
+            });
+
+            if (typeof this.setState[exerciseId] === 'undefined') {
+                this.setState[exerciseId] = this.determineInitialSet(setRows);
+            }
+
+            this.updateProgressBar(card);
+            this.applyHighlight(card, this.setState[exerciseId]);
+            this.applyTimerDefaults(card, exerciseCard);
+        },
+        determineInitialSet(rows) {
+            if (!rows.length) return null;
+            const firstIncomplete = Array.from(rows).find(row => row.dataset.isCompleted !== 'true');
+            return firstIncomplete ? firstIncomplete.dataset.setId : rows[rows.length - 1].dataset.setId;
+        },
+        showExercise(index) {
+            const total = this.cards.length;
+            if (!total) return;
+
+            if (index < 0) index = 0;
+            if (index > total - 1) index = total - 1;
+
+            this.cards.forEach(card => card.classList.add('d-none'));
+            this.indicators.forEach((indicator, idx) => {
+                indicator.classList.toggle('active', idx === index);
+            });
+
+            const card = this.cards[index];
+            if (card) {
+                card.classList.remove('d-none');
+                const exerciseCard = card.querySelector('.workout-exercise-card');
+                if (exerciseCard) {
+                    const exerciseId = exerciseCard.dataset.exerciseId;
+                    if (exerciseId) {
+                        this.initialiseCard(card);
+                        this.ensureHighlight(card, exerciseId);
+                    }
+                    this.applyTimerDefaults(card, exerciseCard);
+                }
+            }
+
+            if (this.currentNumSpan) this.currentNumSpan.textContent = String(index + 1);
+            if (this.prevBtn) this.prevBtn.disabled = index === 0;
+            if (this.nextBtn) this.nextBtn.disabled = index === total - 1;
+
+            this.currentIndex = index;
+        },
+        ensureHighlight(card, exerciseId) {
+            if (!card) return;
+            const rows = card.querySelectorAll('.set-row');
+            if (!rows.length) {
+                this.updateProgressBar(card);
+                return;
+            }
+            if (!this.setState[exerciseId]) {
+                this.setState[exerciseId] = this.determineInitialSet(rows);
+            }
+            this.applyHighlight(card, this.setState[exerciseId]);
+            this.updateProgressBar(card);
+        },
+        applyHighlight(card, setId) {
+            const rows = card.querySelectorAll('.set-row');
+            rows.forEach(row => {
+                row.classList.remove('current-set-row');
+            });
+            if (!setId) return;
+            const target = card.querySelector('.set-row[data-set-id="' + setId + '"]');
+            if (target) {
+                target.classList.add('current-set-row');
+            }
+        },
+        applyTimerDefaults(card, exerciseCard) {
+            if (!card) return;
+            const display = card.querySelector('[data-timer-display]');
+            const startBtn = card.querySelector('.timer-start-btn');
+            const pauseBtn = card.querySelector('.timer-pause-btn');
+            const stopBtn = card.querySelector('.timer-stop-btn');
+
+            if (!display || !startBtn) return;
+
+            const exerciseId = (exerciseCard && exerciseCard.dataset.exerciseId) || startBtn.dataset.exerciseId;
+            const exerciseTypeRaw = startBtn.dataset.exerciseType || exerciseCard?.dataset.exerciseType || '';
+            const exerciseType = exerciseTypeRaw ? exerciseTypeRaw.toLowerCase() : '';
+            const prefs = window.timerPreferences || getDefaultTimerPrefs();
+
+            let defaultSeconds = prefs.primary_timer_seconds || DEFAULT_TIMER_PREFS.primary_timer_seconds;
+            if (exerciseType === 'secondary') {
+                defaultSeconds = prefs.secondary_timer_seconds || DEFAULT_TIMER_PREFS.secondary_timer_seconds;
+            } else if (exerciseType === 'accessory') {
+                defaultSeconds = prefs.accessory_timer_seconds || DEFAULT_TIMER_PREFS.accessory_timer_seconds;
+            } else if (exerciseType === 'primary') {
+                defaultSeconds = prefs.primary_timer_seconds || DEFAULT_TIMER_PREFS.primary_timer_seconds;
+            }
+
+            if (!display.classList.contains('active') && !display.classList.contains('paused')) {
+                const minutes = Math.floor(defaultSeconds / 60);
+                const seconds = defaultSeconds % 60;
+                display.textContent = minutes + ':' + String(seconds).padStart(2, '0');
+            }
+
+            display.dataset.exerciseId = exerciseId;
+            startBtn.dataset.exerciseId = exerciseId;
+            startBtn.dataset.exerciseType = exerciseType;
+            startBtn.dataset.duration = String(defaultSeconds);
+            if (pauseBtn) pauseBtn.dataset.exerciseId = exerciseId;
+            if (stopBtn) stopBtn.dataset.exerciseId = exerciseId;
+        },
+        updateProgressBar(card) {
+            const bar = card.querySelector('[data-set-progress]');
+            if (!bar) return;
+            const rows = card.querySelectorAll('.set-row');
+            if (!rows.length) {
+                bar.style.width = '0%';
+                return;
+            }
+            const completed = Array.from(rows).filter(row => row.dataset.isCompleted === 'true').length;
+            const percent = Math.round((completed / rows.length) * 100);
+            bar.style.width = percent + '%';
+        },
+        updateTotalCounter() {
+            if (this.totalNumSpan) {
+                this.totalNumSpan.textContent = String(this.cards.length);
+            }
+        },
+        advanceSet(exerciseId) {
+            const card = this.getCardByExerciseId(exerciseId);
+            if (!card) return false;
+            const rows = Array.from(card.querySelectorAll('.set-row'));
+            if (!rows.length) return false;
+
+            const currentSetId = this.setState[exerciseId];
+            let currentIndexInRows = rows.findIndex(row => row.dataset.setId === currentSetId);
+            if (currentIndexInRows === -1) {
+                currentIndexInRows = 0;
+            }
+
+            const nextIncomplete = rows.find((row, idx) => idx > currentIndexInRows && row.dataset.isCompleted !== 'true');
+            if (nextIncomplete) {
+                this.setState[exerciseId] = nextIncomplete.dataset.setId;
+                this.applyHighlight(card, this.setState[exerciseId]);
+                this.updateProgressBar(card);
+                return true;
+            }
+
+            const firstIncomplete = rows.find(row => row.dataset.isCompleted !== 'true');
+            if (firstIncomplete) {
+                this.setState[exerciseId] = firstIncomplete.dataset.setId;
+                this.applyHighlight(card, this.setState[exerciseId]);
+                this.updateProgressBar(card);
+                return true;
+            }
+
+            if (this.currentIndex < this.cards.length - 1) {
+                this.showExercise(this.currentIndex + 1);
+                return true;
+            }
+            return false;
+        },
+        getCardByExerciseId(exerciseId) {
+            return this.cards.find(card => card.querySelector('.workout-exercise-card[data-exercise-id="' + exerciseId + '"]'));
+        },
+        handleSetCompletionChange({ exerciseId, setId, isCompleted }) {
+            const card = this.getCardByExerciseId(exerciseId);
+            if (!card) return;
+            const row = card.querySelector('.set-row[data-set-id="' + setId + '"]');
+            if (row) {
+                row.dataset.isCompleted = isCompleted ? 'true' : 'false';
+                row.classList.toggle('set-completed', isCompleted);
+            }
+            if (isCompleted && this.setState[exerciseId] === setId) {
+                this.advanceSet(exerciseId);
+            } else if (!isCompleted) {
+                this.setState[exerciseId] = setId;
+                this.applyHighlight(card, setId);
+                this.updateProgressBar(card);
+            } else {
+                this.updateProgressBar(card);
+            }
+        },
+        focusSet(exerciseId, setId) {
+            const card = this.getCardByExerciseId(exerciseId);
+            if (!card) return;
+            this.setState[exerciseId] = setId;
+            this.applyHighlight(card, setId);
+            this.updateProgressBar(card);
+        },
+        getCurrentExerciseId() {
+            const card = this.cards[this.currentIndex];
+            return card?.querySelector('.workout-exercise-card')?.dataset.exerciseId || null;
+        },
+        handleTimerComplete(exerciseId) {
+            const currentExerciseId = this.getCurrentExerciseId();
+            if (currentExerciseId !== exerciseId) return;
+            const card = this.getCardByExerciseId(exerciseId);
+            if (!card) return;
+            const currentRow = card.querySelector('.set-row.current-set-row');
+            const button = currentRow?.querySelector('.mark-set-btn');
+            if (button && button.dataset.completed !== 'true' && typeof toggleSetCompletion === 'function') {
+                toggleSetCompletion({
+                    preventDefault() {},
+                    currentTarget: button
+                });
+            } else {
+                this.advanceSet(exerciseId);
+            }
+        },
+        setupSwipeHandling() {
+            const container = document.getElementById('exercise-card-container');
+            if (!container || container.dataset.swipeBound === 'true') return;
+
+            let startX = 0;
+            let endX = 0;
+
+            container.addEventListener('touchstart', (event) => {
+                if (!event.touches.length) return;
+                startX = event.touches[0].clientX;
+            }, { passive: true });
+
+            container.addEventListener('touchend', (event) => {
+                if (!event.changedTouches.length) return;
+                endX = event.changedTouches[0].clientX;
+                this.handleSwipe(startX, endX);
+            });
+
+            container.dataset.swipeBound = 'true';
+        },
+        handleSwipe(startX, endX) {
+            const threshold = 50;
+            const diff = startX - endX;
+
+            if (Math.abs(diff) > threshold) {
+                if (diff > 0 && this.currentIndex < this.cards.length - 1) {
+                    this.showExercise(this.currentIndex + 1);
+                } else if (diff < 0 && this.currentIndex > 0) {
+                    this.showExercise(this.currentIndex - 1);
+                }
+            }
+        }
+    };
+
+    window.mobileSetController = {
+        handleSetCompletionChange(payload) {
+            controller.handleSetCompletionChange(payload);
+        },
+        focusSet(exerciseId, setId) {
+            controller.focusSet(exerciseId, setId);
+        },
+        advanceSetForExercise(exerciseId) {
+            controller.advanceSet(exerciseId);
+        },
+        getCurrentExerciseId() {
+            return controller.getCurrentExerciseId();
+        }
+    };
+
+    window.addEventListener('timer:complete', function(event) {
+        const exerciseId = event.detail?.exerciseId;
+        if (!exerciseId) return;
+        controller.handleTimerComplete(exerciseId);
+    });
+
+    return controller;
+}
+
+function initializeMobileWorkout() {
+    const container = document.getElementById('exercise-card-container');
+    if (!container) return;
+
+    if (!window.timerPreferences) {
+        window.timerPreferences = getDefaultTimerPrefs();
+    }
+
+    const controller = createMobileWorkoutController();
+    window.mobileWorkoutController = controller;
+    controller.init();
+
+    fetch('/api/timer-preferences/')
+        .then(response => response.json())
+        .then(prefs => {
+            window.timerPreferences = prefs;
+            controller.refresh(controller.currentIndex);
+        })
+        .catch(error => {
+            console.error('Error fetching timer preferences:', error);
+            window.timerPreferences = getDefaultTimerPrefs();
+            controller.refresh(controller.currentIndex);
+        });
+}
+
+window.addExerciseDynamically = async function(exerciseData) {
+    const controller = window.mobileWorkoutController;
+    if (!controller) return;
+
+    const cardHtml = await createExerciseCardHtml(exerciseData);
+
+    const container = document.getElementById('exercise-card-container');
+    if (!container) return;
+
+    const existingCards = Array.from(container.querySelectorAll('.exercise-card'));
+    let insertIndex = existingCards.length;
+
+    for (let i = 0; i < existingCards.length; i++) {
+        const card = existingCards[i];
+        const order = parseInt(card.querySelector('.workout-exercise-card')?.dataset.order || 0);
+        if (exerciseData.order <= order) {
+            insertIndex = i;
+            break;
+        }
+    }
+
+    if (insertIndex >= existingCards.length) {
+        container.appendChild(cardHtml);
+    } else {
+        container.insertBefore(cardHtml, existingCards[insertIndex]);
+    }
+
+    const allCards = Array.from(container.querySelectorAll('.exercise-card'));
+    allCards.forEach((card, idx) => {
+        card.setAttribute('data-exercise-index', String(idx));
+    });
+
+    const indicatorsContainer = document.querySelector('.exercise-indicators');
+    if (indicatorsContainer) {
+        const newIndicator = document.createElement('div');
+        newIndicator.className = 'indicator';
+        newIndicator.setAttribute('data-exercise-index', String(insertIndex));
+
+        if (insertIndex >= existingCards.length) {
+            indicatorsContainer.appendChild(newIndicator);
+        } else {
+            const existingIndicators = Array.from(indicatorsContainer.querySelectorAll('.indicator'));
+            if (existingIndicators[insertIndex]) {
+                indicatorsContainer.insertBefore(newIndicator, existingIndicators[insertIndex]);
+            } else {
+                indicatorsContainer.appendChild(newIndicator);
+            }
+        }
+
+        const allIndicators = Array.from(indicatorsContainer.querySelectorAll('.indicator'));
+        allIndicators.forEach((indicator, idx) => {
+            indicator.setAttribute('data-exercise-index', String(idx));
+        });
+    }
+
+    controller.refresh(null, String(exerciseData.id));
+}
+
+async function createExerciseCardHtml(exerciseData) {
+    let exerciseType = exerciseData.exercise_type || exerciseData.exercise_type_display;
+
+    if (!exerciseType) {
+        try {
+            const response = await fetch(`/api/exercises/${exerciseData.exercise}/`);
+            if (response.ok) {
+                const exerciseDetails = await response.json();
+                exerciseType = exerciseDetails.exercise_type;
+            }
+        } catch (error) {
+            console.error('Error fetching exercise details:', error);
+        }
+    }
+
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'exercise-card d-none';
+    cardDiv.innerHTML = `
+        <div class="card workout-exercise-card" data-exercise-id="${exerciseData.id}" data-order="${exerciseData.order}" data-exercise-type="${exerciseType || ''}">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        ${exerciseData.exercise_name}
+                        <small class="text-muted">(Type: "${exerciseType || 'default'}")</small>
+                    </h5>
+                    <button class="btn btn-sm btn-outline-danger"
+                            data-function="click->removeExercise"
+                            data-exercise-id="${exerciseData.id}"
+                            title="Remove exercise">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="progress mobile-set-progress mb-3">
+                    <div class="progress-bar" role="progressbar" data-set-progress style="width: 0%;"></div>
+                </div>
+
+                <div class="timer-section text-center mb-4 p-3 bg-light rounded">
+                    <div class="timer-display mb-3" data-timer-display data-exercise-id="${exerciseData.id}" style="font-size: 2rem; font-weight: bold;">0:00</div>
+                    <div class="timer-message small text-muted mb-3" data-timer-message data-exercise-id="${exerciseData.id}"></div>
+                    <div class="d-flex justify-content-center gap-2">
+                        <button type="button" class="btn btn-success btn-lg timer-start-btn"
+                                data-function="click->startTimer"
+                                data-exercise-id="${exerciseData.id}"
+                                data-exercise-type="${exerciseType || ''}"
+                                title="Start timer">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button type="button" class="btn btn-warning btn-lg timer-pause-btn"
+                                data-function="click->pauseTimer"
+                                data-exercise-id="${exerciseData.id}"
+                                title="Pause timer">
+                            <i class="fas fa-pause"></i>
+                        </button>
+                        <button type="button" class="btn btn-danger btn-lg timer-stop-btn"
+                                data-function="click->stopTimer"
+                                data-exercise-id="${exerciseData.id}"
+                                title="Stop timer">
+                            <i class="fas fa-stop"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="feedback-section mb-4">
+                    <h6 class="text-center mb-3">How was this exercise?</h6>
+                    <div class="d-flex justify-content-center gap-2">
+                        <button type="button" class="btn btn-outline-success"
+                                data-function="click->updateExerciseFeedback"
+                                data-exercise-id="${exerciseData.id}"
+                                data-feedback="increase"
+                                title="Increase weight/reps next time">
+                            <i class="fas fa-plus me-1"></i>Increase
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary"
+                                data-function="click->updateExerciseFeedback"
+                                data-exercise-id="${exerciseData.id}"
+                                data-feedback="stay"
+                                title="Keep same weight/reps">
+                            <i class="fas fa-equals me-1"></i>Same
+                        </button>
+                        <button type="button" class="btn btn-outline-warning"
+                                data-function="click->updateExerciseFeedback"
+                                data-exercise-id="${exerciseData.id}"
+                                data-feedback="decrease"
+                                title="Decrease weight/reps next time">
+                            <i class="fas fa-minus me-1"></i>Decrease
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sets-container" data-exercise-id="${exerciseData.id}" data-exercise-name="${exerciseData.exercise_name}">
+                    <h6 class="mb-3">Sets & Reps</h6>
+                    <p class="text-muted no-sets-message text-center">No sets recorded for this exercise.</p>
+
+                    <div class="text-center mt-3">
+                        <button class="btn btn-outline-primary"
+                                data-function="click->addSet"
+                                data-exercise-id="${exerciseData.id}"
+                                title="Add set">
+                            <i class="fas fa-plus me-1"></i>Add Set
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    return cardDiv;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('exercise-card-container')) {
+        initializeMobileWorkout();
+    }
+});
